@@ -4,9 +4,27 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-    LayoutDashboard, Wallet, Wrench, Package, Users, Settings, LogOut,
-    ShieldAlert, CreditCard, ShoppingBag, Scissors, Car, Contact, Briefcase,
-    FileText, Tag, UserCog, Store, MessageSquare, LifeBuoy, X // X ikonu eklendi
+    LayoutDashboard,
+    Wallet,
+    Wrench,
+    Package,
+    Users,
+    Settings,
+    LogOut,
+    ShieldAlert,
+    CreditCard,
+    ShoppingBag,
+    Scissors,
+    Car,
+    Briefcase,
+    FileText,
+    Tag,
+    UserCog,
+    Store,
+    MessageSquare,
+    LifeBuoy,
+    CalendarClock, // YENİ: Randevu İkonu
+    X
 } from 'lucide-react';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -17,10 +35,9 @@ const defaultMenuItems = [
     { id: 'settings', label: 'Ayarlar', icon: Settings, href: '/dashboard/settings' },
 ];
 
-// Props tanımı
 interface SidebarProps {
-    isOpen: boolean;
-    onClose: () => void;
+    isOpen?: boolean;
+    onClose?: () => void;
 }
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
@@ -30,11 +47,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Mobilde bir linke tıklayınca menüyü kapat
-        if (window.innerWidth < 1024) {
+        if (window.innerWidth < 1024 && onClose) {
             onClose();
         }
-    }, [pathname]); // Path değişince çalışır
+    }, [pathname]);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -53,7 +69,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                         generateMenu(sector, type);
                     }
                 } catch (error) {
-                    console.error("Menü yükleme hatası:", error);
+                    console.error("Menü hatası:", error);
                 }
             }
             setLoading(false);
@@ -62,7 +78,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     }, []);
 
     const generateMenu = (sector: string, type: string) => {
-        // ... (Menü oluşturma mantığı aynı, burayı kısaltmıyorum aynen kalsın)
         let items = [
             { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard, href: '/dashboard' }
         ];
@@ -76,47 +91,25 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             );
         }
         else {
+            // Sektöre göre isimlendirme
             let jobsLabel = 'İş Emirleri';
             let jobsIcon = Wrench;
-            let stockLabel = 'Stok Takibi';
-            let stockIcon = Package;
-            let customerLabel = 'Müşteriler';
-            let customerIcon = Users;
 
-            if (sector === 'retail_wholesale') {
-                jobsLabel = 'Siparişler';
-                jobsIcon = ShoppingBag;
-                stockLabel = 'Ürünler';
-                stockIcon = Tag;
-            } else if (sector === 'beauty_health') {
-                jobsLabel = 'Randevular';
-                jobsIcon = Scissors;
-                stockLabel = 'Hizmet & Ürün';
-                stockIcon = Package;
-                customerLabel = 'Danışanlar';
-            } else if (sector === 'auto_rental') {
-                jobsLabel = 'Araç / Servis';
-                jobsIcon = Car;
-            } else if (sector === 'other') {
-                jobsLabel = 'İşlemler';
-                jobsIcon = Briefcase;
-            }
+            if (sector === 'retail_wholesale') { jobsLabel = 'Siparişler'; jobsIcon = ShoppingBag; }
+            else if (sector === 'beauty_health') { jobsLabel = 'Seanslar'; jobsIcon = Scissors; }
+            else if (sector === 'auto_rental') { jobsLabel = 'Araç / Servis'; jobsIcon = Car; }
 
             items.push(
                 { id: 'jobs', label: jobsLabel, icon: jobsIcon, href: '/dashboard/jobs' },
+                { id: 'appointments', label: 'Randevular', icon: CalendarClock, href: '/dashboard/appointments' }, // YENİ EKLENDİ
                 { id: 'proposals', label: 'Teklif Hazırla', icon: FileText, href: '/dashboard/proposals' },
-                { id: 'stock', label: stockLabel, icon: stockIcon, href: '/dashboard/stock' },
-                { id: 'staff', label: 'Personel', icon: UserCog, href: '/dashboard/staff' },
-                { id: 'branches', label: 'Şubeler', icon: Store, href: '/dashboard/branches' },
+                { id: 'stock', label: 'Stok & Ürün', icon: Package, href: '/dashboard/stock' },
+                { id: 'customers', label: 'Müşteriler', icon: Users, href: '/dashboard/customers' },
                 { id: 'finance', label: 'Finans & Kasa', icon: Wallet, href: '/dashboard/finance' },
-                { id: 'customers', label: customerLabel, icon: customerIcon, href: '/dashboard/customers' },
-                { id: 'communication', label: 'Haberleşme', icon: MessageSquare, href: '/dashboard/communication' },
-                { id: 'subscription', label: 'Abonelik & Paket', icon: CreditCard, href: '/dashboard/subscription' }
             );
         }
 
         items.push(
-            { id: 'support', label: 'Destek & Yardım', icon: LifeBuoy, href: '/dashboard/support' },
             { id: 'settings', label: 'Ayarlar', icon: Settings, href: '/dashboard/settings' }
         );
 
@@ -130,7 +123,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             ${isOpen ? 'translate-x-0' : '-translate-x-full'} 
             lg:translate-x-0
         `}>
-            {/* Header Kısmı */}
             <div className="p-6 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/50">
@@ -138,10 +130,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     </div>
                     <h1 className="text-xl font-bold tracking-tight">Servis360</h1>
                 </div>
-                {/* Mobilde Kapatma Butonu */}
-                <button onClick={onClose} className="lg:hidden text-slate-400 hover:text-white">
-                    <X className="w-6 h-6" />
-                </button>
+                {onClose && (
+                    <button onClick={onClose} className="lg:hidden text-slate-400 hover:text-white">
+                        <X className="w-6 h-6" />
+                    </button>
+                )}
             </div>
 
             <nav className="flex-1 px-4 space-y-2 py-6 overflow-y-auto">
@@ -161,19 +154,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                             <span>{item.label}</span>
                         </Link>
                     ))
-                )}
-
-                {isAdmin && (
-                    <Link
-                        href="/dashboard/admin"
-                        className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 group font-medium text-sm ${pathname === '/dashboard/admin'
-                            ? "bg-red-600 text-white shadow-lg shadow-red-900/40 translate-x-1"
-                            : "text-red-400 hover:bg-red-900/20 hover:text-red-300 hover:translate-x-1"
-                            }`}
-                    >
-                        <ShieldAlert className="w-5 h-5" />
-                        <span>Admin Paneli</span>
-                    </Link>
                 )}
             </nav>
 
