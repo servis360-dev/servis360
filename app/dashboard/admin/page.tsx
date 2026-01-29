@@ -93,7 +93,7 @@ export default function AdminPage() {
 
             setUsers(data);
 
-            const active = data.filter(u => u.status === 'active').length;
+            const active = data.filter((u: any) => u.status === 'active').length;
             setStats({
                 totalUsers: data.length,
                 activeUsers: active,
