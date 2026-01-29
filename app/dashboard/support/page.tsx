@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { collection, query, orderBy, onSnapshot, where, doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { ArrowRight } from 'lucide-react';
 import {
     Plus,
     MessageCircle,
