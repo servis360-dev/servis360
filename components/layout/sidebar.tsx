@@ -23,7 +23,8 @@ import {
     Store,
     MessageSquare,
     LifeBuoy,
-    CalendarClock, // YENİ: Randevu İkonu
+    CalendarClock,
+    Contact, // <-- EKSİK OLAN BU İKONDUR, EKLENDİ.
     X
 } from 'lucide-react';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
@@ -101,7 +102,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
             items.push(
                 { id: 'jobs', label: jobsLabel, icon: jobsIcon, href: '/dashboard/jobs' },
-                { id: 'appointments', label: 'Randevular', icon: CalendarClock, href: '/dashboard/appointments' }, // YENİ EKLENDİ
+                { id: 'appointments', label: 'Randevular', icon: CalendarClock, href: '/dashboard/appointments' },
                 { id: 'proposals', label: 'Teklif Hazırla', icon: FileText, href: '/dashboard/proposals' },
                 { id: 'stock', label: 'Stok & Ürün', icon: Package, href: '/dashboard/stock' },
                 { id: 'customers', label: 'Müşteriler', icon: Users, href: '/dashboard/customers' },
