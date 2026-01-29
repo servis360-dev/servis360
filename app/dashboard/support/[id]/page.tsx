@@ -1,4 +1,4 @@
-'use client';
+ï»¿'use client';
 
 import { useEffect, useState, useRef } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
@@ -55,15 +55,15 @@ export default function TicketChatPage({ params }: { params: { id: string } }) {
                 text: newMessage,
                 senderId: user.uid,
                 senderName: user.displayName || user.email,
-                isAdmin: isAdmin, // Mesajýn adminden gelip gelmediði
+                isAdmin: isAdmin, // MesajÄ±n adminden gelip gelmediÄŸi
                 createdAt: serverTimestamp()
             });
 
-            // Bileti Güncelle (Son mesaj ve durum)
+            // Bileti GÃ¼ncelle (Son mesaj ve durum)
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'tickets', params.id), {
                 lastMessage: newMessage,
                 updatedAt: serverTimestamp(),
-                status: isAdmin ? 'answered' : 'open' // Admin yazarsa "cevaplandý", kullanýcý yazarsa "açýk"
+                status: isAdmin ? 'answered' : 'open' // Admin yazarsa "cevaplandÄ±", kullanÄ±cÄ± yazarsa "aÃ§Ä±k"
             });
 
             setNewMessage('');
@@ -73,14 +73,14 @@ export default function TicketChatPage({ params }: { params: { id: string } }) {
     };
 
     const closeTicket = async () => {
-        if (confirm('Bileti kapatmak istediðinize emin misiniz?')) {
+        if (confirm('Bileti kapatmak istediÄŸinize emin misiniz?')) {
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'tickets', params.id), {
                 status: 'closed'
             });
         }
     };
 
-    if (!ticket) return <div className="p-8 text-center">Yükleniyor...</div>;
+    if (!ticket) return <div className="p-8 text-center">YÃ¼kleniyor...</div>;
 
     return (
         <div className="h-[calc(100vh-100px)] flex flex-col bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
@@ -95,7 +95,7 @@ export default function TicketChatPage({ params }: { params: { id: string } }) {
                         <h2 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                             {ticket.subject}
                             <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold ${ticket.status === 'open' ? 'bg-blue-100 text-blue-600' : ticket.status === 'closed' ? 'bg-slate-200 text-slate-500' : 'bg-green-100 text-green-600'}`}>
-                                {ticket.status === 'open' ? 'Açýk' : ticket.status === 'closed' ? 'Kapalý' : 'Cevaplandý'}
+                                {ticket.status === 'open' ? 'AÃ§Ä±k' : ticket.status === 'closed' ? 'KapalÄ±' : 'CevaplandÄ±'}
                             </span>
                         </h2>
                         <p className="text-xs text-slate-500">Talep No: #{params.id.substring(0, 6).toUpperCase()}</p>
@@ -115,10 +115,10 @@ export default function TicketChatPage({ params }: { params: { id: string } }) {
                         <div className={`max-w-[75%] rounded-2xl p-4 shadow-sm relative ${msg.senderId === user.uid
                                 ? 'bg-blue-600 text-white rounded-br-none'
                                 : msg.isAdmin
-                                    ? 'bg-purple-600 text-white rounded-bl-none' // Admin mesajý farklý renk
+                                    ? 'bg-purple-600 text-white rounded-bl-none' // Admin mesajÄ± farklÄ± renk
                                     : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-bl-none border border-slate-200 dark:border-slate-700'
                             }`}>
-                            {/* Ýsim Baþlýðý */}
+                            {/* Ä°sim BaÅŸlÄ±ÄŸÄ± */}
                             <p className={`text-[10px] font-bold mb-1 opacity-80 flex items-center gap-1 ${msg.senderId === user.uid ? 'text-blue-100' : msg.isAdmin ? 'text-purple-100' : 'text-slate-400'}`}>
                                 {msg.isAdmin && <ShieldAlert className="w-3 h-3" />}
                                 {msg.senderName}
@@ -140,7 +140,7 @@ export default function TicketChatPage({ params }: { params: { id: string } }) {
                 <form onSubmit={handleSend} className="p-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex gap-2">
                     <input
                         className="flex-1 bg-slate-100 dark:bg-slate-900 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                        placeholder="Mesajýnýzý yazýn..."
+                        placeholder="MesajÄ±nÄ±zÄ± yazÄ±n..."
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                     />
@@ -150,7 +150,7 @@ export default function TicketChatPage({ params }: { params: { id: string } }) {
                 </form>
             ) : (
                 <div className="p-4 text-center bg-slate-100 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 text-slate-500 text-sm font-medium">
-                    Bu talep kapatýlmýþtýr. Yeni bir talep oluþturabilirsiniz.
+                    Bu talep kapatÄ±lmÄ±ÅŸtÄ±r. Yeni bir talep oluÅŸturabilirsiniz.
                 </div>
             )}
         </div>
