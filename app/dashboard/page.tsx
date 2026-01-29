@@ -11,16 +11,13 @@ import {
     ArrowUpRight,
     ArrowDownRight,
     Activity,
-    MoreHorizontal,
     Calendar,
     ArrowRight,
     Briefcase,
     Clock,
-    CheckCircle2,
     ShoppingBag,
     Scissors,
-    Car,
-    FileText
+    Car
 } from 'lucide-react';
 import {
     BarChart,
@@ -61,6 +58,10 @@ export default function DashboardPage() {
     const router = useRouter();
 
     useEffect(() => {
+        let unsubTrans: () => void;
+        let unsubJobs: () => void;
+        let unsubActivities: () => void;
+
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (!currentUser) {
                 router.push('/login');
@@ -70,11 +71,21 @@ export default function DashboardPage() {
                 // 1. Önce Kullanıcının Sektörünü Öğren
                 await fetchSectorConfig(currentUser.uid);
 
-                // 2. Sonra Verileri Çek
-                setupRealtimeListeners(currentUser.uid, timeFilter);
+                // 2. Sonra Verileri Çek ve cleanup fonksiyonlarını sakla
+                const listeners = setupRealtimeListeners(currentUser.uid, timeFilter);
+                unsubTrans = listeners.unsubTrans;
+                unsubJobs = listeners.unsubJobs;
+                unsubActivities = listeners.unsubActivities;
             }
         });
-        return () => unsubscribeAuth();
+
+        // Cleanup
+        return () => {
+            unsubscribeAuth();
+            if (unsubTrans) unsubTrans();
+            if (unsubJobs) unsubJobs();
+            if (unsubActivities) unsubActivities();
+        };
     }, [router, timeFilter]);
 
     // Sektöre Göre Dil Ayarla
@@ -216,11 +227,7 @@ export default function DashboardPage() {
             });
         });
 
-        return () => {
-            unsubTrans();
-            unsubJobs();
-            unsubActivities();
-        };
+        return { unsubTrans, unsubJobs, unsubActivities };
     };
 
     if (!user) return null;
