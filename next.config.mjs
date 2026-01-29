@@ -1,13 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    typescript: {
-        // TypeScript hatalarý build'i durdurmasýn
-        ignoreBuildErrors: true,
+    // Bu ayar Webpack'e "undici kütüphanesini paketleme, olduðu gibi sunucuda býrak" der.
+    experimental: {
+        serverComponentsExternalPackages: ["undici", "firebase-admin"],
     },
-    eslint: {
-        // ESLint hatalarý build'i durdurmasýn
-        ignoreDuringBuilds: true,
-    }
+    // Firebase kullanýrken oluþabilecek diðer hatalarý önler
+    webpack: (config) => {
+        config.resolve.alias.undici = false;
+        return config;
+    },
 };
 
 export default nextConfig;
