@@ -41,7 +41,7 @@ import RoleGuard from '../../../components/auth/role-guard';
 export default function AdminPage() {
     const [users, setUsers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0, mrr: 0 });
+    const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0, mrr: 0, systemLoad: '0%' });
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [logs, setLogs] = useState<string[]>([]);
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
