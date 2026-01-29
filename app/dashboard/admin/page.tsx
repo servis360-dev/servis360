@@ -97,7 +97,8 @@ export default function AdminPage() {
             setStats({
                 totalUsers: data.length,
                 activeUsers: active,
-                systemLoad: `${Math.floor(Math.random() * 30) + 10}%`
+                systemLoad: `${Math.floor(Math.random() * 30) + 10}%`,
+                mrr: 0,
             });
 
             setLoading(false);
