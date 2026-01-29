@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, query, orderBy, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, deleteDoc, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -14,7 +14,8 @@ import {
     CheckCircle2,
     Clock,
     XCircle,
-    Printer
+    Printer,
+    ArrowUpRight
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -43,6 +44,40 @@ export default function ProposalsPage() {
         return () => unsubscribe();
     }, []);
 
+    // DURUM DEĞİŞTİRME VE FİNANS ENTEGRASYONU
+    const handleStatusChange = async (proposal: any, newStatus: string) => {
+        if (!user) return;
+
+        try {
+            // 1. Durumu Güncelle
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'proposals', proposal.id), {
+                status: newStatus
+            });
+
+            // 2. Eğer "ONAYLANDI" seçildiyse Kasaya İşle
+            if (newStatus === 'approved') {
+                const confirmFinance = confirm("Teklif onaylandı! ✅\n\nBu tutarı (" + proposal.total + " ₺) kasaya 'Gelir' olarak eklemek ister misiniz?");
+
+                if (confirmFinance) {
+                    await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), {
+                        type: 'income',
+                        category: 'Satış',
+                        description: `Teklif Onayı: ${proposal.customerName} (${proposal.proposalNo})`,
+                        amount: Number(proposal.total),
+                        date: new Date(), // Şu anki tarih
+                        createdAt: serverTimestamp(),
+                        relatedProposalId: proposal.id
+                    });
+                    alert("Tutar kasaya işlendi! 💰");
+                }
+            }
+
+        } catch (error) {
+            console.error("Hata:", error);
+            alert("İşlem sırasında bir hata oluştu.");
+        }
+    };
+
     const handleDelete = async (id: string) => {
         if (confirm("Bu teklifi silmek istediğinize emin misiniz?")) {
             if (user) {
@@ -51,32 +86,27 @@ export default function ProposalsPage() {
         }
     };
 
-    // Tarih Formatlayıcı (Timestamp veya String destekli)
     const formatDate = (dateVal: any) => {
         if (!dateVal) return '-';
-        if (dateVal.toDate) return dateVal.toDate().toLocaleDateString('tr-TR'); // Firestore Timestamp
-        return new Date(dateVal).toLocaleDateString('tr-TR'); // Normal Date
+        if (dateVal.toDate) return dateVal.toDate().toLocaleDateString('tr-TR');
+        return new Date(dateVal).toLocaleDateString('tr-TR');
     };
 
-    // Durum Rozeti Rengi
-    const getStatusBadge = (status: string) => {
+    // Durum Rengi Helper'ı
+    const getStatusColor = (status: string) => {
         switch (status) {
-            case 'approved':
-                return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200"><CheckCircle2 className="w-3 h-3" /> Onaylandı</span>;
-            case 'rejected':
-                return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200"><XCircle className="w-3 h-3" /> Reddedildi</span>;
-            default:
-                return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700 border border-yellow-200"><Clock className="w-3 h-3" /> Bekliyor</span>;
+            case 'approved': return 'bg-green-50 text-green-700 border-green-200';
+            case 'rejected': return 'bg-red-50 text-red-700 border-red-200';
+            default: return 'bg-yellow-50 text-yellow-700 border-yellow-200';
         }
     };
 
     return (
         <div className="space-y-6 pb-10">
-            {/* Başlık */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Teklif Yönetimi</h1>
-                    <p className="text-slate-500 dark:text-slate-400">Müşterilerinize sunduğunuz fiyat teklifleri.</p>
+                    <p className="text-slate-500 dark:text-slate-400">Tekliflerin durumunu buradan yönetin ve kasaya işleyin.</p>
                 </div>
                 <Link href="/dashboard/proposals/new">
                     <button className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30">
@@ -85,7 +115,6 @@ export default function ProposalsPage() {
                 </Link>
             </div>
 
-            {/* Liste */}
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                 {loading ? (
                     <div className="p-8 text-center text-slate-500">Yükleniyor...</div>
@@ -95,9 +124,8 @@ export default function ProposalsPage() {
                             <FileText className="w-8 h-8 text-slate-400" />
                         </div>
                         <h3 className="text-lg font-medium text-slate-900 dark:text-white">Henüz teklif yok</h3>
-                        <p className="text-slate-500 text-sm mt-1 mb-6">Müşterilerinize profesyonel teklifler sunmaya başlayın.</p>
-                        <Link href="/dashboard/proposals/new">
-                            <button className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700">İlk Teklifi Oluştur</button>
+                        <Link href="/dashboard/proposals/new" className="mt-4">
+                            <button className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">İlk Teklifi Oluştur</button>
                         </Link>
                     </div>
                 ) : (
@@ -115,19 +143,28 @@ export default function ProposalsPage() {
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {proposals.map((p) => (
-                                    <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
+                                    <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                         <td className="p-4">
-                                            {getStatusBadge(p.status)}
+                                            {/* DURUM DEĞİŞTİRME SELECT KUTUSU */}
+                                            <select
+                                                value={p.status}
+                                                onChange={(e) => handleStatusChange(p, e.target.value)}
+                                                className={`
+                                                    appearance-none pl-3 pr-8 py-1.5 rounded-lg text-xs font-bold border outline-none cursor-pointer transition-colors
+                                                    ${getStatusColor(p.status)}
+                                                `}
+                                            >
+                                                <option value="pending">⏳ Bekliyor</option>
+                                                <option value="approved">✅ Onaylandı</option>
+                                                <option value="rejected">❌ Reddedildi</option>
+                                            </select>
                                         </td>
                                         <td className="p-4 font-mono font-bold text-blue-600 text-xs">
-                                            {p.proposalNo || `#${p.id.substring(0, 6).toUpperCase()}`}
+                                            {p.proposalNo}
                                         </td>
                                         <td className="p-4">
-                                            <div className="flex flex-col">
-                                                <span className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                                    <User className="w-3 h-3 text-slate-400" /> {p.customerName}
-                                                </span>
-                                                {p.customerPhone && <span className="text-xs text-slate-400 ml-5">{p.customerPhone}</span>}
+                                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                                <User className="w-3 h-3 text-slate-400" /> {p.customerName}
                                             </div>
                                         </td>
                                         <td className="p-4 text-slate-500">
@@ -144,20 +181,12 @@ export default function ProposalsPage() {
                                         </td>
                                         <td className="p-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
-                                                {/* Detay / Yazdır Butonu */}
                                                 <Link href={`/dashboard/proposals/${p.id}`}>
-                                                    <button className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors flex items-center gap-2 group/btn" title="Görüntüle & Yazdır">
+                                                    <button className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg" title="Görüntüle / Yazdır">
                                                         <Printer className="w-4 h-4" />
-                                                        <span className="text-xs font-bold hidden md:block">Yazdır</span>
                                                     </button>
                                                 </Link>
-
-                                                {/* Sil Butonu */}
-                                                <button
-                                                    onClick={() => handleDelete(p.id)}
-                                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                                    title="Sil"
-                                                >
+                                                <button onClick={() => handleDelete(p.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg" title="Sil">
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
                                             </div>

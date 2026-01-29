@@ -25,11 +25,9 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 try {
-                    // 1. Teklif Verisini Çek
                     const docRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'proposals', params.id);
                     const docSnap = await getDoc(docRef);
 
-                    // 2. Firma (Kullanıcı) Bilgilerini Çek (Header ve Logo için)
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
 
@@ -59,7 +57,6 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
         window.print();
     };
 
-    // Tarih Formatlayıcı
     const formatDate = (dateVal: any) => {
         if (!dateVal) return new Date().toLocaleDateString('tr-TR');
         if (dateVal.toDate) return dateVal.toDate().toLocaleDateString('tr-TR');
@@ -69,10 +66,15 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
     if (loading) return <div className="flex h-screen items-center justify-center text-slate-500">Teklif yükleniyor...</div>;
     if (!proposal) return null;
 
+    // KDV Notunu Dinamik Belirle
+    const kdvNote = proposal.taxRate === 0
+        ? "Fiyatlarımızda KDV dahil değildir."
+        : "Fiyatlarımıza KDV dahildir.";
+
     return (
         <div className="min-h-screen bg-slate-100 dark:bg-slate-900 p-4 md:p-8 print:p-0 print:bg-white">
 
-            {/* Üst Bar (Yazdırma butonları vs. - Baskıda GİZLENİR) */}
+            {/* Üst Bar (Baskıda Gizlenir) */}
             <div className="max-w-[210mm] mx-auto mb-6 flex justify-between items-center print:hidden">
                 <Link href="/dashboard/proposals" className="flex items-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors">
                     <ArrowLeft className="w-4 h-4 mr-2" /> Listeye Dön
@@ -87,22 +89,17 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                 </div>
             </div>
 
-            {/* A4 Kağıt Görünümü */}
+            {/* A4 Kağıt */}
             <div className="max-w-[210mm] mx-auto bg-white text-slate-900 shadow-2xl print:shadow-none print:w-full rounded-xl overflow-hidden min-h-[297mm] flex flex-col relative">
 
-                {/* Arka Plan Deseni (Hafif Şıklık Katmak İçin) */}
+                {/* Arka Plan Deseni */}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-blue-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-50 pointer-events-none print:hidden"></div>
 
-                {/* 1. Header (Logo & Firma Bilgileri) */}
+                {/* 1. Header */}
                 <div className="p-10 border-b-2 border-slate-100 flex justify-between items-start">
                     <div className="flex flex-col justify-center">
-                        {/* LOGO MANTIĞI: Varsa Logo, Yoksa İsim Baş Harfi */}
                         {companyInfo?.logoUrl ? (
-                            <img
-                                src={companyInfo.logoUrl}
-                                alt="Firma Logosu"
-                                className="h-20 w-auto object-contain mb-4"
-                            />
+                            <img src={companyInfo.logoUrl} alt="Firma Logosu" className="h-20 w-auto object-contain mb-4" />
                         ) : (
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="w-16 h-16 bg-slate-900 rounded-xl flex items-center justify-center text-white font-bold text-3xl print:border print:border-slate-900 print:text-black print:bg-transparent">
@@ -116,8 +113,6 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                                 </div>
                             </div>
                         )}
-
-                        {/* Logo varsa ismi altına yazmak istemezsen burayı silebilirsin, ama resmi görünür */}
                         {companyInfo?.logoUrl && (
                             <h1 className="text-xl font-bold text-slate-900 uppercase tracking-tight">
                                 {companyInfo?.companyName}
@@ -126,7 +121,8 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                     </div>
 
                     <div className="text-right">
-                        <h2 className="text-5xl font-black text-slate-100 uppercase tracking-widest print:text-slate-200">TEKLİF</h2>
+                        {/* DÜZELTİLDİ: TEKLİF yazısı artık print'te SİYAH çıkacak */}
+                        <h2 className="text-5xl font-black text-slate-100 uppercase tracking-widest print:text-black">TEKLİF</h2>
                         <div className="mt-4 space-y-1">
                             <p className="text-sm font-bold text-slate-900">TEKLİF NO: <span className="font-mono text-blue-600 print:text-black">{proposal.proposalNo}</span></p>
                             <p className="text-sm text-slate-500">Tarih: {formatDate(proposal.createdAt)}</p>
@@ -135,7 +131,7 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                     </div>
                 </div>
 
-                {/* 2. İletişim Bilgileri (Siz & Müşteri) */}
+                {/* 2. İletişim */}
                 <div className="p-10 grid grid-cols-2 gap-12">
                     <div>
                         <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider border-b pb-1">SAYIN / MÜŞTERİ</h3>
@@ -146,21 +142,9 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                         <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider border-b pb-1">SAĞLAYICI / YETKİLİ</h3>
                         <p className="font-bold text-slate-900 text-lg">{companyInfo?.fullName || 'Firma Yetkilisi'}</p>
                         <div className="text-sm text-slate-600 mt-2 space-y-1 flex flex-col items-end">
-                            {companyInfo?.phone && (
-                                <p className="flex items-center gap-2">
-                                    {companyInfo.phone} <Phone className="w-3 h-3" />
-                                </p>
-                            )}
-                            {companyInfo?.email && (
-                                <p className="flex items-center gap-2">
-                                    {companyInfo.email} <Mail className="w-3 h-3" />
-                                </p>
-                            )}
-                            {companyInfo?.address && (
-                                <p className="flex items-center gap-2 text-right max-w-[200px]">
-                                    {companyInfo.address} <MapPin className="w-3 h-3 shrink-0" />
-                                </p>
-                            )}
+                            {companyInfo?.phone && <p className="flex items-center gap-2">{companyInfo.phone} <Phone className="w-3 h-3" /></p>}
+                            {companyInfo?.email && <p className="flex items-center gap-2">{companyInfo.email} <Mail className="w-3 h-3" /></p>}
+                            {companyInfo?.address && <p className="flex items-center gap-2 text-right max-w-[200px]">{companyInfo.address} <MapPin className="w-3 h-3 shrink-0" /></p>}
                         </div>
                     </div>
                 </div>
@@ -181,14 +165,10 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                             {proposal.items.map((item: any, index: number) => (
                                 <tr key={index} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
                                     <td className="py-4 px-4 text-center font-medium text-slate-400">{index + 1}</td>
-                                    <td className="py-4 px-4">
-                                        <p className="font-bold text-slate-800">{item.description}</p>
-                                    </td>
+                                    <td className="py-4 px-4"><p className="font-bold text-slate-800">{item.description}</p></td>
                                     <td className="py-4 px-4 text-center">{item.quantity}</td>
                                     <td className="py-4 px-4 text-right">{Number(item.unitPrice).toLocaleString()} ₺</td>
-                                    <td className="py-4 px-4 text-right font-bold text-slate-900">
-                                        {(item.quantity * item.unitPrice).toLocaleString()} ₺
-                                    </td>
+                                    <td className="py-4 px-4 text-right font-bold text-slate-900">{(item.quantity * item.unitPrice).toLocaleString()} ₺</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -203,7 +183,7 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                             <span className="font-medium">{proposal.subtotal?.toLocaleString()} ₺</span>
                         </div>
                         <div className="flex justify-between text-sm text-slate-600">
-                            <span>KDV (%{proposal.taxRate || 20})</span>
+                            <span>KDV (%{proposal.taxRate || 0})</span>
                             <span className="font-medium">{proposal.taxAmount?.toLocaleString()} ₺</span>
                         </div>
                         <div className="flex justify-between text-xl font-black text-slate-900 pt-4 border-t-2 border-slate-900 items-end">
@@ -213,7 +193,7 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                     </div>
                 </div>
 
-                {/* 5. Alt Notlar ve İmza */}
+                {/* 5. Alt Notlar */}
                 <div className="p-10 mt-auto border-t border-slate-100 bg-slate-50/30 print:bg-white">
                     <div className="grid grid-cols-2 gap-12 items-end">
                         <div>
@@ -221,7 +201,8 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                             <div className="text-xs text-slate-500 leading-relaxed bg-white p-3 rounded-lg border border-slate-100 print:border-none print:p-0">
                                 <ul className="list-disc list-inside space-y-1">
                                     <li>Bu teklif belirtilen tarihe kadar geçerlidir.</li>
-                                    <li>Fiyatlarımıza KDV dahildir.</li>
+                                    {/* DÜZELTİLDİ: KDV Oranına göre dinamik not */}
+                                    <li>{kdvNote}</li>
                                     <li>Ödeme, iş tesliminde nakit veya havale ile yapılacaktır.</li>
                                 </ul>
                             </div>
