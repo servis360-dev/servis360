@@ -1,19 +1,23 @@
 ﻿'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, Search, Menu } from 'lucide-react'; // Menu ikonu eklendi (mobil için)
+import { Bell, Search, Menu } from 'lucide-react';
 import { auth, db } from '../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 
-export function Header() {
+// Props tanımı ekledik
+interface HeaderProps {
+    onMenuClick: () => void;
+}
+
+export function Header({ onMenuClick }: HeaderProps) {
     const [userData, setUserData] = useState<{ fullName: string, companyName: string, role: string } | null>(null);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 try {
-                    // Kullanıcı profilini çek
                     const userRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile');
                     const userSnap = await getDoc(userRef);
 
@@ -25,7 +29,6 @@ export function Header() {
                             role: data.role || 'user'
                         });
                     } else {
-                        // Profil yoksa varsayılan
                         setUserData({
                             fullName: user.displayName || user.email?.split('@')[0] || 'Kullanıcı',
                             companyName: 'Yeni İşletme',
@@ -40,17 +43,10 @@ export function Header() {
         return () => unsubscribe();
     }, []);
 
-    // İsimlerin baş harflerini al (Avatar için)
     const getInitials = (name: string) => {
-        return name
-            .split(' ')
-            .map(n => n[0])
-            .slice(0, 2)
-            .join('')
-            .toUpperCase();
+        return name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
     };
 
-    // Günün saatine göre selamlama
     const getGreeting = () => {
         const hour = new Date().getHours();
         if (hour < 12) return 'Günaydın';
@@ -59,11 +55,14 @@ export function Header() {
     };
 
     return (
-        <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-8 sticky top-0 z-40 shadow-sm transition-colors duration-300">
-            {/* Mobil Menü Tetikleyici (İleride sidebar kontrolü için kullanılabilir) */}
-            <div className="md:hidden mr-4">
+        <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm transition-colors duration-300">
+            {/* Mobil Menü Butonu - Artık Çalışıyor! */}
+            <button
+                onClick={onMenuClick}
+                className="md:hidden mr-4 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            >
                 <Menu className="w-6 h-6 text-slate-500" />
-            </div>
+            </button>
 
             {/* Arama Çubuğu */}
             <div className="flex items-center gap-4 flex-1 max-w-md">
@@ -77,7 +76,7 @@ export function Header() {
                 </div>
             </div>
 
-            {/* Sağ Taraf - Bildirim ve Profil */}
+            {/* Sağ Taraf */}
             <div className="flex items-center gap-3 md:gap-6">
                 <button className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full relative transition-colors">
                     <Bell className="w-5 h-5" />
