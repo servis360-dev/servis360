@@ -66,13 +66,22 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
     if (loading) return <div className="flex h-screen items-center justify-center text-slate-500">Teklif yükleniyor...</div>;
     if (!proposal) return null;
 
-    // KDV Notunu Dinamik Belirle
     const kdvNote = proposal.taxRate === 0
         ? "Fiyatlarımızda KDV dahil değildir."
         : "Fiyatlarımıza KDV dahildir.";
 
     return (
-        <div className="min-h-screen bg-slate-100 dark:bg-slate-900 p-4 md:p-8 print:p-0 print:bg-white">
+        <div className="min-h-screen bg-slate-100 dark:bg-slate-900 p-4 md:p-8 print:p-0 print:m-0 print:bg-white print:overflow-visible">
+
+            {/* BU STİL BLOKU ÇOK ÖNEMLİ: Sayfa kenar boşluklarını sıfırlar */}
+            <style type="text/css" media="print">
+                {`
+                    @page { size: auto; margin: 0mm; }
+                    body { background-color: white; margin: 0; padding: 0; }
+                    /* Yazdırma sırasında dashboard elementlerini gizle */
+                    nav, header, aside, .sidebar { display: none !important; }
+                `}
+            </style>
 
             {/* Üst Bar (Baskıda Gizlenir) */}
             <div className="max-w-[210mm] mx-auto mb-6 flex justify-between items-center print:hidden">
@@ -89,14 +98,17 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                 </div>
             </div>
 
-            {/* A4 Kağıt */}
-            <div className="max-w-[210mm] mx-auto bg-white text-slate-900 shadow-2xl print:shadow-none print:w-full rounded-xl overflow-hidden min-h-[297mm] flex flex-col relative">
+            {/* A4 Kağıt - Yazdırma Modu (Print Mode) Özellikleri Eklendi */}
+            <div className="
+                max-w-[210mm] mx-auto bg-white text-slate-900 shadow-2xl rounded-xl overflow-hidden min-h-[297mm] flex flex-col relative
+                print:fixed print:inset-0 print:w-full print:h-full print:z-[9999] print:shadow-none print:rounded-none print:mx-0 print:my-0
+            ">
 
-                {/* Arka Plan Deseni */}
+                {/* Arka Plan Deseni (Print'te gizli) */}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-blue-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-50 pointer-events-none print:hidden"></div>
 
                 {/* 1. Header */}
-                <div className="p-10 border-b-2 border-slate-100 flex justify-between items-start">
+                <div className="p-10 border-b-2 border-slate-100 flex justify-between items-start print:p-8">
                     <div className="flex flex-col justify-center">
                         {companyInfo?.logoUrl ? (
                             <img src={companyInfo.logoUrl} alt="Firma Logosu" className="h-20 w-auto object-contain mb-4" />
@@ -121,7 +133,7 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                     </div>
 
                     <div className="text-right">
-                        {/* DÜZELTİLDİ: TEKLİF yazısı artık print'te SİYAH çıkacak */}
+                        {/* Print'te Siyah Olacak Şekilde Ayarlandı */}
                         <h2 className="text-5xl font-black text-slate-100 uppercase tracking-widest print:text-black">TEKLİF</h2>
                         <div className="mt-4 space-y-1">
                             <p className="text-sm font-bold text-slate-900">TEKLİF NO: <span className="font-mono text-blue-600 print:text-black">{proposal.proposalNo}</span></p>
@@ -132,14 +144,14 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                 </div>
 
                 {/* 2. İletişim */}
-                <div className="p-10 grid grid-cols-2 gap-12">
+                <div className="p-10 grid grid-cols-2 gap-12 print:p-8 print:gap-8">
                     <div>
-                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider border-b pb-1">SAYIN / MÜŞTERİ</h3>
+                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider border-b pb-1 print:text-black">SAYIN / MÜŞTERİ</h3>
                         <p className="text-lg font-bold text-slate-900">{proposal.customerName}</p>
                         <p className="text-sm text-slate-600 mt-1">{proposal.customerPhone || 'Telefon Belirtilmedi'}</p>
                     </div>
                     <div className="text-right">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider border-b pb-1">SAĞLAYICI / YETKİLİ</h3>
+                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider border-b pb-1 print:text-black">SAĞLAYICI / YETKİLİ</h3>
                         <p className="font-bold text-slate-900 text-lg">{companyInfo?.fullName || 'Firma Yetkilisi'}</p>
                         <div className="text-sm text-slate-600 mt-2 space-y-1 flex flex-col items-end">
                             {companyInfo?.phone && <p className="flex items-center gap-2">{companyInfo.phone} <Phone className="w-3 h-3" /></p>}
@@ -150,10 +162,10 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                 </div>
 
                 {/* 3. Tablo */}
-                <div className="px-10 flex-1">
+                <div className="px-10 flex-1 print:px-8">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-slate-50 print:bg-slate-100 border-y border-slate-200 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                            <tr className="bg-slate-50 print:bg-slate-100 border-y border-slate-200 text-xs font-bold text-slate-700 uppercase tracking-wider print:text-black">
                                 <th className="py-3 px-4 w-12 text-center">#</th>
                                 <th className="py-3 px-4">Hizmet / Ürün Açıklaması</th>
                                 <th className="py-3 px-4 text-center">Adet</th>
@@ -163,12 +175,12 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                         </thead>
                         <tbody className="text-sm text-slate-600">
                             {proposal.items.map((item: any, index: number) => (
-                                <tr key={index} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
-                                    <td className="py-4 px-4 text-center font-medium text-slate-400">{index + 1}</td>
-                                    <td className="py-4 px-4"><p className="font-bold text-slate-800">{item.description}</p></td>
-                                    <td className="py-4 px-4 text-center">{item.quantity}</td>
-                                    <td className="py-4 px-4 text-right">{Number(item.unitPrice).toLocaleString()} ₺</td>
-                                    <td className="py-4 px-4 text-right font-bold text-slate-900">{(item.quantity * item.unitPrice).toLocaleString()} ₺</td>
+                                <tr key={index} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 print:border-slate-200">
+                                    <td className="py-4 px-4 text-center font-medium text-slate-400 print:text-black">{index + 1}</td>
+                                    <td className="py-4 px-4"><p className="font-bold text-slate-800 print:text-black">{item.description}</p></td>
+                                    <td className="py-4 px-4 text-center print:text-black">{item.quantity}</td>
+                                    <td className="py-4 px-4 text-right print:text-black">{Number(item.unitPrice).toLocaleString()} ₺</td>
+                                    <td className="py-4 px-4 text-right font-bold text-slate-900 print:text-black">{(item.quantity * item.unitPrice).toLocaleString()} ₺</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -176,17 +188,17 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                 </div>
 
                 {/* 4. Toplamlar */}
-                <div className="p-10 flex justify-end">
+                <div className="p-10 flex justify-end print:p-8">
                     <div className="w-72 space-y-3 bg-slate-50 p-6 rounded-xl print:bg-transparent print:p-0">
-                        <div className="flex justify-between text-sm text-slate-600">
+                        <div className="flex justify-between text-sm text-slate-600 print:text-black">
                             <span>Ara Toplam</span>
                             <span className="font-medium">{proposal.subtotal?.toLocaleString()} ₺</span>
                         </div>
-                        <div className="flex justify-between text-sm text-slate-600">
+                        <div className="flex justify-between text-sm text-slate-600 print:text-black">
                             <span>KDV (%{proposal.taxRate || 0})</span>
                             <span className="font-medium">{proposal.taxAmount?.toLocaleString()} ₺</span>
                         </div>
-                        <div className="flex justify-between text-xl font-black text-slate-900 pt-4 border-t-2 border-slate-900 items-end">
+                        <div className="flex justify-between text-xl font-black text-slate-900 pt-4 border-t-2 border-slate-900 items-end print:text-black">
                             <span className="text-sm uppercase tracking-wider">GENEL TOPLAM</span>
                             <span className="text-blue-700 print:text-black">{proposal.total?.toLocaleString()} ₺</span>
                         </div>
@@ -194,14 +206,13 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                 </div>
 
                 {/* 5. Alt Notlar */}
-                <div className="p-10 mt-auto border-t border-slate-100 bg-slate-50/30 print:bg-white">
+                <div className="p-10 mt-auto border-t border-slate-100 bg-slate-50/30 print:bg-white print:p-8">
                     <div className="grid grid-cols-2 gap-12 items-end">
                         <div>
-                            <h4 className="font-bold text-[10px] text-slate-400 uppercase mb-2">NOTLAR & ŞARTLAR</h4>
-                            <div className="text-xs text-slate-500 leading-relaxed bg-white p-3 rounded-lg border border-slate-100 print:border-none print:p-0">
+                            <h4 className="font-bold text-[10px] text-slate-400 uppercase mb-2 print:text-black">NOTLAR & ŞARTLAR</h4>
+                            <div className="text-xs text-slate-500 leading-relaxed bg-white p-3 rounded-lg border border-slate-100 print:border-none print:p-0 print:text-black">
                                 <ul className="list-disc list-inside space-y-1">
                                     <li>Bu teklif belirtilen tarihe kadar geçerlidir.</li>
-                                    {/* DÜZELTİLDİ: KDV Oranına göre dinamik not */}
                                     <li>{kdvNote}</li>
                                     <li>Ödeme, iş tesliminde nakit veya havale ile yapılacaktır.</li>
                                 </ul>
@@ -209,11 +220,11 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                         </div>
                         <div className="text-center">
                             <div className="h-20 mb-2 border-b border-slate-300 w-40 mx-auto"></div>
-                            <p className="text-xs font-bold text-slate-900 uppercase">Kaşe / İmza</p>
+                            <p className="text-xs font-bold text-slate-900 uppercase print:text-black">Kaşe / İmza</p>
                         </div>
                     </div>
 
-                    <div className="mt-8 flex justify-between items-center text-[10px] text-slate-400 font-medium">
+                    <div className="mt-8 flex justify-between items-center text-[10px] text-slate-400 font-medium print:text-black">
                         <p>servis360.com ile oluşturuldu</p>
                         <p>Sayfa 1 / 1</p>
                     </div>
