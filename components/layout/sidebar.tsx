@@ -24,7 +24,7 @@ import {
     MessageSquare,
     LifeBuoy,
     CalendarClock,
-    Contact, // <-- EKSİK OLAN BU İKONDUR, EKLENDİ.
+    Contact,
     X
 } from 'lucide-react';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
@@ -83,6 +83,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard, href: '/dashboard' }
         ];
 
+        // --- BİREYSEL KULLANICI ---
         if (type === 'individual') {
             items.push(
                 { id: 'finance', label: 'Gelir / Gider', icon: Wallet, href: '/dashboard/finance' },
@@ -91,26 +92,53 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 { id: 'communication', label: 'Notlarım', icon: MessageSquare, href: '/dashboard/communication' }
             );
         }
+        // --- KURUMSAL / ESNAF ---
         else {
-            // Sektöre göre isimlendirme
+            // Sektöre göre dinamik isimlendirme
             let jobsLabel = 'İş Emirleri';
             let jobsIcon = Wrench;
+            let stockLabel = 'Stok Takibi';
+            let stockIcon = Package;
+            let customerLabel = 'Müşteriler';
+            let customerIcon = Users;
 
-            if (sector === 'retail_wholesale') { jobsLabel = 'Siparişler'; jobsIcon = ShoppingBag; }
-            else if (sector === 'beauty_health') { jobsLabel = 'Seanslar'; jobsIcon = Scissors; }
-            else if (sector === 'auto_rental') { jobsLabel = 'Araç / Servis'; jobsIcon = Car; }
+            if (sector === 'retail_wholesale') {
+                jobsLabel = 'Siparişler';
+                jobsIcon = ShoppingBag;
+                stockLabel = 'Ürünler';
+                stockIcon = Tag;
+            } else if (sector === 'beauty_health') {
+                jobsLabel = 'Randevular';
+                jobsIcon = Scissors;
+                stockLabel = 'Hizmet & Ürün';
+                stockIcon = Package;
+                customerLabel = 'Danışanlar';
+            } else if (sector === 'auto_rental') {
+                jobsLabel = 'Araç / Servis';
+                jobsIcon = Car;
+            } else if (sector === 'other') {
+                jobsLabel = 'İşlemler';
+                jobsIcon = Briefcase;
+            }
 
+            // MENÜ SIRALAMASI (Eksikler Giderildi)
             items.push(
                 { id: 'jobs', label: jobsLabel, icon: jobsIcon, href: '/dashboard/jobs' },
-                { id: 'appointments', label: 'Randevular', icon: CalendarClock, href: '/dashboard/appointments' },
+                { id: 'appointments', label: 'Randevular', icon: CalendarClock, href: '/dashboard/appointments' }, // YENİ
                 { id: 'proposals', label: 'Teklif Hazırla', icon: FileText, href: '/dashboard/proposals' },
-                { id: 'stock', label: 'Stok & Ürün', icon: Package, href: '/dashboard/stock' },
-                { id: 'customers', label: 'Müşteriler', icon: Users, href: '/dashboard/customers' },
+                { id: 'stock', label: stockLabel, icon: stockIcon, href: '/dashboard/stock' }, // DİNAMİK ESKİ HALİNE GELDİ
+                { id: 'staff', label: 'Personel', icon: UserCog, href: '/dashboard/staff' }, // GERİ GELDİ
+                { id: 'branches', label: 'Şubeler', icon: Store, href: '/dashboard/branches' }, // GERİ GELDİ
                 { id: 'finance', label: 'Finans & Kasa', icon: Wallet, href: '/dashboard/finance' },
+                { id: 'customers', label: customerLabel, icon: customerIcon, href: '/dashboard/customers' },
+                { id: 'communication', label: 'Haberleşme', icon: MessageSquare, href: '/dashboard/communication' }, // GERİ GELDİ
+                { id: 'subscription', label: 'Abonelik & Paket', icon: CreditCard, href: '/dashboard/subscription' } // GERİ GELDİ
             );
         }
 
+        // Sabit Alt Menüler
         items.push(
+            { id: 'support', label: 'Destek & Yardım', icon: LifeBuoy, href: '/dashboard/support' }, // GERİ GELDİ
             { id: 'settings', label: 'Ayarlar', icon: Settings, href: '/dashboard/settings' }
         );
 
@@ -124,6 +152,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             ${isOpen ? 'translate-x-0' : '-translate-x-full'} 
             lg:translate-x-0
         `}>
+            {/* Logo ve Başlık */}
             <div className="p-6 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/50">
@@ -138,7 +167,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 )}
             </div>
 
-            <nav className="flex-1 px-4 space-y-2 py-6 overflow-y-auto">
+            {/* Menü Linkleri */}
+            <nav className="flex-1 px-4 space-y-2 py-6 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700">
                 {loading ? (
                     <div className="text-center text-slate-600 text-xs py-4">Menü Yükleniyor...</div>
                 ) : (
@@ -156,8 +186,22 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                         </Link>
                     ))
                 )}
+
+                {isAdmin && (
+                    <Link
+                        href="/dashboard/admin"
+                        className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 group font-medium text-sm ${pathname === '/dashboard/admin'
+                            ? "bg-red-600 text-white shadow-lg shadow-red-900/40 translate-x-1"
+                            : "text-red-400 hover:bg-red-900/20 hover:text-red-300 hover:translate-x-1"
+                            }`}
+                    >
+                        <ShieldAlert className="w-5 h-5" />
+                        <span>Admin Paneli</span>
+                    </Link>
+                )}
             </nav>
 
+            {/* Çıkış Butonu */}
             <div className="p-4 border-t border-slate-800">
                 <button
                     onClick={() => signOut(auth)}
