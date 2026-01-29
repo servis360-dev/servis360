@@ -3,8 +3,9 @@
 const config: Config = {
     content: [
         "./pages/**/*.{js,ts,jsx,tsx,mdx}",
-        "./components/**/*.{js,ts,jsx,tsx,mdx}", // Burası çok önemli, menüyü boyar
-        "./app/**/*.{js,ts,jsx,tsx,mdx}",        // Burası sayfaları boyar
+        "./components/**/*.{js,ts,jsx,tsx,mdx}",
+        "./app/**/*.{js,ts,jsx,tsx,mdx}", // <-- EN ÖNEMLİSİ BU, BUNU GÖRMÜYORDU
+        "./src/**/*.{js,ts,jsx,tsx,mdx}",
     ],
     theme: {
         extend: {
@@ -16,6 +17,5 @@ const config: Config = {
         },
     },
     plugins: [],
-    darkMode: 'media', // Bilgisayarın temasına göre otomatik koyu/açık mod
 };
 export default config;
