@@ -104,7 +104,7 @@ const MENU_ITEMS = [
         ]
     },
 
-    // --- FİNANS (SADECE PATRONLAR) ---
+    // --- FİNANS (GÜNCELLENDİ: BİREYSEL KULLANICIYA AÇILDI) ---
     {
         title: 'Finans',
         items: [
@@ -112,22 +112,22 @@ const MENU_ITEMS = [
                 label: 'Gelir/Gider',
                 href: '/dashboard/finance',
                 icon: Wallet,
-                allowedRoles: ['super_admin', 'admin', 'tradesman']
+                // 👇 'individual' eklendi: Artık bireysel kullanıcı da bütçesini yönetebilir.
+                allowedRoles: ['super_admin', 'admin', 'tradesman', 'individual']
             },
             {
                 label: 'Teklifler',
                 href: '/dashboard/proposals',
                 icon: FileText,
+                // Teklif verme işi genelde ticaret erbabınındır, bireyseli buraya almadım.
                 allowedRoles: ['super_admin', 'admin', 'tradesman']
             },
-            // 👇 YENİ EKLENEN KISIM: ABONELİK PAKETLERİ
-            // Sadece 'admin' (Firma Sahibi) ve 'tradesman' (Esnaf) görür.
-            // Personel (staff) görmez.
             {
                 label: 'Abonelik Paketleri',
                 href: '/subscription',
                 icon: CreditCard,
-                allowedRoles: ['admin', 'tradesman']
+                // 👇 'individual' eklendi: Bireysel kullanıcı da paket satın alabilsin.
+                allowedRoles: ['super_admin', 'admin', 'tradesman', 'individual']
             },
         ]
     },
