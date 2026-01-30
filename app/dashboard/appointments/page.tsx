@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -14,8 +14,21 @@ import {
     Trash2,
     CheckCircle2,
     X,
-    CalendarClock
+    CalendarClock,
+    Globe
 } from 'lucide-react';
+
+// Yaygın Alan Kodları Listesi
+const COUNTRY_CODES = [
+    { code: '+90', country: 'TR', label: 'Türkiye (+90)' },
+    { code: '+49', country: 'DE', label: 'Almanya (+49)' },
+    { code: '+31', country: 'NL', label: 'Hollanda (+31)' },
+    { code: '+33', country: 'FR', label: 'Fransa (+33)' },
+    { code: '+44', country: 'UK', label: 'İngiltere (+44)' },
+    { code: '+1', country: 'US', label: 'ABD (+1)' },
+    { code: '+994', country: 'AZ', label: 'Azerbaycan (+994)' },
+    // İhtiyaca göre burası artırılabilir
+];
 
 export default function AppointmentsPage() {
     const [appointments, setAppointments] = useState<any[]>([]);
@@ -23,16 +36,17 @@ export default function AppointmentsPage() {
     const [user, setUser] = useState<any>(null);
     const [showModal, setShowModal] = useState(false);
 
-    // Ayarlardan gelen şablon ve süre
+    // Ayarlar
     const [settings, setSettings] = useState({
         duration: '60',
         template: 'Sayın müşterimiz, yarın saat {saat} için randevunuz bulunmaktadır. Bekliyoruz.'
     });
 
-    // Yeni Randevu Formu
+    // Form Verileri (Ülke Kodu Eklendi)
+    const [countryCode, setCountryCode] = useState('+90');
     const [formData, setFormData] = useState({
         customerName: '',
-        customerPhone: '',
+        phoneNumberBody: '', // Sadece numara kısmı (5XX...)
         date: '',
         time: '',
         note: ''
@@ -43,7 +57,7 @@ export default function AppointmentsPage() {
             if (currentUser) {
                 setUser(currentUser);
 
-                // 1. Ayarları Çek (WhatsApp Şablonu ve Süre için)
+                // 1. Profil ve Şablon Çek
                 const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                 getDoc(profileRef).then((snap) => {
                     if (snap.exists()) {
@@ -55,22 +69,28 @@ export default function AppointmentsPage() {
                     }
                 });
 
-                // 2. Randevuları Dinle
+                // 2. Randevuları Çek (DÜZELTME: orderBy kaldırıldı, JS ile sıralanacak)
+                // Bu sayede "Index" hatası almadan veriler anında gelir.
                 const q = query(
-                    collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'appointments'),
-                    orderBy('date', 'asc'), // En yakın tarih en üstte
-                    orderBy('time', 'asc')
+                    collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'appointments')
                 );
 
                 const unsubSnap = onSnapshot(q, (snapshot) => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-                    // Geçmiş randevuları otomatik temizle veya filtrele istersen buraya ekleriz
-                    // Şimdilik hepsini gösteriyoruz ama süresi geçenleri soluk yapacağız.
+                    // JS tarafında Tarih ve Saate göre sıralama
+                    data.sort((a: any, b: any) => {
+                        const dateA = new Date(`${a.date}T${a.time}`);
+                        const dateB = new Date(`${b.date}T${b.time}`);
+                        return dateA.getTime() - dateB.getTime();
+                    });
+
                     setAppointments(data);
                     setLoading(false);
                 });
                 return () => unsubSnap();
+            } else {
+                setLoading(false); // Kullanıcı yoksa da loading'i kapat
             }
         });
         return () => unsubscribe();
@@ -80,14 +100,23 @@ export default function AppointmentsPage() {
         e.preventDefault();
         if (!user) return;
 
+        // Telefonu birleştir (+90 555...)
+        const fullPhone = `${countryCode} ${formData.phoneNumberBody}`;
+
         try {
             await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'appointments'), {
-                ...formData,
-                status: 'pending', // pending, completed, cancelled
+                customerName: formData.customerName,
+                customerPhone: fullPhone, // Birleşmiş numara kaydedilir
+                date: formData.date,
+                time: formData.time,
+                note: formData.note,
+                status: 'pending',
                 createdAt: serverTimestamp()
             });
             setShowModal(false);
-            setFormData({ customerName: '', customerPhone: '', date: '', time: '', note: '' });
+            // Formu temizle
+            setFormData({ customerName: '', phoneNumberBody: '', date: '', time: '', note: '' });
+            setCountryCode('+90');
         } catch (error) {
             console.error(error);
             alert("Randevu oluşturulamadı.");
@@ -106,29 +135,25 @@ export default function AppointmentsPage() {
         });
     };
 
-    // WHATSAPP ENTEGRASYONU BURADA
+    // WHATSAPP ENTEGRASYONU (Alan kodu uyumlu)
     const sendReminder = (apt: any) => {
         if (!apt.customerPhone) {
             alert("Müşteri telefonu kayıtlı değil!");
             return;
         }
 
-        // 1. Şablondaki {saat} ve {tarih} değişkenlerini değiştir
         let message = settings.template
             .replace('{saat}', apt.time)
             .replace('{tarih}', new Date(apt.date).toLocaleDateString('tr-TR'));
 
-        // 2. Telefon numarasını temizle (başında 0 varsa sil, boşlukları sil)
-        let phone = apt.customerPhone.replace(/\D/g, ''); // Sadece rakamları al
-        if (phone.startsWith('0')) phone = phone.substring(1);
-        if (!phone.startsWith('90')) phone = '90' + phone; // TR kodu ekle
+        // Numara temizleme (+90 555 -> 90555)
+        // Artık başında ülke kodu olduğu için sadece boşlukları ve +'yı siliyoruz.
+        let phone = apt.customerPhone.replace(/[^0-9]/g, '');
 
-        // 3. Linki oluştur ve aç
         const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
         window.open(url, '_blank');
     };
 
-    // Bugünün tarihi mi kontrolü
     const isToday = (dateString: string) => {
         const today = new Date().toISOString().split('T')[0];
         return dateString === today;
@@ -150,10 +175,13 @@ export default function AppointmentsPage() {
                 </button>
             </div>
 
-            {/* Randevu Listesi */}
+            {/* Liste */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {loading ? (
-                    <div className="col-span-full text-center py-10 text-slate-500">Yükleniyor...</div>
+                    <div className="col-span-full text-center py-10 text-slate-500">
+                        <span className="inline-block w-6 h-6 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin mr-2"></span>
+                        Yükleniyor...
+                    </div>
                 ) : appointments.length === 0 ? (
                     <div className="col-span-full text-center py-16 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 border-dashed">
                         <CalendarClock className="w-12 h-12 text-slate-300 mx-auto mb-3" />
@@ -175,7 +203,6 @@ export default function AppointmentsPage() {
                                     ${isPast ? 'opacity-60 grayscale-[0.5]' : ''}
                                 `}
                             >
-                                {/* Tarih Rozeti */}
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
                                         <CalendarIcon className="w-4 h-4 text-blue-500" />
@@ -189,13 +216,12 @@ export default function AppointmentsPage() {
                                     </div>
                                 </div>
 
-                                {/* Müşteri Bilgisi */}
                                 <div className="mb-4">
                                     <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
                                         {apt.customerName}
                                     </h3>
                                     {apt.customerPhone && (
-                                        <p className="text-sm text-slate-500 flex items-center gap-2 mt-1">
+                                        <p className="text-sm text-slate-500 flex items-center gap-2 mt-1 font-mono">
                                             <Phone className="w-3 h-3" /> {apt.customerPhone}
                                         </p>
                                     )}
@@ -206,10 +232,7 @@ export default function AppointmentsPage() {
                                     )}
                                 </div>
 
-                                {/* Aksiyon Butonları */}
                                 <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700">
-
-                                    {/* WhatsApp Butonu */}
                                     <button
                                         onClick={() => sendReminder(apt)}
                                         className="flex items-center gap-2 text-green-600 hover:text-green-700 font-bold text-xs bg-green-50 hover:bg-green-100 px-3 py-2 rounded-lg transition-colors"
@@ -243,7 +266,7 @@ export default function AppointmentsPage() {
                 )}
             </div>
 
-            {/* Yeni Randevu Modalı */}
+            {/* YENİ RANDEVU MODALI (GÜNCELLENDİ: ALAN KODU İLE) */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-200 dark:border-slate-700">
@@ -263,11 +286,32 @@ export default function AppointmentsPage() {
                                 </div>
                             </div>
 
+                            {/* ÜLKE KODU VE TELEFON (GÜNCELLENDİ) */}
                             <div>
-                                <label className="block text-sm font-medium mb-1">Telefon (WhatsApp İçin)</label>
-                                <div className="relative">
-                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                    <input type="tel" className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder="5XX..." value={formData.customerPhone} onChange={e => setFormData({ ...formData, customerPhone: e.target.value })} />
+                                <label className="block text-sm font-medium mb-1">Telefon</label>
+                                <div className="flex gap-2">
+                                    <div className="relative w-1/3">
+                                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <select
+                                            className="w-full pl-9 pr-2 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none text-sm appearance-none cursor-pointer"
+                                            value={countryCode}
+                                            onChange={(e) => setCountryCode(e.target.value)}
+                                        >
+                                            {COUNTRY_CODES.map(c => (
+                                                <option key={c.code} value={c.code}>{c.code}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="relative flex-1">
+                                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <input
+                                            type="tel"
+                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none"
+                                            placeholder="5XX..."
+                                            value={formData.phoneNumberBody}
+                                            onChange={e => setFormData({ ...formData, phoneNumberBody: e.target.value })}
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
