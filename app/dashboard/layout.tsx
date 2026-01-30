@@ -6,11 +6,11 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
-// 👇 DÜZELTME: Süslü parantez içinde (Named Import) ve doğru yoldan çekiyoruz.
 import { Sidebar } from '../../components/layout/sidebar';
 import { Header } from '../../components/layout/header';
 
-import { Loader2, LockKeyhole } from 'lucide-react';
+// 👇 DÜZELTME: "CreditCard" buraya eklendi
+import { Loader2, LockKeyhole, CreditCard } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<any>(null);
@@ -25,12 +25,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 router.push('/login');
             } else {
                 setUser(currentUser);
-                // Profil Dinleme
                 const unsubProfile = onSnapshot(doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile'), (docSnap) => {
                     if (docSnap.exists()) {
                         setProfile(docSnap.data());
                     } else {
-                        // Profil yoksa
                         router.push('/subscription');
                     }
                     setLoading(false);
@@ -42,17 +40,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return () => unsubscribeAuth();
     }, [router]);
 
-    // --- GÜMRÜK KAPISI (LİSANS KONTROLÜ) ---
+    // --- LİSANS KONTROLÜ ---
     useEffect(() => {
         if (!loading && profile) {
 
-            // 1. EKSİK BİLGİ KONTROLÜ (Settings ve Admin hariç)
+            // 1. EKSİK BİLGİ KONTROLÜ
             const isInfoMissing = !profile.phone || !profile.accountType;
             if (profile.role !== 'admin' && isInfoMissing && pathname !== '/settings') {
-                // router.push('/settings'); // Burayı settings sayfası hazır olunca aç
+                // router.push('/settings'); 
             }
 
-            // 2. LİSANS SÜRESİ KONTROLÜ
+            // 2. SÜRE KONTROLÜ
             const now = new Date();
             const licenseDate = profile.licenseEndsAt ? profile.licenseEndsAt.toDate() : null;
             const isLicenseExpired = !licenseDate || licenseDate < now;
@@ -73,20 +71,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         );
     }
 
-    // Lisans Geçerli mi? (Admin her zaman geçerli)
     const isLicenseValid = profile?.role === 'admin' || (profile?.licenseEndsAt && profile.licenseEndsAt.toDate() > new Date());
 
     return (
         <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-            {/* Yan Menü (Lisans varsa göster) */}
             {isLicenseValid && <Sidebar userRole={profile?.role} />}
 
             <div className={`flex-1 flex flex-col transition-all duration-300 ${isLicenseValid ? 'ml-0 md:ml-64' : 'w-full'}`}>
-                {/* Üst Header (Lisans varsa göster) */}
                 {isLicenseValid && <Header user={profile} />}
 
                 <main className="flex-1 p-4 md:p-6 overflow-y-auto">
-                    {/* LİSANS UYARISI EKRANI */}
                     {!isLicenseValid && pathname !== '/subscription' ? (
                         <div className="flex flex-col items-center justify-center h-full text-center space-y-4 animate-in fade-in zoom-in duration-500 min-h-[80vh]">
                             <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center border-4 border-red-50 dark:border-red-900/50 mb-4">
