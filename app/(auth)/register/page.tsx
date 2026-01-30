@@ -89,6 +89,7 @@ export default function RegisterPage() {
             fullName: profileData.fullName,
             companyName: profileData.companyName,
             email: profileData.email,
+            phone: fullPhone,
             accountType: accountType,
             status: 'active',
             createdAt: serverTimestamp()

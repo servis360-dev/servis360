@@ -13,7 +13,9 @@ import {
     Timestamp,
     getDoc,
     serverTimestamp,
-    setDoc
+    setDoc,
+    where,
+    getDocs // <-- EKLENDİ
 } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import {
@@ -32,26 +34,42 @@ import {
     Calendar,
     Megaphone,
     Download,
-    AlertTriangle,
     CreditCard,
     Save,
-    Banknote
+    Banknote,
+    Phone,
+    CheckCircle2,
+    XCircle,
+    BellRing,
+    Loader2,
+    FileText,
+    Users, // <-- EKLENDİ
+    Briefcase, // <-- EKLENDİ
+    Mail // <-- EKLENDİ
 } from 'lucide-react';
 import RoleGuard from '../../../components/auth/role-guard';
 
 export default function AdminPage() {
+    // --- STATE YÖNETİMİ ---
     const [users, setUsers] = useState<any[]>([]);
+    const [requests, setRequests] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0, mrr: 0, systemLoad: '0%' });
+    const [stats, setStats] = useState({ totalUsers: 0, activeUsers: 0, revenue: 0, systemLoad: '0%' });
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [logs, setLogs] = useState<string[]>([]);
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
-    // Sistem Ayarları State'i (IBAN Alıcı Adı Eklendi)
+    // PERSONEL GÖRÜNTÜLEME STATE'LERİ (YENİ)
+    const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
+    const [companyStaff, setCompanyStaff] = useState<any[]>([]);
+    const [loadingStaff, setLoadingStaff] = useState(false);
+
+    // Sistem Ayarları
     const [systemSettings, setSystemSettings] = useState({
         iban: '',
         bankName: '',
-        accountHolder: '', // YENİ: Alıcı İsim Soyisim / Firma
+        accountHolder: '',
         monthlyPrice: '',
         sixMonthPrice: '',
         yearlyPrice: ''
@@ -60,438 +78,302 @@ export default function AdminPage() {
     const [broadcastMsg, setBroadcastMsg] = useState('');
     const [isBroadcasting, setIsBroadcasting] = useState(false);
 
+    // --- YARDIMCI FONKSİYONLAR ---
     const getRandomIP = () => `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 255)}`;
 
     const addLog = (message: string) => {
         const timestamp = new Date().toLocaleTimeString('tr-TR', { hour12: false });
-        setLogs(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 10));
+        setLogs(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 8));
     };
 
+    // --- VERİ ÇEKME ---
     useEffect(() => {
         const user = auth.currentUser;
         if (!user) return;
         setCurrentUser(user);
-        addLog("SYSTEM_INIT: Admin access granted.");
+        addLog("SYSTEM_INIT: Admin root access granted.");
 
-        // Kullanıcıları Getir
-        const q = query(
-            collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory'),
-            orderBy('createdAt', 'desc')
-        );
-
-        const unsub = onSnapshot(q, (snapshot) => {
-            let data = snapshot.docs.map(d => ({
+        const qUsers = query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory'), orderBy('createdAt', 'desc'));
+        const unsubUsers = onSnapshot(qUsers, (snapshot) => {
+            const data = snapshot.docs.map(d => ({
                 id: d.id,
                 ...d.data(),
                 ip: d.data().ip || getRandomIP(),
-                location: d.data().location || 'Istanbul, TR'
+                location: 'TR/Istanbul'
             }));
-
-            // Kendini en başa al
-            data = data.sort((a, b) => {
-                if (a.id === user.uid) return -1;
-                if (b.id === user.uid) return 1;
-                return 0;
-            });
-
             setUsers(data);
-
             const active = data.filter((u: any) => u.status === 'active').length;
-            setStats({
-                totalUsers: data.length,
-                activeUsers: active,
-                systemLoad: `${Math.floor(Math.random() * 30) + 10}%`,
-                mrr: 0,
-            });
-
+            setStats(prev => ({ ...prev, totalUsers: data.length, activeUsers: active, systemLoad: `${Math.floor(Math.random() * 30) + 10}%` }));
             setLoading(false);
-            addLog("DATA_SYNC: User list updated successfully.");
+            addLog("DATABASE: User registry synced.");
         });
 
-        // Sistem Ayarlarını Getir
-        const fetchSettings = async () => {
-            const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config');
-            const snap = await getDoc(docRef);
-            if (snap.exists()) {
-                setSystemSettings(snap.data() as any);
-            }
-        };
-        fetchSettings();
+        const qRequests = query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), where('status', '==', 'pending'), orderBy('createdAt', 'desc'));
+        const unsubRequests = onSnapshot(qRequests, (snapshot) => {
+            setRequests(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
 
-        return () => unsub();
+        getDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config')).then(snap => {
+            if (snap.exists()) setSystemSettings(snap.data() as any);
+        });
+
+        return () => { unsubUsers(); unsubRequests(); };
     }, []);
 
-    // Ayarları Kaydet
-    const saveSettings = async () => {
+    // --- PERSONEL ÇEKME FONKSİYONU (YENİ) ---
+    const toggleStaffView = async (userId: string) => {
+        if (expandedCompany === userId) {
+            setExpandedCompany(null);
+            setCompanyStaff([]);
+            return;
+        }
+
+        setExpandedCompany(userId);
+        setLoadingStaff(true);
+        addLog(`QUERY: Fetching staff list for ${userId.substring(0, 6)}...`);
+
         try {
-            addLog("CONFIG: Updating financial parameters...");
-            await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'), systemSettings);
-            addLog("SUCCESS: Financial configuration saved.");
-            alert("Finansal ayarlar ve IBAN güncellendi.");
+            const staffRef = collection(db, 'artifacts', 'servis-360-live', 'users', userId, 'staff');
+            const snapshot = await getDocs(staffRef);
+            const staffData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setCompanyStaff(staffData);
+            addLog(`SUCCESS: ${staffData.length} staff members found.`);
         } catch (error) {
             console.error(error);
-            addLog("ERROR: Config update failed.");
+            addLog("ERROR: Failed to fetch staff.");
+        } finally {
+            setLoadingStaff(false);
         }
+    };
+
+    // --- DİĞER FONKSİYONLAR (AYARLAR, ÖDEME, VS.) ---
+    const saveSettings = async () => {
+        await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'), systemSettings);
+        alert("Sistem ayarları güncellendi.");
     };
 
     const sendBroadcast = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!broadcastMsg.trim()) return;
-
         setIsBroadcasting(true);
-        addLog("PROTOCOL: Initiating global broadcast sequence...");
+        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'announcements'), {
+            message: broadcastMsg, type: 'system_alert', active: true, createdAt: serverTimestamp(), createdBy: currentUser.uid
+        });
+        setBroadcastMsg('');
+        setIsBroadcasting(false);
+        alert("Duyuru yayınlandı.");
+    };
 
-        try {
-            await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'announcements'), {
-                message: broadcastMsg,
-                type: 'system_alert',
-                active: true,
-                createdAt: serverTimestamp(),
-                createdBy: currentUser.uid
-            });
+    const approvePayment = async (req: any) => {
+        if (!confirm(`${req.userName} ödemesini onaylıyor musun?`)) return;
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests', req.id), { status: 'approved' });
+        let months = req.planName.includes('Yıllık') ? 12 : req.planName.includes('6 Aylık') ? 6 : 1;
+        await extendLicense(req.userId, months);
+        alert("Ödeme onaylandı.");
+    };
 
-            addLog(`BROADCAST_SENT: "${broadcastMsg}" to ALL nodes.`);
-            setBroadcastMsg('');
-            alert("Duyuru tüm kullanıcılara gönderildi.");
-        } catch (error) {
-            console.error(error);
-            addLog("ERROR: Broadcast transmission failed.");
-        } finally {
-            setIsBroadcasting(false);
+    const rejectPayment = async (id: string) => {
+        if (!confirm("Reddetmek istiyor musun?")) return;
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests', id), { status: 'rejected' });
+    };
+
+    const extendLicense = async (userId: string, months: number) => {
+        const userProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile');
+        const userProfileSnap = await getDoc(userProfileRef);
+        let currentEndDate = new Date();
+        if (userProfileSnap.exists() && userProfileSnap.data().licenseEndsAt) {
+            currentEndDate = userProfileSnap.data().licenseEndsAt.toDate();
+        }
+        const baseDate = currentEndDate < new Date() ? new Date() : currentEndDate;
+        const newEndDate = new Date(baseDate);
+        newEndDate.setMonth(newEndDate.getMonth() + months);
+        const timestamp = Timestamp.fromDate(newEndDate);
+
+        await updateDoc(userProfileRef, { licenseEndsAt: timestamp, status: 'active' });
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { licenseEndsAt: timestamp, status: 'active' });
+    };
+
+    const toggleStatus = async (userId: string, currentStatus: string) => {
+        if (userId === currentUser?.uid) return;
+        const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { status: newStatus });
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile'), { status: newStatus });
+    };
+
+    const deleteUser = async (userId: string) => {
+        if (userId === currentUser?.uid) return;
+        if (confirm("Kullanıcı silinecek. Emin misin?")) {
+            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId));
+            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile'));
         }
     };
 
     const exportDatabase = () => {
-        addLog("COMMAND: Exporting user database to local storage...");
         const jsonString = JSON.stringify(users, null, 2);
         const blob = new Blob([jsonString], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `SERVIS360_USER_DUMP_${new Date().toISOString().split('T')[0]}.json`;
+        link.download = `SERVIS360_DB.json`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        addLog("SUCCESS: Data extraction complete.");
     };
 
-    const extendLicense = async (userId: string, months: number) => {
-        try {
-            addLog(`COMMAND: Extending license for USER_${userId.substring(0, 5)}...`);
-            const userProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile');
-            const userProfileSnap = await getDoc(userProfileRef);
-
-            let currentEndDate = new Date();
-            if (userProfileSnap.exists() && userProfileSnap.data().licenseEndsAt) {
-                currentEndDate = userProfileSnap.data().licenseEndsAt.toDate();
-            }
-
-            const baseDate = currentEndDate < new Date() ? new Date() : currentEndDate;
-            const newEndDate = new Date(baseDate);
-            newEndDate.setMonth(newEndDate.getMonth() + months);
-            const timestamp = Timestamp.fromDate(newEndDate);
-
-            await updateDoc(userProfileRef, { licenseEndsAt: timestamp });
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), {
-                licenseEndsAt: timestamp
-            });
-
-            addLog(`SUCCESS: License extended by ${months} months.`);
-            setSelectedUser(null);
-            alert("Lisans süresi uzatıldı.");
-        } catch (error) {
-            console.error(error);
-            addLog(`ERROR: License extension failed.`);
-        }
-    };
-
-    const toggleStatus = async (userId: string, currentStatus: string) => {
-        if (userId === currentUser?.uid) {
-            alert("SİSTEM UYARISI: Root yetkisine sahip yönetici hesabı dondurulamaz.");
-            return;
-        }
-        const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
-        if (confirm(`Kullanıcı durumu ${newStatus === 'active' ? 'AKTİF' : 'PASİF'} olarak değiştirilsin mi?`)) {
-            addLog(`COMMAND: Changing status to ${newStatus.toUpperCase()}...`);
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { status: newStatus });
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile'), { status: newStatus });
-        }
-    };
-
-    const deleteUser = async (userId: string) => {
-        if (userId === currentUser?.uid) {
-            alert("KRİTİK HATA: Yönetici hesabı silinemez.");
-            return;
-        }
-        if (confirm("DİKKAT: Veriler kalıcı olarak silinecek. Onaylıyor musunuz?")) {
-            addLog(`COMMAND: PURGING USER_${userId.substring(0, 5)}...`);
-            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId));
-            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile'));
-            addLog("SUCCESS: User purged from database.");
-        }
-    };
+    const filteredUsers = users.filter(u =>
+        u.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.phone?.includes(searchTerm)
+    );
 
     return (
         <RoleGuard allowedRoles={['admin']}>
-            <div className="space-y-6 bg-slate-950 min-h-screen p-6 text-slate-300 font-mono text-sm">
+            <div className="space-y-6 bg-slate-950 min-h-screen p-6 text-slate-300 font-mono text-sm selection:bg-green-900 selection:text-white">
 
-                {/* HUD HEADER */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-slate-800 pb-6">
+                {/* HEADER */}
+                <div className="flex justify-between items-end border-b border-slate-800 pb-6">
                     <div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="animate-pulse w-3 h-3 bg-green-500 rounded-full"></span>
-                            <span className="text-green-500 text-xs tracking-widest font-bold">SYSTEM ONLINE</span>
-                        </div>
-                        <h1 className="text-3xl font-black text-white tracking-tighter flex items-center gap-3">
-                            <Terminal className="text-blue-500" /> ADMIN_CONSOLE_V3
-                        </h1>
-                        <p className="text-slate-500 text-xs mt-1">ROOT ACCESS GRANTED // ID: {currentUser?.uid}</p>
-                    </div>
-                    <div className="flex gap-4 text-xs font-bold font-mono">
-                        <div className="text-right">
-                            <span className="text-slate-500 block">SERVER TIME</span>
-                            <span className="text-blue-400">{new Date().toLocaleTimeString()}</span>
-                        </div>
-                        <div className="text-right">
-                            <span className="text-slate-500 block">LATENCY</span>
-                            <span className="text-green-400">18ms</span>
-                        </div>
+                        <div className="flex items-center gap-2 mb-2"><span className="animate-pulse w-3 h-3 bg-green-500 rounded-full"></span><span className="text-green-500 text-xs font-bold">ONLINE</span></div>
+                        <h1 className="text-3xl font-black text-white flex items-center gap-3"><Terminal className="text-blue-500" /> ADMIN_CONSOLE_V5</h1>
                     </div>
                 </div>
 
-                {/* INFO GRID */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-                    <div className="bg-slate-900/50 p-4 rounded-sm border-l-2 border-blue-500">
-                        <div className="flex justify-between items-start">
-                            <div><p className="text-xs text-blue-500 mb-1">TOTAL_NODES</p><h3 className="text-2xl font-bold text-white">{stats.totalUsers}</h3></div>
-                            <Server className="w-5 h-5 text-slate-700" />
+                {/* ÖDEME BİLDİRİMLERİ */}
+                {requests.length > 0 && (
+                    <div className="bg-slate-900 border border-yellow-600/50 rounded-sm p-5 animate-in fade-in">
+                        <h3 className="text-yellow-500 font-bold mb-4 flex items-center gap-2 text-lg"><BellRing className="w-5 h-5 animate-bounce" /> BEKLEYEN ÖDEMELER ({requests.length})</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {requests.map(req => (
+                                <div key={req.id} className="bg-black border border-slate-700 p-4 rounded-sm flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex justify-between items-start mb-2"><h4 className="font-bold text-white">{req.userName}</h4><span className="text-xs bg-yellow-900 text-yellow-500 px-2 py-1 rounded">{req.amount} ₺</span></div>
+                                        <p className="text-xs text-slate-500 mb-1">{req.companyName} | {req.userPhone}</p>
+                                        <p className="text-xs text-blue-400 mb-3">{req.planName} (REF: {req.refCode})</p>
+                                    </div>
+                                    <div className="flex gap-2"><button onClick={() => approvePayment(req)} className="flex-1 bg-green-900/30 text-green-500 border border-green-900 py-1 rounded text-xs font-bold">ONAYLA</button><button onClick={() => rejectPayment(req.id)} className="flex-1 bg-red-900/30 text-red-500 border border-red-900 py-1 rounded text-xs font-bold">REDDET</button></div>
+                                </div>
+                            ))}
                         </div>
                     </div>
-                    <div className="bg-slate-900/50 p-4 rounded-sm border-l-2 border-green-500">
-                        <div className="flex justify-between items-start">
-                            <div><p className="text-xs text-green-500 mb-1">ACTIVE_LICENSES</p><h3 className="text-2xl font-bold text-white">{stats.activeUsers}</h3></div>
-                            <ShieldAlert className="w-5 h-5 text-slate-700" />
-                        </div>
-                    </div>
-                    <div className="bg-slate-900/50 p-4 rounded-sm border-l-2 border-purple-500">
-                        <div className="flex justify-between items-start">
-                            <div><p className="text-xs text-purple-500 mb-1">CPU_LOAD</p><h3 className="text-2xl font-bold text-white">{stats.systemLoad}</h3></div>
-                            <Cpu className="w-5 h-5 text-slate-700" />
-                        </div>
-                    </div>
-                    <div className="lg:col-span-1 bg-black p-3 rounded-sm border border-slate-800 font-mono text-xs overflow-hidden h-24 lg:h-auto flex flex-col justify-end">
-                        {logs.map((log, i) => (<p key={i} className="text-green-500/80 truncate"><span className="mr-2 opacity-50">{'>'}</span>{log}</p>))}
-                    </div>
-                </div>
+                )}
 
-                {/* SYSTEM CONFIGURATION PANEL */}
+                {/* FİNANSAL AYARLAR */}
                 <div className="bg-slate-900 border border-slate-800 p-4 rounded-sm">
-                    <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
-                        <CreditCard className="w-4 h-4 text-yellow-500" /> FINANCIAL CONFIGURATION (PRICING & BANK)
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                        {/* Fiyatlar */}
-                        <div>
-                            <label className="text-[10px] text-slate-500 block mb-1">1 MONTH PRICE</label>
-                            <input
-                                value={systemSettings.monthlyPrice}
-                                onChange={(e) => setSystemSettings({ ...systemSettings, monthlyPrice: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none"
-                                placeholder="499"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-[10px] text-slate-500 block mb-1">6 MONTH PRICE</label>
-                            <input
-                                value={systemSettings.sixMonthPrice}
-                                onChange={(e) => setSystemSettings({ ...systemSettings, sixMonthPrice: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none"
-                                placeholder="2750"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-[10px] text-slate-500 block mb-1">1 YEAR PRICE</label>
-                            <input
-                                value={systemSettings.yearlyPrice}
-                                onChange={(e) => setSystemSettings({ ...systemSettings, yearlyPrice: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none"
-                                placeholder="4990"
-                            />
-                        </div>
-                        {/* Kaydet Butonu - Sağ Üstte Dursun */}
-                        <div className="flex items-end">
-                            <button
-                                onClick={saveSettings}
-                                className="w-full bg-slate-800 hover:bg-yellow-900/30 text-yellow-500 border border-slate-700 hover:border-yellow-500 px-2 py-2 text-xs font-bold transition-all flex items-center justify-center gap-2"
-                            >
-                                <Save className="w-4 h-4" /> SAVE CONFIG
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="border-t border-slate-800 pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {/* Banka Bilgileri */}
-                        <div>
-                            <label className="text-[10px] text-slate-500 block mb-1">BANK NAME</label>
-                            <div className="relative">
-                                <Banknote className="absolute left-2 top-2 w-3 h-3 text-slate-600" />
-                                <input
-                                    value={systemSettings.bankName}
-                                    onChange={(e) => setSystemSettings({ ...systemSettings, bankName: e.target.value })}
-                                    className="w-full bg-black border border-slate-700 text-white pl-7 pr-2 py-2 text-xs focus:border-yellow-500 outline-none"
-                                    placeholder="Ziraat Bankası"
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-[10px] text-slate-500 block mb-1">IBAN ADDRESS</label>
-                            <input
-                                value={systemSettings.iban}
-                                onChange={(e) => setSystemSettings({ ...systemSettings, iban: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none font-mono"
-                                placeholder="TR00 0000..."
-                            />
-                        </div>
-                        <div>
-                            <label className="text-[10px] text-slate-500 block mb-1">ACCOUNT HOLDER (ALICI)</label>
-                            <input
-                                value={systemSettings.accountHolder}
-                                onChange={(e) => setSystemSettings({ ...systemSettings, accountHolder: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none"
-                                placeholder="Şirket Adı veya Şahıs Adı"
-                            />
-                        </div>
+                    <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2"><CreditCard className="w-4 h-4 text-yellow-500" /> SYSTEM CONFIG</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <input value={systemSettings.monthlyPrice} onChange={(e) => setSystemSettings({ ...systemSettings, monthlyPrice: e.target.value })} className="bg-black border border-slate-700 text-white px-2 py-2 text-xs outline-none focus:border-yellow-500" placeholder="Aylık" />
+                        <input value={systemSettings.yearlyPrice} onChange={(e) => setSystemSettings({ ...systemSettings, yearlyPrice: e.target.value })} className="bg-black border border-slate-700 text-white px-2 py-2 text-xs outline-none focus:border-yellow-500" placeholder="Yıllık" />
+                        <input value={systemSettings.iban} onChange={(e) => setSystemSettings({ ...systemSettings, iban: e.target.value })} className="bg-black border border-slate-700 text-white px-2 py-2 text-xs outline-none focus:border-yellow-500" placeholder="IBAN" />
+                        <button onClick={saveSettings} className="bg-slate-800 hover:bg-yellow-900/30 text-yellow-500 border border-slate-700 px-2 py-2 text-xs font-bold flex items-center justify-center gap-2"><Save className="w-4 h-4" /> SAVE</button>
                     </div>
                 </div>
 
-                {/* BROADCAST & DATA OPS */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-sm">
-                        <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
-                            <Megaphone className="w-4 h-4 text-orange-500" /> GLOBAL BROADCAST SYSTEM
-                        </h3>
-                        <form onSubmit={sendBroadcast} className="flex gap-2">
-                            <input
-                                type="text"
-                                value={broadcastMsg}
-                                onChange={(e) => setBroadcastMsg(e.target.value)}
-                                placeholder="Enter system announcement..."
-                                className="flex-1 bg-black border border-slate-700 text-white px-3 py-2 text-xs focus:border-orange-500 outline-none transition-colors"
-                            />
-                            <button
-                                disabled={isBroadcasting}
-                                className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 text-xs font-bold uppercase tracking-wide flex items-center gap-1 disabled:opacity-50"
-                            >
-                                {isBroadcasting ? 'SENDING...' : 'TRANSMIT'}
-                            </button>
-                        </form>
-                    </div>
-
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-sm flex items-center justify-between">
-                        <div>
-                            <h3 className="text-xs font-bold text-white mb-1 flex items-center gap-2">
-                                <Database className="w-4 h-4 text-blue-500" /> DATA EXTRACTION
-                            </h3>
-                            <p className="text-[10px] text-slate-500">Download full user registry JSON dump.</p>
-                        </div>
-                        <button
-                            onClick={exportDatabase}
-                            className="bg-slate-800 border border-slate-700 hover:border-blue-500 text-blue-400 px-4 py-3 text-xs font-bold flex items-center gap-2 transition-all"
-                        >
-                            <Download className="w-4 h-4" /> EXPORT .JSON
-                        </button>
-                    </div>
-                </div>
-
-                {/* USER DATABASE TABLE */}
+                {/* KULLANICI VE PERSONEL LİSTESİ */}
                 <div className="bg-slate-900 border border-slate-800 rounded-sm overflow-hidden">
                     <div className="p-3 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
-                        <h3 className="font-bold text-white flex items-center gap-2 text-sm">
-                            <Database className="w-4 h-4 text-slate-500" /> USER_DATABASE
-                        </h3>
-                        <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-1 rounded-sm">
-                            <Search className="w-3 h-3 text-slate-400" />
-                            <input placeholder="Search query..." className="bg-transparent border-none text-xs text-white outline-none w-40 placeholder-slate-600" />
-                        </div>
+                        <h3 className="font-bold text-white flex items-center gap-2 text-sm"><Database className="w-4 h-4 text-slate-500" /> USER_DATABASE ({users.length})</h3>
+                        <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-1 rounded-sm"><Search className="w-3 h-3 text-slate-400" /><input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search..." className="bg-transparent border-none text-xs text-white outline-none w-40" /></div>
                     </div>
-
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
-                                <tr className="bg-slate-950 text-slate-500 text-xs border-b border-slate-800 uppercase tracking-wider">
-                                    <th className="p-4 font-normal">Identity</th>
-                                    <th className="p-4 font-normal">Network / IP</th>
-                                    <th className="p-4 font-normal">License Status</th>
-                                    <th className="p-4 font-normal">Expires In</th>
-                                    <th className="p-4 font-normal text-right">Root Actions</th>
-                                </tr>
+                                <tr className="bg-slate-950 text-slate-500 text-xs border-b border-slate-800 uppercase"><th className="p-4">Identity</th><th className="p-4">Contact</th><th className="p-4">Status</th><th className="p-4 text-right">Actions</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/50 text-xs">
-                                {loading ? (
-                                    <tr><td colSpan={5} className="p-8 text-center text-slate-500">INITIALIZING DATABASE...</td></tr>
-                                ) : (
-                                    users.map((u) => (
-                                        <tr key={u.id} className={`hover:bg-slate-800/50 transition-colors ${u.id === currentUser?.uid ? 'bg-blue-900/10' : ''}`}>
+                                {loading ? <tr><td colSpan={4} className="p-8 text-center">LOADING...</td></tr> : filteredUsers.map((u) => (
+                                    <>
+                                        {/* ANA KULLANICI SATIRI */}
+                                        <tr key={u.id} className={`hover:bg-slate-800/50 ${u.id === currentUser?.uid ? 'bg-blue-900/10' : ''}`}>
                                             <td className="p-4">
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-8 h-8 rounded flex items-center justify-center font-bold ${u.role === 'admin' ? 'bg-red-900/20 text-red-500 border border-red-900/50' : 'bg-slate-800 text-slate-400'}`}>
-                                                        {u.role === 'admin' ? <ShieldAlert className="w-4 h-4" /> : <UserCog className="w-4 h-4" />}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-bold text-slate-200">
-                                                            {u.companyName || 'UNKNOWN_CORP'}
-                                                            {u.id === currentUser?.uid && <span className="ml-2 text-[10px] bg-blue-600 text-white px-1 rounded font-normal">YOU</span>}
-                                                        </p>
-                                                        <p className="text-slate-600 font-mono">{u.email}</p>
-                                                    </div>
+                                                    <div className={`w-8 h-8 rounded flex items-center justify-center font-bold ${u.role === 'admin' ? 'bg-red-900/20 text-red-500' : 'bg-slate-800 text-slate-400'}`}>{u.role === 'admin' ? <ShieldAlert className="w-4 h-4" /> : <UserCog className="w-4 h-4" />}</div>
+                                                    <div><p className="font-bold text-slate-200">{u.companyName || 'UNKNOWN'}</p><p className="text-slate-600 font-mono text-[10px]">{u.email}</p></div>
                                                 </div>
                                             </td>
-                                            <td className="p-4 font-mono text-slate-400">
-                                                <div className="flex items-center gap-2"><Globe className="w-3 h-3 text-slate-600" />{u.ip}</div>
-                                                <div className="flex items-center gap-2 text-[10px] text-slate-600 mt-1"><Wifi className="w-3 h-3" />{u.location}</div>
+                                            <td className="p-4">
+                                                {u.phone ? <a href={`tel:${u.phone}`} className="text-blue-400 hover:text-white flex items-center gap-2 font-mono"><Phone className="w-3 h-3" /> {u.phone}</a> : <span className="text-slate-600">NO PHONE</span>}
                                             </td>
                                             <td className="p-4">
-                                                <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border ${u.status === 'active' ? 'bg-green-900/10 text-green-500 border-green-900/30' : 'bg-red-900/10 text-red-500 border-red-900/30'}`}>
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${u.status === 'active' ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></span>
-                                                    {u.status === 'active' ? 'ONLINE' : 'OFFLINE'}
-                                                </span>
-                                            </td>
-                                            <td className="p-4 font-mono">
-                                                {u.licenseEndsAt ? (
-                                                    <span className={`${new Date(u.licenseEndsAt.seconds * 1000) < new Date() ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
-                                                        {new Date(u.licenseEndsAt.seconds * 1000).toLocaleDateString('tr-TR')}
-                                                    </span>
-                                                ) : <span className="text-slate-600">NO_DATA</span>}
+                                                <span className={`px-2 py-1 rounded-sm border ${u.status === 'active' ? 'bg-green-900/10 text-green-500 border-green-900/30' : 'bg-red-900/10 text-red-500 border-red-900/30'}`}>{u.status === 'active' ? 'ONLINE' : 'OFFLINE'}</span>
                                             </td>
                                             <td className="p-4 text-right">
-                                                {u.id === currentUser?.uid ? (
-                                                    <span className="text-slate-600 italic text-[10px]">[PROTECTED]</span>
-                                                ) : (
+                                                {u.id !== currentUser?.uid && (
                                                     <div className="flex items-center justify-end gap-2">
-                                                        <div className="relative">
-                                                            <button onClick={() => setSelectedUser(selectedUser === u.id ? null : u.id)} className="p-1.5 bg-slate-800 border border-slate-700 text-blue-400 hover:bg-slate-700 rounded-sm" title="Extend License">
-                                                                <Calendar className="w-3.5 h-3.5" />
+                                                        {/* PERSONEL BUTONU (YENİ) */}
+                                                        {u.accountType === 'corporate' && (
+                                                            <button
+                                                                onClick={() => toggleStaffView(u.id)}
+                                                                className={`p-1.5 border rounded-sm transition-colors ${expandedCompany === u.id ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-700 text-blue-400'}`}
+                                                                title="Personel Görüntüle"
+                                                            >
+                                                                <Users className="w-3.5 h-3.5" />
                                                             </button>
+                                                        )}
+
+                                                        {/* Lisans */}
+                                                        <div className="relative">
+                                                            <button onClick={() => setSelectedUser(selectedUser === u.id ? null : u.id)} className="p-1.5 bg-slate-800 border border-slate-700 text-blue-400 rounded-sm"><Calendar className="w-3.5 h-3.5" /></button>
                                                             {selectedUser === u.id && (
-                                                                <div className="absolute right-0 top-8 w-32 bg-slate-900 border border-slate-700 shadow-xl z-50 rounded-sm flex flex-col p-1">
-                                                                    <button onClick={() => extendLicense(u.id, 1)} className="text-left px-2 py-1.5 hover:bg-slate-800 text-xs text-white">+ 1 Ay</button>
-                                                                    <button onClick={() => extendLicense(u.id, 3)} className="text-left px-2 py-1.5 hover:bg-slate-800 text-xs text-white">+ 3 Ay</button>
-                                                                    <button onClick={() => extendLicense(u.id, 12)} className="text-left px-2 py-1.5 hover:bg-slate-800 text-xs text-white">+ 1 Yıl</button>
+                                                                <div className="absolute right-0 top-8 w-32 bg-slate-900 border border-slate-700 shadow-xl z-50 p-1">
+                                                                    <button onClick={() => extendLicense(u.id, 1)} className="w-full text-left px-2 py-1.5 hover:bg-slate-800 text-xs text-white">+ 1 Ay</button>
+                                                                    <button onClick={() => extendLicense(u.id, 12)} className="w-full text-left px-2 py-1.5 hover:bg-slate-800 text-xs text-white">+ 1 Yıl</button>
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <button onClick={() => toggleStatus(u.id, u.status)} className={`p-1.5 border rounded-sm transition-colors ${u.status === 'active' ? 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white' : 'bg-green-900/20 border-green-900 text-green-500'}`} title="Toggle Status">
-                                                            {u.status === 'active' ? <Lock className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}
-                                                        </button>
-                                                        <button onClick={() => deleteUser(u.id)} className="p-1.5 bg-slate-800 border border-slate-700 text-red-500 hover:bg-red-900/20 hover:border-red-900 rounded-sm" title="Purge User">
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        <button onClick={() => toggleStatus(u.id, u.status)} className="p-1.5 bg-slate-800 border border-slate-700 text-slate-400 hover:text-white rounded-sm">{u.status === 'active' ? <Lock className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}</button>
+                                                        <button onClick={() => deleteUser(u.id)} className="p-1.5 bg-slate-800 border border-slate-700 text-red-500 rounded-sm"><Trash2 className="w-3.5 h-3.5" /></button>
                                                     </div>
                                                 )}
                                             </td>
                                         </tr>
-                                    ))
-                                )}
+
+                                        {/* PERSONEL DETAY SATIRI (Sadece Kurumsal ve Tıklanınca Açılır) */}
+                                        {expandedCompany === u.id && (
+                                            <tr className="bg-slate-900/50">
+                                                <td colSpan={5} className="p-4 pl-12 border-b border-slate-800">
+                                                    <div className="bg-black/50 border border-slate-800 rounded-sm p-4">
+                                                        <h4 className="text-xs font-bold text-blue-400 mb-3 flex items-center gap-2">
+                                                            <Users className="w-4 h-4" /> {u.companyName} - PERSONEL LİSTESİ
+                                                        </h4>
+
+                                                        {loadingStaff ? (
+                                                            <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Veriler çekiliyor...</div>
+                                                        ) : companyStaff.length === 0 ? (
+                                                            <p className="text-slate-500 italic">Bu firmaya ait kayıtlı personel bulunamadı.</p>
+                                                        ) : (
+                                                            <table className="w-full text-left text-xs">
+                                                                <thead>
+                                                                    <tr className="text-slate-500 border-b border-slate-800">
+                                                                        <th className="pb-2">AD SOYAD</th>
+                                                                        <th className="pb-2">E-POSTA</th>
+                                                                        <th className="pb-2">TELEFON</th>
+                                                                        <th className="pb-2">GÖREVİ</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-slate-800/50">
+                                                                    {companyStaff.map((staff, idx) => (
+                                                                        <tr key={idx} className="text-slate-300">
+                                                                            <td className="py-2 font-bold">{staff.fullName}</td>
+                                                                            <td className="py-2 font-mono text-slate-400 flex items-center gap-2"><Mail className="w-3 h-3" /> {staff.email}</td>
+                                                                            <td className="py-2 font-mono text-slate-400"><a href={`tel:${staff.phone}`} className="hover:text-blue-400">{staff.phone}</a></td>
+                                                                            <td className="py-2">
+                                                                                <span className="bg-slate-800 px-2 py-0.5 rounded text-[10px] border border-slate-700 flex items-center gap-1 w-fit">
+                                                                                    <Briefcase className="w-3 h-3 text-yellow-500" />
+                                                                                    {staff.role === 'technical' ? 'Tekniker' : staff.role === 'sales' ? 'Satış' : staff.role === 'accountant' ? 'Muhasebe' : staff.role}
+                                                                                </span>
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </>
+                                ))}
                             </tbody>
                         </table>
                     </div>

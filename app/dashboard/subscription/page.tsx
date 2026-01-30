@@ -79,31 +79,40 @@ export default function SubscriptionPage() {
         }
     };
 
-    // Ödeme Bildirimi Yap (LİSANS UZATMAZ, SADECE KAYDEDER)
+    // Ödeme Bildirimi Yap (GÜNCELLENDİ: Admin'e Bildirim Gönderir)
     const handlePaymentRequest = async (planMonths: number, price: number, planName: string) => {
-        if (!auth.currentUser) return;
+        if (!auth.currentUser || !userData) return;
 
-        // Rastgele Referans Kodu Üret (Banka açıklamasında kullanması için)
         const refCode = `REF-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        if (confirm(`"${planName}" için ${price} TL tutarında ödeme bildirimi oluşturulacak. \n\nLütfen banka açıklama kısmına "${refCode}" yazmayı unutmayın.`)) {
+        if (confirm(`"${planName}" için ${price} TL tutarında ödeme bildirimi oluşturulacak.\n\nLütfen banka açıklama kısmına "${refCode}" yazmayı unutmayın.`)) {
             try {
-                // 1. İşlemi Kaydet (Pending olarak)
+                // 1. Kullanıcının Kendi Geçmişine Ekle
                 await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', auth.currentUser.uid, 'transactions'), {
                     type: 'expense',
                     amount: price,
                     category: 'Abonelik Ödemesi',
-                    description: `${planName} - Onay Bekliyor (Ref: ${refCode})`,
-                    status: 'pending', // Onaylanınca 'approved' olacak
+                    description: `${planName} - Onay Bekliyor`,
+                    status: 'pending',
                     date: new Date().toISOString(),
                     refCode: refCode,
                     createdAt: serverTimestamp()
                 });
 
-                // Not: Burada bilerek lisans süresini uzatmıyoruz.
-                // Admin (Sen) banka hesabını kontrol edip panelden manuel uzatacaksın.
+                // 2. ADMİN PANELİNE BİLDİRİM GÖNDER (YENİ KISIM) 🚨
+                await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), {
+                    userId: auth.currentUser.uid,
+                    userName: userData.fullName || 'İsimsiz',
+                    userPhone: userData.phone || 'Tel Yok', // Telefon burada gidiyor
+                    companyName: userData.companyName || 'Şirket Yok',
+                    amount: price,
+                    planName: planName,
+                    refCode: refCode,
+                    status: 'pending', // pending, approved, rejected
+                    createdAt: serverTimestamp()
+                });
 
-                alert(`Ödeme bildiriminiz alındı! \n\nReferans Kodunuz: ${refCode}\n\nÖdemeniz kontrol edildikten sonra (1-24 saat içinde) lisansınız aktif edilecektir.`);
+                alert(`Ödeme bildiriminiz alındı! Admin onayına düştü.\n\nReferans Kodunuz: ${refCode}`);
                 setSelectedFile(null);
             } catch (error) {
                 console.error(error);
