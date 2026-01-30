@@ -27,7 +27,7 @@ import {
     CreditCard, Phone, BellRing, RefreshCw, Wallet,
     BadgeCheck, X, TrendingUp, Building2, Store, User,
     Mail, Calendar, Eye, Copy, CheckCircle2, ChevronRight, ChevronDown, UserPlus,
-    AlertTriangle
+    AlertTriangle, Terminal
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -39,6 +39,7 @@ export default function AdminPage() {
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [errorMsg, setErrorMsg] = useState(''); // Hata mesajlarını görmek için
+    const [permissionError, setPermissionError] = useState(false); // Özel yetki hatası kontrolü
 
     // Personel Görüntüleme (Hiyerarşi)
     const [expandedCompanyId, setExpandedCompanyId] = useState<string | null>(null);
@@ -97,12 +98,8 @@ export default function AdminPage() {
         fetchSettings();
 
         // 2. Kullanıcılar
-        // NOT: Eğer veritabanında 'createdAt' için index yoksa orderBy hata verir.
-        // Hata almamak için şimdilik orderBy'ı kaldırabilirsin veya konsoldan index oluşturmalısın.
-        // Güvenli olsun diye şimdilik 'orderBy' kaldırıldı. İndex varsa ekleyebilirsin.
         const q = query(
             collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory')
-            // orderBy('createdAt', 'desc') // <-- İndex hatası verirse bunu yorum satırı yap
         );
 
         const unsubUsers = onSnapshot(q, (snapshot) => {
@@ -113,15 +110,24 @@ export default function AdminPage() {
             const active = userList.filter((u: any) => u.status === 'active').length;
             setStats(prev => ({ ...prev, activeUsers: active, expiredUsers: userList.length - active }));
             setLoading(false);
+            setPermissionError(false);
+            setErrorMsg('');
         }, (error) => {
             console.error("Kullanıcıları çekerken hata:", error);
-            setErrorMsg("Kullanıcı listesi çekilemedi: " + error.message);
+            if (error.code === 'permission-denied') {
+                setPermissionError(true);
+                setErrorMsg("YETKİ HATASI: Firestore güvenlik kuralları veriyi okumayı engelliyor.");
+            } else {
+                setErrorMsg("Veri çekme hatası: " + error.message);
+            }
             setLoading(false);
         });
 
         // 3. Ödemeler
         const unsubRequests = onSnapshot(query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), where('status', '==', 'pending')), (snapshot) => {
             setRequests(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        }, (error) => {
+            console.warn("Ödeme istekleri çekilemedi (Yetki hatası olabilir):", error);
         });
 
         // 4. Gelir
@@ -129,6 +135,8 @@ export default function AdminPage() {
             let total = 0;
             snapshot.docs.forEach(d => total += Number(d.data().amount || 0));
             setStats(prev => ({ ...prev, totalRevenue: total }));
+        }, (error) => {
+            console.warn("Gelir verisi çekilemedi:", error);
         });
 
         return () => { unsubUsers(); unsubRequests(); unsubIncome(); };
@@ -286,8 +294,47 @@ export default function AdminPage() {
                     </div>
                 </div>
 
-                {/* HATA MESAJI VARSA GÖSTER */}
-                {errorMsg && (
+                {/* ÖZEL HATA MESAJI (PERMISSION DENIED İÇİN) */}
+                {permissionError && (
+                    <div className="bg-red-900/10 border border-red-800 p-6 rounded-lg mb-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <AlertTriangle className="w-8 h-8 text-red-500" />
+                            <h2 className="text-xl font-bold text-red-500">Firestore Yetki Hatası (Permission Denied)</h2>
+                        </div>
+                        <p className="text-slate-300 mb-4 text-sm">
+                            Bu hata, Firebase veritabanı kurallarının (Rules) bu veriyi okumanıza izin vermediğini gösterir.
+                            Lütfen <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-400 underline font-bold">Firebase Console</a>'a gidin ve
+                            <strong>Firestore Database {'>'} Rules</strong> sekmesindeki kuralları şu şekilde güncelleyin:
+                        </p>
+                        <div className="bg-black border border-slate-800 rounded p-4 relative group">
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => copyToClipboard(`match /artifacts/{appId}/public/data/{document=**} { allow read, write: if request.auth != null; }`)} className="bg-slate-800 text-white text-xs px-2 py-1 rounded flex items-center gap-1 hover:bg-slate-700">
+                                    <Copy className="w-3 h-3" /> Kopyala
+                                </button>
+                            </div>
+                            <pre className="text-green-400 font-mono text-xs overflow-x-auto">
+                                {`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Genel Public Data Erişimi (Admin Paneli İçin Gerekli)
+    match /artifacts/{appId}/public/data/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Kullanıcıya özel veriler
+    match /artifacts/{appId}/users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}`}
+                            </pre>
+                        </div>
+                    </div>
+                )}
+
+                {/* DİĞER HATA MESAJLARI */}
+                {errorMsg && !permissionError && (
                     <div className="bg-red-900/20 border border-red-900 p-4 rounded text-red-400 flex items-center gap-2">
                         <AlertTriangle className="w-5 h-5" />
                         <span>{errorMsg}</span>
@@ -365,10 +412,9 @@ export default function AdminPage() {
                         </div>
                     </div>
 
-                    {users.length === 0 && !loading && (
+                    {users.length === 0 && !loading && !permissionError && (
                         <div className="p-8 text-center text-slate-500 border-b border-slate-800">
-                            <p>Henüz kayıtlı kullanıcı bulunamadı veya veriler çekilemiyor.</p>
-                            <p className="text-xs mt-2">Kayıtlı kullanıcı olduğundan eminseniz, konsol hatasını kontrol edin.</p>
+                            <p>Henüz kayıtlı kullanıcı bulunamadı.</p>
                         </div>
                     )}
 
