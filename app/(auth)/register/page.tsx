@@ -55,6 +55,16 @@ export default function RegisterPage() {
     // SADECE E-POSTA İLE KAYIT OLANLAR İÇİN PROFİL OLUŞTURMA
     // Google ile girenler /onboarding sayfasına gideceği için burayı kullanmayacak.
     const createProfileForEmailUser = async (user: User) => {
+        try {
+            // 1. GERÇEK IP ADRESİNİ BUL 🌍
+            let clientIp = '0.0.0.0';
+            try {
+                const ipRes = await fetch('https://api.ipify.org?format=json');
+                const ipData = await ipRes.json();
+                clientIp = ipData.ip;
+            } catch (e) {
+                console.error("IP alınamadı", e);
+            }
         const userRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile');
 
         const licenseEndsAt = new Date();
@@ -87,6 +97,7 @@ export default function RegisterPage() {
         await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid), {
             uid: user.uid,
             fullName: profileData.fullName,
+            ip: clientIp,
             companyName: profileData.companyName,
             email: profileData.email,
             phone: fullPhone,

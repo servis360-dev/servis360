@@ -79,44 +79,55 @@ export default function SubscriptionPage() {
         }
     };
 
-    // Ödeme Bildirimi Yap (GÜNCELLENDİ: Admin'e Bildirim Gönderir)
+    // Ödeme Bildirimi Yap
     const handlePaymentRequest = async (planMonths: number, price: number, planName: string) => {
         if (!auth.currentUser || !userData) return;
 
+        // Dosya seçilmediyse uyar (Telegram için resim şart olsun istiyorsan)
+        if (!selectedFile) {
+            alert("Lütfen önce dekont resmini yükleyin.");
+            return;
+        }
+
         const refCode = `REF-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        if (confirm(`"${planName}" için ${price} TL tutarında ödeme bildirimi oluşturulacak.\n\nLütfen banka açıklama kısmına "${refCode}" yazmayı unutmayın.`)) {
+        if (confirm(`Ödeme bildirimi gönderilecek ve yöneticilere iletilecek. Onaylıyor musunuz?`)) {
             try {
-                // 1. Kullanıcının Kendi Geçmişine Ekle
-                await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', auth.currentUser.uid, 'transactions'), {
-                    type: 'expense',
-                    amount: price,
-                    category: 'Abonelik Ödemesi',
-                    description: `${planName} - Onay Bekliyor`,
-                    status: 'pending',
-                    date: new Date().toISOString(),
-                    refCode: refCode,
-                    createdAt: serverTimestamp()
-                });
-
-                // 2. ADMİN PANELİNE BİLDİRİM GÖNDER (YENİ KISIM) 🚨
+                // 1. Firebase'e Kaydet (Senin Admin Panelinde de gözüksün diye)
                 await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), {
                     userId: auth.currentUser.uid,
                     userName: userData.fullName || 'İsimsiz',
-                    userPhone: userData.phone || 'Tel Yok', // Telefon burada gidiyor
-                    companyName: userData.companyName || 'Şirket Yok',
+                    userPhone: userData.phone || 'Tel Yok',
+                    companyName: userData.companyName || 'Bireysel',
                     amount: price,
                     planName: planName,
                     refCode: refCode,
-                    status: 'pending', // pending, approved, rejected
+                    status: 'pending',
                     createdAt: serverTimestamp()
                 });
 
-                alert(`Ödeme bildiriminiz alındı! Admin onayına düştü.\n\nReferans Kodunuz: ${refCode}`);
+                // 2. TELEGRAM BİLDİRİMİ GÖNDER 🚀
+                const message = `
+💰 <b>YENİ ÖDEME BİLDİRİMİ!</b>
+
+👤 <b>Kullanıcı:</b> ${userData.fullName}
+🏢 <b>Firma:</b> ${userData.companyName || 'Bireysel'}
+📞 <b>Tel:</b> ${userData.phone}
+📦 <b>Paket:</b> ${planName}
+💵 <b>Tutar:</b> ${price} TL
+🔑 <b>Ref Kodu:</b> ${refCode}
+
+<i>Admin panelinden onaylayın.</i>
+                `;
+
+                // Fotoğraflı gönder
+                await sendTelegramPhoto(selectedFile, message);
+
+                alert(`Bildirim başarıyla gönderildi! \nReferans Kodunuz: ${refCode}`);
                 setSelectedFile(null);
             } catch (error) {
                 console.error(error);
-                alert('Bir hata oluştu.');
+                alert('Bir hata oluştu. Lütfen tekrar deneyin.');
             }
         }
     };

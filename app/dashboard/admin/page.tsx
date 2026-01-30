@@ -15,7 +15,7 @@ import {
     serverTimestamp,
     setDoc,
     where,
-    getDocs // <-- EKLENDİ
+    getDocs // Eklendi
 } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import {
@@ -43,9 +43,10 @@ import {
     BellRing,
     Loader2,
     FileText,
-    Users, // <-- EKLENDİ
-    Briefcase, // <-- EKLENDİ
-    Mail // <-- EKLENDİ
+    Users,
+    Briefcase,
+    Mail,
+    RefreshCw // Eklendi
 } from 'lucide-react';
 import RoleGuard from '../../../components/auth/role-guard';
 
@@ -60,10 +61,11 @@ export default function AdminPage() {
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
-    // PERSONEL GÖRÜNTÜLEME STATE'LERİ (YENİ)
+    // PERSONEL & SENKRONİZASYON
     const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
     const [companyStaff, setCompanyStaff] = useState<any[]>([]);
     const [loadingStaff, setLoadingStaff] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false); // Yeni: Senkronizasyon durumu
 
     // Sistem Ayarları
     const [systemSettings, setSystemSettings] = useState({
@@ -93,26 +95,28 @@ export default function AdminPage() {
         setCurrentUser(user);
         addLog("SYSTEM_INIT: Admin root access granted.");
 
+        // 1. Kullanıcı Listesi
         const qUsers = query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory'), orderBy('createdAt', 'desc'));
         const unsubUsers = onSnapshot(qUsers, (snapshot) => {
             const data = snapshot.docs.map(d => ({
                 id: d.id,
                 ...d.data(),
-                ip: d.data().ip || getRandomIP(),
-                location: 'TR/Istanbul'
+                ip: d.data().ip || 'Kayıt Yok',
+                location: 'TR'
             }));
             setUsers(data);
             const active = data.filter((u: any) => u.status === 'active').length;
             setStats(prev => ({ ...prev, totalUsers: data.length, activeUsers: active, systemLoad: `${Math.floor(Math.random() * 30) + 10}%` }));
             setLoading(false);
-            addLog("DATABASE: User registry synced.");
         });
 
+        // 2. Ödeme İstekleri
         const qRequests = query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), where('status', '==', 'pending'), orderBy('createdAt', 'desc'));
         const unsubRequests = onSnapshot(qRequests, (snapshot) => {
             setRequests(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
+        // 3. Ayarlar
         getDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config')).then(snap => {
             if (snap.exists()) setSystemSettings(snap.data() as any);
         });
@@ -120,36 +124,79 @@ export default function AdminPage() {
         return () => { unsubUsers(); unsubRequests(); };
     }, []);
 
-    // --- PERSONEL ÇEKME FONKSİYONU (YENİ) ---
+    // --- KRİTİK FONKSİYON: VERİLERİ ONAR (SYNC) ---
+    // Bu fonksiyon eski kullanıcıların eksik bilgilerini (Telefon vb.) düzeltir.
+    const syncDatabase = async () => {
+        if (!confirm("Tüm kullanıcı verileri taranıp Admin diziniyle senkronize edilecek. Bu işlem eksik telefon numaralarını ve isimleri düzeltecektir. Onaylıyor musun?")) return;
+
+        setIsSyncing(true);
+        addLog("SYNC: Starting full database synchronization...");
+
+        try {
+            // Tüm Kullanıcıların "Users" koleksiyonunu çekmek zor olduğu için (Cloud Function gerekir),
+            // Buradaki hilemiz: Mevcut directory'deki ID'leri alıp, onların gerçek profillerine bakmak.
+
+            // 1. Directory'deki ID'leri al
+            const directorySnapshot = await getDocs(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory'));
+
+            let updatedCount = 0;
+
+            for (const dirDoc of directorySnapshot.docs) {
+                const uid = dirDoc.id;
+
+                // 2. Gerçek Profiline Git
+                const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', uid, 'users', 'profile');
+                const profileSnap = await getDoc(profileRef);
+
+                if (profileSnap.exists()) {
+                    const profileData = profileSnap.data();
+
+                    // 3. Admin Dizinini Güncelle (Eksik verileri tamamla)
+                    await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', uid), {
+                        phone: profileData.phone || '', // Telefonu profilden al
+                        fullName: profileData.fullName || '',
+                        companyName: profileData.companyName || '',
+                        role: profileData.role || 'user',
+                        accountType: profileData.accountType || 'individual',
+                        updatedAt: serverTimestamp()
+                    });
+                    updatedCount++;
+                }
+            }
+
+            addLog(`SYNC_COMPLETE: ${updatedCount} records updated/fixed.`);
+            alert(`Senkronizasyon tamamlandı! ${updatedCount} kullanıcı verisi güncellendi.`);
+
+        } catch (error) {
+            console.error(error);
+            addLog("ERROR: Sync failed.");
+            alert("Senkronizasyon sırasında hata oluştu. Konsolu kontrol et.");
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    // --- PERSONEL ÇEKME ---
     const toggleStaffView = async (userId: string) => {
         if (expandedCompany === userId) {
             setExpandedCompany(null);
             setCompanyStaff([]);
             return;
         }
-
         setExpandedCompany(userId);
         setLoadingStaff(true);
-        addLog(`QUERY: Fetching staff list for ${userId.substring(0, 6)}...`);
-
         try {
             const staffRef = collection(db, 'artifacts', 'servis-360-live', 'users', userId, 'staff');
             const snapshot = await getDocs(staffRef);
-            const staffData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setCompanyStaff(staffData);
-            addLog(`SUCCESS: ${staffData.length} staff members found.`);
-        } catch (error) {
-            console.error(error);
-            addLog("ERROR: Failed to fetch staff.");
-        } finally {
-            setLoadingStaff(false);
-        }
+            setCompanyStaff(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        } catch (error) { console.error(error); }
+        setLoadingStaff(false);
     };
 
-    // --- DİĞER FONKSİYONLAR (AYARLAR, ÖDEME, VS.) ---
     const saveSettings = async () => {
         await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'), systemSettings);
-        alert("Sistem ayarları güncellendi.");
+        addLog("CONFIG: Saved.");
+        alert("Ayarlar kaydedildi.");
     };
 
     const sendBroadcast = async (e: React.FormEvent) => {
@@ -188,7 +235,6 @@ export default function AdminPage() {
         const newEndDate = new Date(baseDate);
         newEndDate.setMonth(newEndDate.getMonth() + months);
         const timestamp = Timestamp.fromDate(newEndDate);
-
         await updateDoc(userProfileRef, { licenseEndsAt: timestamp, status: 'active' });
         await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { licenseEndsAt: timestamp, status: 'active' });
     };
@@ -232,11 +278,21 @@ export default function AdminPage() {
             <div className="space-y-6 bg-slate-950 min-h-screen p-6 text-slate-300 font-mono text-sm selection:bg-green-900 selection:text-white">
 
                 {/* HEADER */}
-                <div className="flex justify-between items-end border-b border-slate-800 pb-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-slate-800 pb-6 gap-4">
                     <div>
                         <div className="flex items-center gap-2 mb-2"><span className="animate-pulse w-3 h-3 bg-green-500 rounded-full"></span><span className="text-green-500 text-xs font-bold">ONLINE</span></div>
                         <h1 className="text-3xl font-black text-white flex items-center gap-3"><Terminal className="text-blue-500" /> ADMIN_CONSOLE_V5</h1>
+                        <p className="text-slate-500 text-xs mt-1">ROOT ACCESS GRANTED // ID: {currentUser?.uid}</p>
                     </div>
+                    {/* YENİ: ONARIM BUTONU */}
+                    <button
+                        onClick={syncDatabase}
+                        disabled={isSyncing}
+                        className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-sm border border-slate-600 flex items-center gap-2 text-xs font-bold transition-all disabled:opacity-50"
+                    >
+                        <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                        {isSyncing ? 'SENKRONİZE EDİLİYOR...' : 'VERİLERİ GÜNCELLE / ONAR'}
+                    </button>
                 </div>
 
                 {/* ÖDEME BİLDİRİMLERİ */}
@@ -260,7 +316,7 @@ export default function AdminPage() {
 
                 {/* FİNANSAL AYARLAR */}
                 <div className="bg-slate-900 border border-slate-800 p-4 rounded-sm">
-                    <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2"><CreditCard className="w-4 h-4 text-yellow-500" /> SYSTEM CONFIG</h3>
+                    <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2"><CreditCard className="w-4 h-4 text-yellow-500" /> FINANCIAL CONFIGURATION</h3>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <input value={systemSettings.monthlyPrice} onChange={(e) => setSystemSettings({ ...systemSettings, monthlyPrice: e.target.value })} className="bg-black border border-slate-700 text-white px-2 py-2 text-xs outline-none focus:border-yellow-500" placeholder="Aylık" />
                         <input value={systemSettings.yearlyPrice} onChange={(e) => setSystemSettings({ ...systemSettings, yearlyPrice: e.target.value })} className="bg-black border border-slate-700 text-white px-2 py-2 text-xs outline-none focus:border-yellow-500" placeholder="Yıllık" />
@@ -269,7 +325,7 @@ export default function AdminPage() {
                     </div>
                 </div>
 
-                {/* KULLANICI VE PERSONEL LİSTESİ */}
+                {/* KULLANICI LİSTESİ */}
                 <div className="bg-slate-900 border border-slate-800 rounded-sm overflow-hidden">
                     <div className="p-3 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
                         <h3 className="font-bold text-white flex items-center gap-2 text-sm"><Database className="w-4 h-4 text-slate-500" /> USER_DATABASE ({users.length})</h3>
@@ -283,7 +339,6 @@ export default function AdminPage() {
                             <tbody className="divide-y divide-slate-800/50 text-xs">
                                 {loading ? <tr><td colSpan={4} className="p-8 text-center">LOADING...</td></tr> : filteredUsers.map((u) => (
                                     <>
-                                        {/* ANA KULLANICI SATIRI */}
                                         <tr key={u.id} className={`hover:bg-slate-800/50 ${u.id === currentUser?.uid ? 'bg-blue-900/10' : ''}`}>
                                             <td className="p-4">
                                                 <div className="flex items-center gap-3">
@@ -300,72 +355,27 @@ export default function AdminPage() {
                                             <td className="p-4 text-right">
                                                 {u.id !== currentUser?.uid && (
                                                     <div className="flex items-center justify-end gap-2">
-                                                        {/* PERSONEL BUTONU (YENİ) */}
-                                                        {u.accountType === 'corporate' && (
-                                                            <button
-                                                                onClick={() => toggleStaffView(u.id)}
-                                                                className={`p-1.5 border rounded-sm transition-colors ${expandedCompany === u.id ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-700 text-blue-400'}`}
-                                                                title="Personel Görüntüle"
-                                                            >
-                                                                <Users className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        )}
-
-                                                        {/* Lisans */}
+                                                        {u.accountType === 'corporate' && <button onClick={() => toggleStaffView(u.id)} className={`p-1.5 border rounded-sm ${expandedCompany === u.id ? 'bg-blue-600 text-white' : 'bg-slate-800 text-blue-400'}`} title="Personel"><Users className="w-3.5 h-3.5" /></button>}
                                                         <div className="relative">
                                                             <button onClick={() => setSelectedUser(selectedUser === u.id ? null : u.id)} className="p-1.5 bg-slate-800 border border-slate-700 text-blue-400 rounded-sm"><Calendar className="w-3.5 h-3.5" /></button>
                                                             {selectedUser === u.id && (
-                                                                <div className="absolute right-0 top-8 w-32 bg-slate-900 border border-slate-700 shadow-xl z-50 p-1">
-                                                                    <button onClick={() => extendLicense(u.id, 1)} className="w-full text-left px-2 py-1.5 hover:bg-slate-800 text-xs text-white">+ 1 Ay</button>
-                                                                    <button onClick={() => extendLicense(u.id, 12)} className="w-full text-left px-2 py-1.5 hover:bg-slate-800 text-xs text-white">+ 1 Yıl</button>
-                                                                </div>
+                                                                <div className="absolute right-0 top-8 w-32 bg-slate-900 border border-slate-700 shadow-xl z-50 p-1"><button onClick={() => extendLicense(u.id, 1)} className="w-full text-left px-2 py-1.5 hover:bg-slate-800 text-xs text-white">+ 1 Ay</button><button onClick={() => extendLicense(u.id, 12)} className="w-full text-left px-2 py-1.5 hover:bg-slate-800 text-xs text-white">+ 1 Yıl</button></div>
                                                             )}
                                                         </div>
-                                                        <button onClick={() => toggleStatus(u.id, u.status)} className="p-1.5 bg-slate-800 border border-slate-700 text-slate-400 hover:text-white rounded-sm">{u.status === 'active' ? <Lock className="w-3.5 h-3.5" /> : <Activity className="w-3.5 h-3.5" />}</button>
                                                         <button onClick={() => deleteUser(u.id)} className="p-1.5 bg-slate-800 border border-slate-700 text-red-500 rounded-sm"><Trash2 className="w-3.5 h-3.5" /></button>
                                                     </div>
                                                 )}
                                             </td>
                                         </tr>
-
-                                        {/* PERSONEL DETAY SATIRI (Sadece Kurumsal ve Tıklanınca Açılır) */}
                                         {expandedCompany === u.id && (
                                             <tr className="bg-slate-900/50">
                                                 <td colSpan={5} className="p-4 pl-12 border-b border-slate-800">
                                                     <div className="bg-black/50 border border-slate-800 rounded-sm p-4">
-                                                        <h4 className="text-xs font-bold text-blue-400 mb-3 flex items-center gap-2">
-                                                            <Users className="w-4 h-4" /> {u.companyName} - PERSONEL LİSTESİ
-                                                        </h4>
-
-                                                        {loadingStaff ? (
-                                                            <div className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Veriler çekiliyor...</div>
-                                                        ) : companyStaff.length === 0 ? (
-                                                            <p className="text-slate-500 italic">Bu firmaya ait kayıtlı personel bulunamadı.</p>
-                                                        ) : (
+                                                        <h4 className="text-xs font-bold text-blue-400 mb-3 flex items-center gap-2"><Users className="w-4 h-4" /> {u.companyName} - PERSONEL LİSTESİ</h4>
+                                                        {loadingStaff ? <p className="text-slate-500">Yükleniyor...</p> : companyStaff.length === 0 ? <p className="text-slate-500">Personel yok.</p> : (
                                                             <table className="w-full text-left text-xs">
-                                                                <thead>
-                                                                    <tr className="text-slate-500 border-b border-slate-800">
-                                                                        <th className="pb-2">AD SOYAD</th>
-                                                                        <th className="pb-2">E-POSTA</th>
-                                                                        <th className="pb-2">TELEFON</th>
-                                                                        <th className="pb-2">GÖREVİ</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody className="divide-y divide-slate-800/50">
-                                                                    {companyStaff.map((staff, idx) => (
-                                                                        <tr key={idx} className="text-slate-300">
-                                                                            <td className="py-2 font-bold">{staff.fullName}</td>
-                                                                            <td className="py-2 font-mono text-slate-400 flex items-center gap-2"><Mail className="w-3 h-3" /> {staff.email}</td>
-                                                                            <td className="py-2 font-mono text-slate-400"><a href={`tel:${staff.phone}`} className="hover:text-blue-400">{staff.phone}</a></td>
-                                                                            <td className="py-2">
-                                                                                <span className="bg-slate-800 px-2 py-0.5 rounded text-[10px] border border-slate-700 flex items-center gap-1 w-fit">
-                                                                                    <Briefcase className="w-3 h-3 text-yellow-500" />
-                                                                                    {staff.role === 'technical' ? 'Tekniker' : staff.role === 'sales' ? 'Satış' : staff.role === 'accountant' ? 'Muhasebe' : staff.role}
-                                                                                </span>
-                                                                            </td>
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
+                                                                <thead><tr className="text-slate-500 border-b border-slate-800"><th className="pb-2">AD</th><th className="pb-2">TEL</th><th className="pb-2">ROL</th></tr></thead>
+                                                                <tbody className="divide-y divide-slate-800/50">{companyStaff.map((s, i) => <tr key={i} className="text-slate-300"><td className="py-2">{s.fullName}</td><td className="py-2">{s.phone}</td><td className="py-2">{s.role}</td></tr>)}</tbody>
                                                             </table>
                                                         )}
                                                     </div>
