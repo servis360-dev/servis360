@@ -139,13 +139,20 @@ const MENU_ITEMS = [
     }
 ];
 
+// Geçerli rollerin listesi (Kontrol için)
+const VALID_ROLES = ['super_admin', 'admin', 'staff', 'tradesman', 'individual'];
+
 export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
 
-    // ROL KONTROLÜ (GÜVENLİK)
-    // Eğer rol undefined gelirse varsayılan olarak 'individual' kabul et.
-    // Böylece menü asla boş kalmaz.
-    const safeRole = userRole || 'individual';
+    // 👇 KRİTİK DÜZELTME: ROL EŞLEŞTİRME GARANTİSİ
+    // Eğer rol boşsa VEYA bizim tanıdığımız rollerden biri değilse (örn: 'user', 'guest', 'musteri')
+    // sistem onu otomatik olarak 'individual' (Bireysel) kabul edecek.
+    // Bu sayede menü asla boş gelmeyecek.
+    let safeRole = userRole;
+    if (!safeRole || !VALID_ROLES.includes(safeRole)) {
+        safeRole = 'individual';
+    }
 
     const handleLogout = async () => {
         await signOut(auth);
@@ -180,9 +187,9 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                 {/* MENÜ LİSTESİ */}
                 <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
                     {MENU_ITEMS.map((section, index) => {
-                        // Bölüm içindeki yetkili linkleri filtrele (safeRole kullanarak)
+                        // safeRole kullanarak filtreleme yapıyoruz
                         const authorizedItems = section.items.filter(item =>
-                            item.allowedRoles.includes(safeRole)
+                            item.allowedRoles.includes(safeRole!)
                         );
 
                         // Eğer bu bölümde kullanıcının göreceği hiçbir şey yoksa bölümü hiç gösterme
