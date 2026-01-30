@@ -124,7 +124,7 @@ const MENU_ITEMS = [
             },
             {
                 label: 'Abonelik Paketleri',
-                href: '/subscription',
+                href: '/dashboard/subscription',
                 icon: CreditCard,
                 // 👇 'individual' eklendi: Bireysel kullanıcı da paket satın alabilsin.
                 allowedRoles: ['super_admin', 'admin', 'tradesman', 'individual']
