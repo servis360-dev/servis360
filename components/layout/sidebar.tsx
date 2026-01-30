@@ -104,7 +104,7 @@ const MENU_ITEMS = [
         ]
     },
 
-    // --- FİNANS (GÜNCELLENDİ: BİREYSEL KULLANICIYA AÇILDI) ---
+    // --- FİNANS ---
     {
         title: 'Finans',
         items: [
@@ -112,21 +112,19 @@ const MENU_ITEMS = [
                 label: 'Gelir/Gider',
                 href: '/dashboard/finance',
                 icon: Wallet,
-                // 👇 'individual' eklendi: Artık bireysel kullanıcı da bütçesini yönetebilir.
                 allowedRoles: ['super_admin', 'admin', 'tradesman', 'individual']
             },
             {
                 label: 'Teklifler',
                 href: '/dashboard/proposals',
                 icon: FileText,
-                // Teklif verme işi genelde ticaret erbabınındır, bireyseli buraya almadım.
                 allowedRoles: ['super_admin', 'admin', 'tradesman']
             },
+            // 👇 GÜNCELLENDİ: Link '/dashboard/subscription' yapıldı.
             {
                 label: 'Abonelik Paketleri',
                 href: '/dashboard/subscription',
                 icon: CreditCard,
-                // 👇 'individual' eklendi: Bireysel kullanıcı da paket satın alabilsin.
                 allowedRoles: ['super_admin', 'admin', 'tradesman', 'individual']
             },
         ]
@@ -182,12 +180,10 @@ export function Sidebar({ userRole = 'individual', isOpen, onClose }: SidebarPro
                 {/* MENÜ LİSTESİ */}
                 <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
                     {MENU_ITEMS.map((section, index) => {
-                        // Bölüm içindeki yetkili linkleri filtrele
                         const authorizedItems = section.items.filter(item =>
                             item.allowedRoles.includes(userRole)
                         );
 
-                        // Eğer bu bölümde kullanıcının göreceği hiçbir şey yoksa bölümü hiç gösterme
                         if (authorizedItems.length === 0) return null;
 
                         return (
@@ -204,7 +200,7 @@ export function Sidebar({ userRole = 'individual', isOpen, onClose }: SidebarPro
                                             <Link
                                                 key={item.href}
                                                 href={item.href}
-                                                onClick={onClose} // Mobilde tıklayınca menüyü kapat
+                                                onClick={onClose}
                                                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isActive
                                                         ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
                                                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
