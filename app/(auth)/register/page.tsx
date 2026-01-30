@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth, db } from '../../../lib/firebase'; // <-- DÜZELTİLDİ: ../../../ (3 seviye yukarı)
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../../lib/firebase';
+import { doc, setDoc, serverTimestamp, getDoc, updateDoc } from 'firebase/firestore';
 import Link from 'next/link';
 import {
     Mail,
@@ -51,50 +51,100 @@ export default function RegisterPage() {
                 console.error("IP alınamadı", e);
             }
 
-            // 2. Firebase Auth ile Kullanıcı Oluştur
+            // 2. DAVET KONTROLÜ (PERSONEL Mİ?) 🕵️‍♂️
+            // Kullanıcı kayıt olurken "Ben personelim" demez, biz mailden anlarız.
+            let isStaff = false;
+            let staffData: any = null;
+
+            try {
+                // Public/Invitations altında bu mail var mı?
+                const inviteRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', formData.email);
+                const inviteSnap = await getDoc(inviteRef);
+
+                if (inviteSnap.exists()) {
+                    isStaff = true;
+                    staffData = inviteSnap.data();
+                }
+            } catch (e) { console.error("Davet kontrol hatası", e); }
+
+            // 3. Firebase Auth ile Kullanıcı Oluştur
             const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
             const user = userCredential.user;
 
-            // 3. Profil Güncelle (DisplayName)
+            // 4. Profil Güncelle (DisplayName)
             await updateProfile(user, {
                 displayName: formData.fullName
             });
 
-            // 4. Firestore'a Detaylı Kayıt (Profil)
-            // users/{uid}/users/profile
+            // 5. PROFİL AYARLARI (PATRON MU, PERSONEL Mİ?)
+            let finalRole = 'owner';
+            let finalCompanyId = user.uid; // Patron ise kendi ID'si
+            let finalCompanyName = formData.companyName;
+            let finalAccountType = formData.accountType;
+            let finalSector = formData.sectorType;
+
+            if (isStaff) {
+                // Eğer personel ise, Patronun bilgilerini al ve üzerine yaz
+                finalRole = staffData.assignedRole; // 'technical', 'sales' vb.
+                finalCompanyId = staffData.targetCompanyId; // Patronun ID'si
+                finalCompanyName = staffData.targetCompanyName;
+                finalSector = staffData.targetSector;
+                // Personel menüleri görebilsin diye corporate yapıyoruz (yetkileri rolden kısıtlanacak)
+                finalAccountType = 'corporate';
+            } else if (finalAccountType === 'individual') {
+                // Bireysel kullanıcı ise şirket adı boş
+                finalCompanyName = '';
+            }
+
+            // 6. Firestore'a Detaylı Kayıt (Profil)
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'), {
                 uid: user.uid,
                 email: user.email,
                 fullName: formData.fullName,
                 phone: formData.phone,
-                companyName: formData.accountType === 'individual' ? '' : formData.companyName,
-                accountType: formData.accountType,
-                sectorType: formData.sectorType,
-                role: 'owner', // İlk kaydolan patrondur
+
+                // Şirket Bağlantısı (Kritik nokta)
+                companyId: finalCompanyId,
+                companyName: finalCompanyName,
+
+                accountType: finalAccountType,
+                sectorType: finalSector,
+                role: finalRole,
                 status: 'active',
                 createdAt: serverTimestamp(),
-                licenseEndsAt: null // Deneme süresi veya satın alım sonrası dolar
+                licenseEndsAt: null
             });
 
-            // 5. Public Directory (Admin Paneli İçin Özet)
-            // public/data/user_directory/{uid}
+            // 7. Public Directory (Admin Paneli İçin Özet)
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid), {
                 id: user.uid,
                 uid: user.uid,
                 fullName: formData.fullName,
                 email: user.email,
-                phone: formData.phone, // Telefon eklendi
-                companyName: formData.accountType === 'individual' ? 'Bireysel' : formData.companyName,
-                accountType: formData.accountType,
-                role: 'owner',
+                phone: formData.phone,
+                companyName: finalAccountType === 'individual' ? 'Bireysel' : finalCompanyName,
+                accountType: finalAccountType,
+                role: finalRole,
                 status: 'active',
-                ip: clientIp, // Gerçek IP eklendi
+                ip: clientIp, // Gerçek IP
                 location: 'TR',
                 createdAt: serverTimestamp()
             });
 
+            // 8. Eğer Personelse, Patronun "Staff" Listesinde Statüsünü Güncelle
+            if (isStaff) {
+                try {
+                    const patronStaffRef = doc(db, 'artifacts', 'servis-360-live', 'users', finalCompanyId, 'staff', formData.email);
+                    await updateDoc(patronStaffRef, {
+                        status: 'active', // invited -> active
+                        uid: user.uid, // Personelin gerçek ID'sini kaydet
+                        joinedAt: serverTimestamp()
+                    });
+                } catch (e) { console.error("Patron listesi güncellenemedi", e); }
+            }
+
             // Başarılı
-            alert("Kayıt başarılı! Giriş yapabilirsiniz.");
+            alert(isStaff ? "Personel kaydı başarılı! Şirket hesabınıza yönlendiriliyorsunuz." : "Kayıt başarılı! Giriş yapabilirsiniz.");
             router.push('/dashboard');
 
         } catch (err: any) {
