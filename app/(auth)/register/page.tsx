@@ -2,7 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import {
+    createUserWithEmailAndPassword,
+    updateProfile,
+    GoogleAuthProvider,
+    OAuthProvider,
+    signInWithPopup
+} from 'firebase/auth';
 import { auth, db } from '../../../lib/firebase';
 import { doc, setDoc, serverTimestamp, getDoc, updateDoc } from 'firebase/firestore';
 import Link from 'next/link';
@@ -13,9 +19,13 @@ import {
     Building2,
     Phone,
     Briefcase,
-    CheckCircle2,
     ArrowRight,
-    Loader2
+    Loader2,
+    LayoutDashboard,
+    CheckCircle2,
+    AlertCircle,
+    Store,
+    Building
 } from 'lucide-react';
 
 export default function RegisterPage() {
@@ -29,84 +39,75 @@ export default function RegisterPage() {
         password: '',
         fullName: '',
         phone: '',
-        companyName: '', // Sadece kurumsal için
+        companyName: '',
         accountType: 'individual', // individual, business, corporate
-        sectorType: 'technical_service' // technical_service, retail_wholesale, beauty_health, auto_rental, other
+        sectorType: 'technical_service'
     });
 
-    // Kayıt İşlemi
+    // --- YARDIMCI: Davet ve IP Kontrolü ---
+    const checkInvitationAndGetIP = async (email: string) => {
+        let clientIp = '0.0.0.0';
+        try {
+            const ipRes = await fetch('https://api.ipify.org?format=json');
+            const ipData = await ipRes.json();
+            clientIp = ipData.ip;
+        } catch (e) { console.error("IP alınamadı", e); }
+
+        let isStaff = false;
+        let staffData: any = null;
+
+        try {
+            const inviteRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', email);
+            const inviteSnap = await getDoc(inviteRef);
+            if (inviteSnap.exists()) {
+                isStaff = true;
+                staffData = inviteSnap.data();
+            }
+        } catch (e) { console.error("Davet kontrol hatası", e); }
+
+        return { clientIp, isStaff, staffData };
+    };
+
+    // --- SENARYO 1: E-POSTA İLE KAYIT (Manuel) ---
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setError('');
 
         try {
-            // 1. GERÇEK IP ADRESİNİ BUL 🌍
-            let clientIp = '0.0.0.0';
-            try {
-                const ipRes = await fetch('https://api.ipify.org?format=json');
-                const ipData = await ipRes.json();
-                clientIp = ipData.ip;
-            } catch (e) {
-                console.error("IP alınamadı", e);
-            }
+            const { clientIp, isStaff, staffData } = await checkInvitationAndGetIP(formData.email);
 
-            // 2. DAVET KONTROLÜ (PERSONEL Mİ?) 🕵️‍♂️
-            // Kullanıcı kayıt olurken "Ben personelim" demez, biz mailden anlarız.
-            let isStaff = false;
-            let staffData: any = null;
-
-            try {
-                // Public/Invitations altında bu mail var mı?
-                const inviteRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', formData.email);
-                const inviteSnap = await getDoc(inviteRef);
-
-                if (inviteSnap.exists()) {
-                    isStaff = true;
-                    staffData = inviteSnap.data();
-                }
-            } catch (e) { console.error("Davet kontrol hatası", e); }
-
-            // 3. Firebase Auth ile Kullanıcı Oluştur
+            // 1. Firebase Auth Oluştur
             const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
             const user = userCredential.user;
 
-            // 4. Profil Güncelle (DisplayName)
-            await updateProfile(user, {
-                displayName: formData.fullName
-            });
+            await updateProfile(user, { displayName: formData.fullName });
 
-            // 5. PROFİL AYARLARI (PATRON MU, PERSONEL Mİ?)
+            // 2. Rol ve Şirket Belirleme
             let finalRole = 'owner';
-            let finalCompanyId = user.uid; // Patron ise kendi ID'si
+            let finalCompanyId = user.uid;
             let finalCompanyName = formData.companyName;
             let finalAccountType = formData.accountType;
             let finalSector = formData.sectorType;
 
             if (isStaff) {
-                // Eğer personel ise, Patronun bilgilerini al ve üzerine yaz
-                finalRole = staffData.assignedRole; // 'technical', 'sales' vb.
-                finalCompanyId = staffData.targetCompanyId; // Patronun ID'si
+                finalRole = staffData.assignedRole;
+                finalCompanyId = staffData.targetCompanyId;
                 finalCompanyName = staffData.targetCompanyName;
                 finalSector = staffData.targetSector;
-                // Personel menüleri görebilsin diye corporate yapıyoruz (yetkileri rolden kısıtlanacak)
                 finalAccountType = 'corporate';
             } else if (finalAccountType === 'individual') {
-                // Bireysel kullanıcı ise şirket adı boş
-                finalCompanyName = '';
+                finalCompanyName = 'Bireysel Hesap';
             }
 
-            // 6. Firestore'a Detaylı Kayıt (Profil)
+            // 3. Firestore Kayıt (Profile)
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'), {
                 uid: user.uid,
                 email: user.email,
                 fullName: formData.fullName,
                 phone: formData.phone,
-
-                // Şirket Bağlantısı (Kritik nokta)
                 companyId: finalCompanyId,
                 companyName: finalCompanyName,
-
                 accountType: finalAccountType,
                 sectorType: finalSector,
                 role: finalRole,
@@ -115,251 +116,246 @@ export default function RegisterPage() {
                 licenseEndsAt: null
             });
 
-            // 7. Public Directory (Admin Paneli İçin Özet)
+            // 4. Public Directory
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid), {
                 id: user.uid,
                 uid: user.uid,
                 fullName: formData.fullName,
                 email: user.email,
                 phone: formData.phone,
-                companyName: finalAccountType === 'individual' ? 'Bireysel' : finalCompanyName,
+                companyName: finalCompanyName,
                 accountType: finalAccountType,
                 role: finalRole,
                 status: 'active',
-                ip: clientIp, // Gerçek IP
+                ip: clientIp,
                 location: 'TR',
                 createdAt: serverTimestamp()
             });
 
-            // 8. Eğer Personelse, Patronun "Staff" Listesinde Statüsünü Güncelle
+            // 5. Personel Listesini Güncelle (Eğer davetliyse)
             if (isStaff) {
                 try {
-                    const patronStaffRef = doc(db, 'artifacts', 'servis-360-live', 'users', finalCompanyId, 'staff', formData.email);
-                    await updateDoc(patronStaffRef, {
-                        status: 'active', // invited -> active
-                        uid: user.uid, // Personelin gerçek ID'sini kaydet
+                    await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', finalCompanyId, 'staff', formData.email), {
+                        status: 'active',
+                        uid: user.uid,
                         joinedAt: serverTimestamp()
                     });
-                } catch (e) { console.error("Patron listesi güncellenemedi", e); }
+                } catch (e) { console.error("Personel güncelleme hatası", e); }
             }
 
-            // Başarılı
-            alert(isStaff ? "Personel kaydı başarılı! Şirket hesabınıza yönlendiriliyorsunuz." : "Kayıt başarılı! Giriş yapabilirsiniz.");
             router.push('/dashboard');
 
         } catch (err: any) {
             console.error(err);
-            if (err.code === 'auth/email-already-in-use') {
-                setError('Bu e-posta adresi zaten kullanımda.');
-            } else if (err.code === 'auth/weak-password') {
-                setError('Şifre en az 6 karakter olmalıdır.');
-            } else {
-                setError('Kayıt olurken bir hata oluştu. Lütfen tekrar deneyin.');
-            }
+            if (err.code === 'auth/email-already-in-use') setError('Bu e-posta adresi zaten kullanımda.');
+            else if (err.code === 'auth/weak-password') setError('Şifre en az 6 karakter olmalıdır.');
+            else setError('Kayıt işlemi başarısız. Lütfen tekrar deneyin.');
         } finally {
             setLoading(false);
         }
     };
 
+    // --- SENARYO 2: SOSYAL MEDYA (Google/Apple) ---
+    const handleSocialLogin = async (providerName: 'google' | 'apple') => {
+        setLoading(true);
+        setError('');
+        try {
+            const provider = providerName === 'google' ? new GoogleAuthProvider() : new OAuthProvider('apple.com');
+            const result = await signInWithPopup(auth, provider);
+            const user = result.user;
+
+            // Zaten profili var mı?
+            const profileSnap = await getDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'));
+
+            if (profileSnap.exists()) {
+                // Profili varsa direkt girsin
+                router.push('/dashboard');
+                return;
+            }
+
+            // Profil YOK. Davetli mi diye bakalım.
+            const { clientIp, isStaff, staffData } = await checkInvitationAndGetIP(user.email || '');
+
+            if (isStaff) {
+                // Davetliyse (Personelse) profili otomatik oluştur ve içeri al
+                await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'), {
+                    uid: user.uid,
+                    email: user.email,
+                    fullName: user.displayName || 'İsimsiz Personel',
+                    phone: '', // Google'dan gelmez, sonradan isteriz
+                    companyId: staffData.targetCompanyId,
+                    companyName: staffData.targetCompanyName,
+                    accountType: 'corporate',
+                    sectorType: staffData.targetSector,
+                    role: staffData.assignedRole,
+                    status: 'active',
+                    createdAt: serverTimestamp()
+                });
+
+                // Public Directory kaydı
+                await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid), {
+                    id: user.uid,
+                    uid: user.uid,
+                    fullName: user.displayName,
+                    email: user.email,
+                    phone: '',
+                    companyName: staffData.targetCompanyName,
+                    accountType: 'corporate',
+                    role: staffData.assignedRole,
+                    status: 'active',
+                    ip: clientIp,
+                    createdAt: serverTimestamp()
+                });
+
+                // Davet durumunu güncelle
+                await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', staffData.targetCompanyId, 'staff', user.email!), {
+                    status: 'active',
+                    uid: user.uid,
+                    joinedAt: serverTimestamp()
+                });
+
+                router.push('/dashboard');
+            } else {
+                // Davetli DEĞİL ve Yeni Kullanıcı -> ONBOARDING'e gönder
+                // Çünkü Google ile telefon, hesap türü vs. seçmedi.
+                router.push('/onboarding');
+            }
+
+        } catch (err: any) {
+            console.error(err);
+            setError(`${providerName === 'google' ? 'Google' : 'Apple'} ile kayıt olunamadı.`);
+            setLoading(false);
+        }
+    };
+
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
-            <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-slate-800">
+        <div className="flex min-h-screen w-full bg-white dark:bg-slate-950 font-sans selection:bg-blue-100 dark:selection:bg-blue-900">
 
-                {/* Sol Taraf: Görsel & Bilgi */}
-                <div className="hidden lg:flex flex-col justify-between p-10 bg-blue-600 text-white relative">
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-600 to-purple-700 opacity-90"></div>
-                    <div className="relative z-10">
-                        <div className="flex items-center gap-3 mb-8">
-                            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 font-bold text-xl">S</div>
-                            <h1 className="text-2xl font-bold tracking-tight">Servis360</h1>
-                        </div>
-                        <h2 className="text-4xl font-bold mb-4">İşinizi Yönetmenin <br /> En Akıllı Yolu.</h2>
-                        <p className="text-blue-100 text-lg leading-relaxed mb-8">
-                            Teknik servis, stok takibi, cari hesap ve müşteri yönetimi tek bir platformda.
-                            Hemen ücretsiz başlayın.
-                        </p>
+            {/* SOL TARAF (GÖRSEL) */}
+            <div className="hidden lg:flex w-[55%] relative bg-slate-900 overflow-hidden flex-col justify-between p-16 text-white">
+                <div className="absolute top-0 left-0 w-full h-full z-0">
+                    <div className="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] bg-blue-600/20 rounded-full blur-[120px] mix-blend-screen animate-pulse duration-10000"></div>
+                    <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[100px] mix-blend-screen"></div>
+                </div>
 
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-3 bg-white/10 p-3 rounded-xl backdrop-blur-sm">
-                                <CheckCircle2 className="w-6 h-6 text-green-400" />
-                                <span>Sınırsız İş Emri ve Müşteri Kaydı</span>
-                            </div>
-                            <div className="flex items-center gap-3 bg-white/10 p-3 rounded-xl backdrop-blur-sm">
-                                <CheckCircle2 className="w-6 h-6 text-green-400" />
-                                <span>Gelir/Gider ve Kasa Takibi</span>
-                            </div>
-                            <div className="flex items-center gap-3 bg-white/10 p-3 rounded-xl backdrop-blur-sm">
-                                <CheckCircle2 className="w-6 h-6 text-green-400" />
-                                <span>7/24 Teknik Destek</span>
-                            </div>
-                        </div>
+                <div className="relative z-10 flex items-center gap-3">
+                    <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-500/20 border border-white/10 backdrop-blur-sm">
+                        <LayoutDashboard className="w-6 h-6 text-white" />
                     </div>
-                    <div className="relative z-10 text-xs text-blue-200 mt-10">
-                        © 2024 Servis360 Teknoloji A.Ş.
+                    <span className="text-2xl font-bold tracking-tight text-white">Servis360</span>
+                </div>
+
+                <div className="relative z-10 my-auto">
+                    <h1 className="text-6xl font-extrabold leading-[1.1] mb-6 tracking-tight">
+                        Şimdi <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Kontrol</span> Sizde.
+                    </h1>
+                    <p className="text-lg text-slate-400 mb-10 max-w-lg leading-relaxed">
+                        Binlerce işletme Servis360 ile teknik servis, stok ve finans süreçlerini optimize ediyor. Hemen katılın.
+                    </p>
+
+                    <div className="space-y-4 max-w-md">
+                        <div className="flex items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl hover:bg-white/10 transition-colors">
+                            <div className="p-2 bg-green-500/20 rounded-lg"><CheckCircle2 className="w-5 h-5 text-green-400" /></div>
+                            <div><h3 className="font-bold text-white text-sm">Ücretsiz Deneme</h3><p className="text-slate-400 text-xs">Kredi kartı gerekmez.</p></div>
+                        </div>
+                        <div className="flex items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl hover:bg-white/10 transition-colors">
+                            <div className="p-2 bg-blue-500/20 rounded-lg"><CheckCircle2 className="w-5 h-5 text-blue-400" /></div>
+                            <div><h3 className="font-bold text-white text-sm">Kolay Kurulum</h3><p className="text-slate-400 text-xs">1 dakikada hesabınız hazır.</p></div>
+                        </div>
                     </div>
                 </div>
 
-                {/* Sağ Taraf: Form */}
-                <div className="p-8 lg:p-12 overflow-y-auto max-h-screen">
-                    <div className="mb-8 text-center lg:text-left">
-                        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Hesap Oluştur</h2>
-                        <p className="text-slate-500">Bilgilerinizi girerek hemen başlayın.</p>
+                <div className="relative z-10 text-xs text-slate-500 border-t border-white/10 pt-6">
+                    <p>© 2024 Servis360 Inc. Tüm hakları saklıdır.</p>
+                </div>
+            </div>
+
+            {/* SAĞ TARAF (FORM) */}
+            <div className="w-full lg:w-[45%] flex flex-col items-center px-8 lg:px-12 bg-white dark:bg-slate-950 relative overflow-y-auto h-screen py-12">
+
+                <div className="max-w-[440px] w-full space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                    <div className="text-center lg:text-left">
+                        <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Hesap Oluştur</h2>
+                        <p className="text-slate-500 dark:text-slate-400 mt-2">Bilgilerinizi girerek hemen başlayın.</p>
                     </div>
 
-                    {error && (
-                        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-xl border border-red-200 dark:border-red-800 flex items-center gap-2">
-                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                            {error}
-                        </div>
-                    )}
+                    {/* SOCIAL LOGIN */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <button onClick={() => handleSocialLogin('google')} disabled={loading} className="flex items-center justify-center gap-3 py-3 px-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
+                            <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" /></svg>
+                            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Google</span>
+                        </button>
+                        <button onClick={() => handleSocialLogin('apple')} disabled={loading} className="flex items-center justify-center gap-3 py-3 px-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm">
+                            <svg className="w-5 h-5 text-black dark:text-white fill-current" viewBox="0 0 24 24"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.74 1.18 0 2.21-.93 3.69-.93.95 0 2.58.55 3.59 1.93-3.21 1.77-2.66 6.32.74 7.72-.51 1.41-1.39 2.82-3.1 3.51zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z" /></svg>
+                            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Apple</span>
+                        </button>
+                    </div>
 
-                    <form onSubmit={handleRegister} className="space-y-5">
+                    <div className="relative flex items-center gap-4"><div className="h-px bg-slate-200 dark:bg-slate-800 flex-1"></div><span className="text-xs font-medium text-slate-400 uppercase">veya formu doldurun</span><div className="h-px bg-slate-200 dark:bg-slate-800 flex-1"></div></div>
 
-                        {/* HESAP TÜRÜ SEÇİMİ */}
-                        <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-4">
-                            <button
-                                type="button"
-                                onClick={() => setFormData({ ...formData, accountType: 'individual' })}
-                                className={`py-2 text-xs font-bold rounded-lg transition-all ${formData.accountType === 'individual' ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-white' : 'text-slate-500'}`}
-                            >
-                                Bireysel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setFormData({ ...formData, accountType: 'business' })}
-                                className={`py-2 text-xs font-bold rounded-lg transition-all ${formData.accountType === 'business' ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-white' : 'text-slate-500'}`}
-                            >
-                                Esnaf
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setFormData({ ...formData, accountType: 'corporate' })}
-                                className={`py-2 text-xs font-bold rounded-lg transition-all ${formData.accountType === 'corporate' ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-white' : 'text-slate-500'}`}
-                            >
-                                Kurumsal
-                            </button>
-                        </div>
+                    {error && (<div className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-xl flex items-start gap-3 text-red-600 dark:text-red-400 text-sm"><AlertCircle className="w-5 h-5 flex-shrink-0" /><p>{error}</p></div>)}
 
-                        {/* Ad Soyad */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Ad Soyad</label>
-                            <div className="relative">
-                                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                <input
-                                    required
-                                    type="text"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900 dark:text-white"
-                                    placeholder="Adınız Soyadınız"
-                                    value={formData.fullName}
-                                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                                />
+                    {/* HESAP TÜRÜ SEÇİCİ */}
+                    <div className="grid grid-cols-3 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                        {[
+                            { id: 'individual', label: 'Bireysel', icon: User },
+                            { id: 'business', label: 'Esnaf', icon: Store },
+                            { id: 'corporate', label: 'Kurumsal', icon: Building }
+                        ].map((type) => (
+                            <button
+                                key={type.id}
+                                onClick={() => setFormData({ ...formData, accountType: type.id })}
+                                className={`flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-lg text-xs font-bold transition-all ${formData.accountType === type.id ? 'bg-white dark:bg-slate-800 shadow-sm text-blue-600 dark:text-white ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                            >
+                                <type.icon className="w-4 h-4" />
+                                {type.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <form onSubmit={handleRegister} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1">Ad Soyad</label>
+                                <div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input required value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} type="text" className="w-full pl-9 pr-3 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/50 outline-none dark:text-white" placeholder="John Doe" /></div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1">Telefon</label>
+                                <div className="relative"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input required value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} type="tel" className="w-full pl-9 pr-3 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/50 outline-none dark:text-white" placeholder="555 123..." /></div>
                             </div>
                         </div>
 
-                        {/* Telefon */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Telefon</label>
-                            <div className="relative">
-                                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                <input
-                                    required
-                                    type="tel"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900 dark:text-white"
-                                    placeholder="0555 123 45 67"
-                                    value={formData.phone}
-                                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Firma Adı (Sadece Ticari) */}
                         {formData.accountType !== 'individual' && (
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Firma / İşletme Adı</label>
-                                <div className="relative">
-                                    <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                    <input
-                                        required
-                                        type="text"
-                                        className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900 dark:text-white"
-                                        placeholder="İşletmenizin Adı"
-                                        value={formData.companyName}
-                                        onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
-                                    />
+                            <div className="space-y-4 animate-in slide-in-from-top-2">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1">Firma Adı</label>
+                                    <div className="relative"><Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input required value={formData.companyName} onChange={(e) => setFormData({ ...formData, companyName: e.target.value })} type="text" className="w-full pl-9 pr-3 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/50 outline-none dark:text-white" placeholder="Şirketinizin Adı" /></div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1">Sektör</label>
+                                    <div className="relative"><Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><select value={formData.sectorType} onChange={(e) => setFormData({ ...formData, sectorType: e.target.value })} className="w-full pl-9 pr-3 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/50 outline-none dark:text-white appearance-none"><option value="technical_service">Teknik Servis</option><option value="retail_wholesale">Perakende / Toptan</option><option value="beauty_health">Güzellik / Sağlık</option><option value="auto_rental">Oto Galeri / Yıkama</option><option value="other">Diğer</option></select></div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Sektör (Sadece Ticari) */}
-                        {formData.accountType !== 'individual' && (
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Sektör</label>
-                                <div className="relative">
-                                    <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                    <select
-                                        className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900 dark:text-white appearance-none"
-                                        value={formData.sectorType}
-                                        onChange={(e) => setFormData({ ...formData, sectorType: e.target.value })}
-                                    >
-                                        <option value="technical_service">Teknik Servis / Tamir</option>
-                                        <option value="retail_wholesale">Market / Mağaza (Perakende)</option>
-                                        <option value="beauty_health">Kuaför / Güzellik Merkezi</option>
-                                        <option value="auto_rental">Oto Galeri / Kiralama / Yıkama</option>
-                                        <option value="other">Diğer</option>
-                                    </select>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* E-Posta */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">E-Posta Adresi</label>
-                            <div className="relative">
-                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                <input
-                                    required
-                                    type="email"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900 dark:text-white"
-                                    placeholder="ornek@sirket.com"
-                                    value={formData.email}
-                                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                />
-                            </div>
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1">E-Posta</label>
+                            <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} type="email" className="w-full pl-9 pr-3 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/50 outline-none dark:text-white" placeholder="info@sirket.com" /></div>
                         </div>
 
-                        {/* Şifre */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Şifre</label>
-                            <div className="relative">
-                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                <input
-                                    required
-                                    type="password"
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-slate-900 dark:text-white"
-                                    placeholder="••••••••"
-                                    value={formData.password}
-                                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                />
-                            </div>
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-1">Şifre</label>
+                            <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input required value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} type="password" className="w-full pl-9 pr-3 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/50 outline-none dark:text-white" placeholder="••••••••" /></div>
                         </div>
 
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-                        >
+                        <button type="submit" disabled={loading} className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-70 text-sm mt-2">
                             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Kayıt Ol <ArrowRight className="w-5 h-5" /></>}
                         </button>
-
-                        <div className="text-center mt-6">
-                            <p className="text-slate-500 text-sm">
-                                Zaten hesabınız var mı?{' '}
-                                <Link href="/login" className="text-blue-600 font-bold hover:underline">
-                                    Giriş Yap
-                                </Link>
-                            </p>
-                        </div>
                     </form>
+
+                    <div className="text-center pb-8">
+                        <p className="text-sm text-slate-500">Zaten hesabınız var mı? <Link href="/login" className="font-bold text-blue-600 hover:text-blue-700 hover:underline">Giriş Yap</Link></p>
+                    </div>
                 </div>
             </div>
         </div>
