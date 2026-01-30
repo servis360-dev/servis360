@@ -33,23 +33,29 @@ export default function LoginPage() {
 
     const checkUserAndRedirect = async (user: any) => {
         try {
-            // Önce veritabanı kaydını kontrol et (Rolü öğrenmek için)
+            // Önce veritabanı kaydını kontrol et
             const docRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile');
             const docSnap = await getDoc(docRef);
 
             if (docSnap.exists()) {
                 const userData = docSnap.data();
 
-                // 1. Admin İse E-posta Onayını Atla (Bypass)
-                // Admin değilse, e-posta onayı zorunlu olsun.
+                // 1. EĞER HESAP TÜRÜ SEÇİLMEMİŞSE -> ONBOARDING'E GİT
+                if (!userData.accountType) {
+                    router.push('/onboarding');
+                    return;
+                }
+
+                // 2. Admin Değilse E-posta Onayı Kontrolü
+                // Not: Google/Apple ile girenlerde emailVerified genelde true gelir.
                 if (userData.role !== 'admin' && !user.emailVerified) {
-                    await signOut(auth); // Oturumu kapat
+                    await signOut(auth);
                     setError('E-posta adresiniz henüz doğrulanmamış. Lütfen gelen kutunuzu kontrol edin.');
                     setLoading(false);
                     return;
                 }
 
-                // 2. Hesap Durumu Kontrolü (Dondurulmuş mu?)
+                // 3. Hesap Durumu Kontrolü (Dondurulmuş mu?)
                 if (userData.status === 'suspended') {
                     await signOut(auth);
                     setError('Hesabınız dondurulmuştur. Lütfen ödeme yapın veya yönetici ile iletişime geçin.');
@@ -59,11 +65,11 @@ export default function LoginPage() {
 
                 // Her şey yolunda, içeri al
                 router.push('/dashboard');
+
             } else {
-                // Veritabanında kaydı yoksa (Sadece Auth'ta varsa)
-                await signOut(auth);
-                setError('Bu hesap ile kayıtlı bir üyelik bulunamadı. Lütfen önce kayıt olun.');
-                setLoading(false);
+                // PROFİL HİÇ YOKSA (Örn: Yeni Google Girişi) -> ONBOARDING'E GİT
+                // Burada hata vermek yerine kurulum sayfasına yolluyoruz.
+                router.push('/onboarding');
             }
         } catch (err) {
             console.error("Giriş kontrol hatası:", err);

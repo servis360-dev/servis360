@@ -34,7 +34,8 @@ import {
     Download,
     AlertTriangle,
     CreditCard,
-    Save
+    Save,
+    Banknote
 } from 'lucide-react';
 import RoleGuard from '../../../components/auth/role-guard';
 
@@ -46,13 +47,14 @@ export default function AdminPage() {
     const [logs, setLogs] = useState<string[]>([]);
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
 
-    // Sistem Ayarları State'i (GÜNCELLENDİ: Paket Fiyatları)
+    // Sistem Ayarları State'i (IBAN Alıcı Adı Eklendi)
     const [systemSettings, setSystemSettings] = useState({
         iban: '',
         bankName: '',
+        accountHolder: '', // YENİ: Alıcı İsim Soyisim / Firma
         monthlyPrice: '',
-        sixMonthPrice: '', // Yeni
-        yearlyPrice: ''    // Yeni
+        sixMonthPrice: '',
+        yearlyPrice: ''
     });
 
     const [broadcastMsg, setBroadcastMsg] = useState('');
@@ -85,6 +87,7 @@ export default function AdminPage() {
                 location: d.data().location || 'Istanbul, TR'
             }));
 
+            // Kendini en başa al
             data = data.sort((a, b) => {
                 if (a.id === user.uid) return -1;
                 if (b.id === user.uid) return 1;
@@ -121,10 +124,10 @@ export default function AdminPage() {
     // Ayarları Kaydet
     const saveSettings = async () => {
         try {
-            addLog("CONFIG: Updating system parameters...");
+            addLog("CONFIG: Updating financial parameters...");
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'), systemSettings);
-            addLog("SUCCESS: Configuration saved.");
-            alert("Ayarlar güncellendi.");
+            addLog("SUCCESS: Financial configuration saved.");
+            alert("Finansal ayarlar ve IBAN güncellendi.");
         } catch (error) {
             console.error(error);
             addLog("ERROR: Config update failed.");
@@ -149,7 +152,7 @@ export default function AdminPage() {
 
             addLog(`BROADCAST_SENT: "${broadcastMsg}" to ALL nodes.`);
             setBroadcastMsg('');
-            alert("Duyuru gönderildi.");
+            alert("Duyuru tüm kullanıcılara gönderildi.");
         } catch (error) {
             console.error(error);
             addLog("ERROR: Broadcast transmission failed.");
@@ -195,6 +198,7 @@ export default function AdminPage() {
 
             addLog(`SUCCESS: License extended by ${months} months.`);
             setSelectedUser(null);
+            alert("Lisans süresi uzatıldı.");
         } catch (error) {
             console.error(error);
             addLog(`ERROR: License extension failed.`);
@@ -207,7 +211,7 @@ export default function AdminPage() {
             return;
         }
         const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
-        if (confirm(`Kullanıcı durumu değiştirilsin mi?`)) {
+        if (confirm(`Kullanıcı durumu ${newStatus === 'active' ? 'AKTİF' : 'PASİF'} olarak değiştirilsin mi?`)) {
             addLog(`COMMAND: Changing status to ${newStatus.toUpperCase()}...`);
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { status: newStatus });
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile'), { status: newStatus });
@@ -219,7 +223,7 @@ export default function AdminPage() {
             alert("KRİTİK HATA: Yönetici hesabı silinemez.");
             return;
         }
-        if (confirm("DİKKAT: Veriler kalıcı olarak silinecek.")) {
+        if (confirm("DİKKAT: Veriler kalıcı olarak silinecek. Onaylıyor musunuz?")) {
             addLog(`COMMAND: PURGING USER_${userId.substring(0, 5)}...`);
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId));
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile'));
@@ -231,7 +235,7 @@ export default function AdminPage() {
         <RoleGuard allowedRoles={['admin']}>
             <div className="space-y-6 bg-slate-950 min-h-screen p-6 text-slate-300 font-mono text-sm">
 
-                {/* HUD */}
+                {/* HUD HEADER */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-slate-800 pb-6">
                     <div>
                         <div className="flex items-center gap-2 mb-2">
@@ -239,7 +243,7 @@ export default function AdminPage() {
                             <span className="text-green-500 text-xs tracking-widest font-bold">SYSTEM ONLINE</span>
                         </div>
                         <h1 className="text-3xl font-black text-white tracking-tighter flex items-center gap-3">
-                            <Terminal className="text-blue-500" /> ADMIN_CONSOLE_V2
+                            <Terminal className="text-blue-500" /> ADMIN_CONSOLE_V3
                         </h1>
                         <p className="text-slate-500 text-xs mt-1">ROOT ACCESS GRANTED // ID: {currentUser?.uid}</p>
                     </div>
@@ -250,7 +254,7 @@ export default function AdminPage() {
                         </div>
                         <div className="text-right">
                             <span className="text-slate-500 block">LATENCY</span>
-                            <span className="text-green-400">24ms</span>
+                            <span className="text-green-400">18ms</span>
                         </div>
                     </div>
                 </div>
@@ -280,65 +284,82 @@ export default function AdminPage() {
                     </div>
                 </div>
 
-                {/* SYSTEM CONFIGURATION PANEL (NEW) */}
+                {/* SYSTEM CONFIGURATION PANEL */}
                 <div className="bg-slate-900 border border-slate-800 p-4 rounded-sm">
                     <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
-                        <CreditCard className="w-4 h-4 text-yellow-500" /> FINANCIAL CONFIGURATION
+                        <CreditCard className="w-4 h-4 text-yellow-500" /> FINANCIAL CONFIGURATION (PRICING & BANK)
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-                        <div className="lg:col-span-1">
-                            <label className="text-[10px] text-slate-500 block mb-1">MONTHLY (1 AY)</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                        {/* Fiyatlar */}
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1">1 MONTH PRICE</label>
                             <input
                                 value={systemSettings.monthlyPrice}
                                 onChange={(e) => setSystemSettings({ ...systemSettings, monthlyPrice: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-1.5 text-xs focus:border-yellow-500 outline-none"
+                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none"
                                 placeholder="499"
                             />
                         </div>
-                        <div className="lg:col-span-1">
-                            <label className="text-[10px] text-slate-500 block mb-1">SEMI-ANNUAL (6 AY)</label>
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1">6 MONTH PRICE</label>
                             <input
                                 value={systemSettings.sixMonthPrice}
                                 onChange={(e) => setSystemSettings({ ...systemSettings, sixMonthPrice: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-1.5 text-xs focus:border-yellow-500 outline-none"
+                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none"
                                 placeholder="2750"
                             />
                         </div>
-                        <div className="lg:col-span-1">
-                            <label className="text-[10px] text-slate-500 block mb-1">ANNUAL (1 YIL)</label>
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1">1 YEAR PRICE</label>
                             <input
                                 value={systemSettings.yearlyPrice}
                                 onChange={(e) => setSystemSettings({ ...systemSettings, yearlyPrice: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-1.5 text-xs focus:border-yellow-500 outline-none"
+                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none"
                                 placeholder="4990"
                             />
                         </div>
-                        <div className="lg:col-span-1">
-                            <label className="text-[10px] text-slate-500 block mb-1">BANK NAME</label>
-                            <input
-                                value={systemSettings.bankName}
-                                onChange={(e) => setSystemSettings({ ...systemSettings, bankName: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-1.5 text-xs focus:border-yellow-500 outline-none"
-                                placeholder="Ziraat"
-                            />
+                        {/* Kaydet Butonu - Sağ Üstte Dursun */}
+                        <div className="flex items-end">
+                            <button
+                                onClick={saveSettings}
+                                className="w-full bg-slate-800 hover:bg-yellow-900/30 text-yellow-500 border border-slate-700 hover:border-yellow-500 px-2 py-2 text-xs font-bold transition-all flex items-center justify-center gap-2"
+                            >
+                                <Save className="w-4 h-4" /> SAVE CONFIG
+                            </button>
                         </div>
-                        <div className="lg:col-span-1">
+                    </div>
+
+                    <div className="border-t border-slate-800 pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Banka Bilgileri */}
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1">BANK NAME</label>
+                            <div className="relative">
+                                <Banknote className="absolute left-2 top-2 w-3 h-3 text-slate-600" />
+                                <input
+                                    value={systemSettings.bankName}
+                                    onChange={(e) => setSystemSettings({ ...systemSettings, bankName: e.target.value })}
+                                    className="w-full bg-black border border-slate-700 text-white pl-7 pr-2 py-2 text-xs focus:border-yellow-500 outline-none"
+                                    placeholder="Ziraat Bankası"
+                                />
+                            </div>
+                        </div>
+                        <div>
                             <label className="text-[10px] text-slate-500 block mb-1">IBAN ADDRESS</label>
                             <input
                                 value={systemSettings.iban}
                                 onChange={(e) => setSystemSettings({ ...systemSettings, iban: e.target.value })}
-                                className="w-full bg-black border border-slate-700 text-white px-2 py-1.5 text-xs focus:border-yellow-500 outline-none"
-                                placeholder="TR..."
+                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none font-mono"
+                                placeholder="TR00 0000..."
                             />
                         </div>
-                        <div className="lg:col-span-1">
-                            <label className="text-[10px] text-slate-500 block mb-1">ACTION</label>
-                            <button
-                                onClick={saveSettings}
-                                className="w-full bg-slate-800 hover:bg-yellow-900/30 text-yellow-500 border border-slate-700 hover:border-yellow-500 px-2 py-1.5 text-xs font-bold transition-all flex items-center justify-center gap-2"
-                            >
-                                <Save className="w-3 h-3" /> SAVE
-                            </button>
+                        <div>
+                            <label className="text-[10px] text-slate-500 block mb-1">ACCOUNT HOLDER (ALICI)</label>
+                            <input
+                                value={systemSettings.accountHolder}
+                                onChange={(e) => setSystemSettings({ ...systemSettings, accountHolder: e.target.value })}
+                                className="w-full bg-black border border-slate-700 text-white px-2 py-2 text-xs focus:border-yellow-500 outline-none"
+                                placeholder="Şirket Adı veya Şahıs Adı"
+                            />
                         </div>
                     </div>
                 </div>

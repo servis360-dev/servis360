@@ -1,237 +1,214 @@
 ﻿'use client';
 
 import { useEffect, useState } from 'react';
-import {
-    collection,
-    query,
-    onSnapshot,
-    addDoc,
-    deleteDoc,
-    doc,
-    serverTimestamp,
-    orderBy
-} from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
     Users,
-    Plus,
-    Search,
-    UserCog,
-    Trash2,
-    Phone,
+    UserPlus,
     Mail,
-    BadgeCheck,
-    Briefcase
+    Trash2,
+    Shield,
+    Briefcase,
+    CheckCircle2,
+    X,
+    Copy
 } from 'lucide-react';
 
 export default function StaffPage() {
     const [staff, setStaff] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [user, setUser] = useState<any>(null);
     const [showModal, setShowModal] = useState(false);
 
-    // Form Verileri
-    const [newStaff, setNewStaff] = useState({
-        name: '',
-        role: 'technician', // varsayılan: tekniker
-        phone: '',
-        email: ''
+    // Yeni Personel Formu
+    const [formData, setFormData] = useState({
+        fullName: '',
+        email: '',
+        role: 'technical', // technical, sales, accountant
+        phone: ''
     });
 
     useEffect(() => {
-        const user = auth.currentUser;
-        if (!user) return;
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            if (currentUser) {
+                setUser(currentUser);
 
-        // Personel Listesini Dinle
-        const q = query(
-            collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'staff'),
-            orderBy('name')
-        );
+                // Personel Listesini Çek
+                const q = query(
+                    collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'staff')
+                );
 
-        const unsub = onSnapshot(q, (snapshot) => {
-            setStaff(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-            setLoading(false);
+                const unsubSnap = onSnapshot(q, (snapshot) => {
+                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setStaff(data);
+                    setLoading(false);
+                });
+                return () => unsubSnap();
+            }
         });
-
-        return () => unsub();
+        return () => unsubscribe();
     }, []);
 
-    // Personel Ekle
-    const handleAddStaff = async (e: React.FormEvent) => {
+    const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
-        const user = auth.currentUser;
         if (!user) return;
 
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'staff'), {
-            ...newStaff,
-            status: 'active',
-            createdAt: serverTimestamp()
-        });
+        try {
+            // Personeli "Davetli" olarak kaydet
+            // Gerçek kayıt işlemi personel "Register" olduğunda eşleşecek.
+            await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'staff', formData.email), {
+                ...formData,
+                status: 'invited', // invited, active
+                invitedAt: serverTimestamp()
+            });
 
-        setShowModal(false);
-        setNewStaff({ name: '', role: 'technician', phone: '', email: '' });
-    };
+            // Genel Davet Listesine de ekle (Kayıt olurken kontrol etmek için)
+            // Not: Bu kısım güvenlik kuralları gerektirebilir, şimdilik patronun altına ekliyoruz.
+            // İdealde bir Cloud Function ile 'public_invites' koleksiyonuna yazılır.
 
-    // Personel Sil
-    const handleDelete = async (id: string) => {
-        if (confirm("Bu personeli silmek istediğinize emin misiniz?")) {
-            const user = auth.currentUser;
-            if (!user) return;
-            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'staff', id));
+            alert("Personel listeye eklendi! Şimdi bu kişiye sisteme kayıt olmasını söyleyin. E-posta adresi eşleşince yetkileri otomatik tanımlanacak.");
+
+            setShowModal(false);
+            setFormData({ fullName: '', email: '', role: 'technical', phone: '' });
+
+        } catch (error) {
+            console.error(error);
+            alert("Bir hata oluştu.");
         }
     };
 
-    // Rol İsimleri (Türkçe)
-    const roleLabels: any = {
-        technician: 'Tekniker / Usta',
-        sales: 'Satış Görevlisi',
-        accounting: 'Muhasebe',
-        manager: 'Müdür'
+    const handleDelete = async (email: string) => {
+        if (confirm("Bu personelin yetkilerini kaldırmak istiyor musunuz?")) {
+            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'staff', email));
+        }
     };
 
-    // Rol Renkleri
-    const roleColors: any = {
-        technician: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-        sales: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-        accounting: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
-        manager: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+    const getRoleName = (role: string) => {
+        switch (role) {
+            case 'technical': return 'Teknik Servis Elemanı';
+            case 'sales': return 'Satış / Kasa Görevlisi';
+            case 'accountant': return 'Ön Muhasebe';
+            default: return 'Personel';
+        }
     };
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Personel Yönetimi</h1>
-                    <p className="text-slate-500 dark:text-slate-400">Çalışanlarınızı ekleyin ve yönetin.</p>
+                    <p className="text-slate-500 dark:text-slate-400">Çalışanlarınızı ekleyin ve yetkilendirin.</p>
                 </div>
                 <button
                     onClick={() => setShowModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
                 >
-                    <Plus className="w-5 h-5" /> Personel Ekle
+                    <UserPlus className="w-5 h-5" /> Personel Ekle
                 </button>
             </div>
 
             {/* Personel Listesi */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {loading ? (
-                    <div className="col-span-full text-center text-slate-500 py-10">Yükleniyor...</div>
-                ) : staff.length === 0 ? (
-                    <div className="col-span-full text-center py-12 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 border-dashed">
-                        <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                        <p className="text-slate-500 font-medium">Henüz personel eklenmedi.</p>
-                    </div>
-                ) : (
-                    staff.map((s) => (
-                        <div key={s.id} className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group relative">
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-xl font-bold text-slate-600 dark:text-slate-300">
-                                        {s.name.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-slate-900 dark:text-white">{s.name}</h3>
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wide ${roleColors[s.role] || 'bg-slate-100 text-slate-600'}`}>
-                                            {roleLabels[s.role] || s.role}
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
+                    <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                            <th className="p-4 font-semibold">Ad Soyad</th>
+                            <th className="p-4 font-semibold">E-Posta & İletişim</th>
+                            <th className="p-4 font-semibold">Rol / Yetki</th>
+                            <th className="p-4 font-semibold">Durum</th>
+                            <th className="p-4 font-semibold text-right">İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {loading ? (
+                            <tr><td colSpan={5} className="p-8 text-center">Yükleniyor...</td></tr>
+                        ) : staff.length === 0 ? (
+                            <tr><td colSpan={5} className="p-8 text-center text-slate-500">Henüz personel eklenmemiş.</td></tr>
+                        ) : (
+                            staff.map((p) => (
+                                <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                    <td className="p-4 font-bold text-slate-900 dark:text-white">
+                                        {p.fullName}
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="flex flex-col">
+                                            <span className="flex items-center gap-2"><Mail className="w-3 h-3" /> {p.email}</span>
+                                            <span className="text-xs text-slate-400">{p.phone}</span>
+                                        </div>
+                                    </td>
+                                    <td className="p-4">
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                            <Briefcase className="w-3 h-3" />
+                                            {getRoleName(p.role)}
                                         </span>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => handleDelete(s.id)}
-                                    className="text-slate-400 hover:text-red-500 transition-colors p-1"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
-                            </div>
-
-                            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400 mt-2 pt-3 border-t border-slate-100 dark:border-slate-700">
-                                <div className="flex items-center gap-2">
-                                    <Phone className="w-3.5 h-3.5 text-slate-400" />
-                                    {s.phone || '-'}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Mail className="w-3.5 h-3.5 text-slate-400" />
-                                    {s.email || '-'}
-                                </div>
-                            </div>
-                        </div>
-                    ))
-                )}
+                                    </td>
+                                    <td className="p-4">
+                                        {p.status === 'active' ? (
+                                            <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> Aktif</span>
+                                        ) : (
+                                            <span className="text-orange-500 font-bold flex items-center gap-1 text-xs bg-orange-50 px-2 py-1 rounded-lg border border-orange-100">
+                                                ⏳ Davet Edildi
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="p-4 text-right">
+                                        <button
+                                            onClick={() => handleDelete(p.id)}
+                                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
             </div>
 
             {/* Modal */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-200 dark:border-slate-700">
-                        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Yeni Personel Ekle</h2>
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                                <UserPlus className="w-6 h-6 text-blue-600" /> Personel Ekle
+                            </h2>
+                            <button onClick={() => setShowModal(false)}><X className="text-slate-400 hover:text-slate-600" /></button>
+                        </div>
 
-                        <form onSubmit={handleAddStaff} className="space-y-4">
+                        <form onSubmit={handleInvite} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Ad Soyad</label>
-                                <input
-                                    required
-                                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500"
-                                    value={newStaff.name}
-                                    onChange={e => setNewStaff({ ...newStaff, name: e.target.value })}
-                                    placeholder="Örn: Ahmet Yılmaz"
-                                />
+                                <label className="block text-sm font-medium mb-1">Ad Soyad</label>
+                                <input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder="Örn: Ahmet Yılmaz" value={formData.fullName} onChange={e => setFormData({ ...formData, fullName: e.target.value })} />
                             </div>
-
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Görevi / Rolü</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {Object.entries(roleLabels).map(([key, label]) => (
-                                        <button
-                                            key={key}
-                                            type="button"
-                                            onClick={() => setNewStaff({ ...newStaff, role: key })}
-                                            className={`p-2 text-xs font-bold rounded-lg border transition-all ${newStaff.role === key
-                                                    ? 'bg-blue-50 border-blue-500 text-blue-600 dark:bg-blue-900/30 dark:border-blue-400 dark:text-blue-300'
-                                                    : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 dark:bg-slate-900 dark:border-slate-700'
-                                                }`}
-                                        >
-                                            {label as string}
-                                        </button>
-                                    ))}
-                                </div>
+                                <label className="block text-sm font-medium mb-1">E-Posta Adresi</label>
+                                <input required type="email" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder="personel@sirket.com" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                                <p className="text-[10px] text-slate-500 mt-1">Personel bu e-posta ile kayıt olmalıdır.</p>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Telefon</label>
+                                <input type="tel" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" placeholder="0555..." value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Görevi / Rolü</label>
+                                <select
+                                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none"
+                                    value={formData.role}
+                                    onChange={e => setFormData({ ...formData, role: e.target.value })}
+                                >
+                                    <option value="technical">🛠️ Teknik Servis (Finans/Ayar Yok)</option>
+                                    <option value="sales">💰 Satış / Kasa (Her Şeyi Görür)</option>
+                                    <option value="accountant">📉 Ön Muhasebe</option>
+                                </select>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Telefon</label>
-                                    <input
-                                        className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500"
-                                        value={newStaff.phone}
-                                        onChange={e => setNewStaff({ ...newStaff, phone: e.target.value })}
-                                        placeholder="05..."
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">E-Posta</label>
-                                    <input
-                                        type="email"
-                                        className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500"
-                                        value={newStaff.email}
-                                        onChange={e => setNewStaff({ ...newStaff, email: e.target.value })}
-                                        placeholder="@mail.com"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowModal(false)}
-                                    className="flex-1 py-3 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl"
-                                >
-                                    İptal
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-500/20"
-                                >
-                                    Kaydet
-                                </button>
-                            </div>
+                            <button className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 flex items-center justify-center gap-2 mt-4">
+                                <UserPlus className="w-5 h-5" /> Listeye Ekle
+                            </button>
                         </form>
                     </div>
                 </div>

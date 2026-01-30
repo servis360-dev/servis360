@@ -62,12 +62,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
                     if (docSnap.exists()) {
                         const data = docSnap.data();
-                        const role = data.role || 'patron';
+
+                        // Rol ve Hesap Türü Kontrolü
+                        const role = data.role || 'patron'; // patron, owner, admin, technical, sales
                         const sector = data.sectorType || 'technical_service';
+
+                        // Register sayfasından 'business' geliyor, Onboarding'den 'esnaf'/'corporate' gelebilir.
+                        // 'business' ve 'esnaf'ı aynı kategoride (KOBİ) değerlendirelim.
                         const type = data.accountType || 'business';
 
                         setIsAdmin(role === 'admin');
-                        generateMenu(sector, type);
+                        generateMenu(sector, type, role);
                     }
                 } catch (error) {
                     console.error("Menü hatası:", error);
@@ -78,13 +83,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         return () => unsubscribe();
     }, []);
 
-    const generateMenu = (sector: string, type: string) => {
+    const generateMenu = (sector: string, accountType: string, role: string) => {
+        // Temel Menü
         let items = [
             { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard, href: '/dashboard' }
         ];
 
-        // --- BİREYSEL KULLANICI ---
-        if (type === 'individual') {
+        // --- 1. BİREYSEL KULLANICI ---
+        if (accountType === 'individual') {
             items.push(
                 { id: 'finance', label: 'Gelir / Gider', icon: Wallet, href: '/dashboard/finance' },
                 { id: 'customers', label: 'Kişiler / Rehber', icon: Contact, href: '/dashboard/customers' },
@@ -92,7 +98,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 { id: 'communication', label: 'Notlarım', icon: MessageSquare, href: '/dashboard/communication' }
             );
         }
-        // --- KURUMSAL / ESNAF ---
+
+        // --- 2. TİCARİ KULLANICILAR (Esnaf, Business, Corporate) ---
         else {
             // Sektöre göre dinamik isimlendirme
             let jobsLabel = 'İş Emirleri';
@@ -121,26 +128,49 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 jobsIcon = Briefcase;
             }
 
-            // MENÜ SIRALAMASI (Eksikler Giderildi)
+            // A) ORTAK İŞLETME MODÜLLERİ (Her işletmede olur)
             items.push(
                 { id: 'jobs', label: jobsLabel, icon: jobsIcon, href: '/dashboard/jobs' },
-                { id: 'appointments', label: 'Randevular', icon: CalendarClock, href: '/dashboard/appointments' }, // YENİ
+                { id: 'appointments', label: 'Randevular', icon: CalendarClock, href: '/dashboard/appointments' },
                 { id: 'proposals', label: 'Teklif Hazırla', icon: FileText, href: '/dashboard/proposals' },
-                { id: 'stock', label: stockLabel, icon: stockIcon, href: '/dashboard/stock' }, // DİNAMİK ESKİ HALİNE GELDİ
-                { id: 'staff', label: 'Personel', icon: UserCog, href: '/dashboard/staff' }, // GERİ GELDİ
-                { id: 'branches', label: 'Şubeler', icon: Store, href: '/dashboard/branches' }, // GERİ GELDİ
-                { id: 'finance', label: 'Finans & Kasa', icon: Wallet, href: '/dashboard/finance' },
-                { id: 'customers', label: customerLabel, icon: customerIcon, href: '/dashboard/customers' },
-                { id: 'communication', label: 'Haberleşme', icon: MessageSquare, href: '/dashboard/communication' }, // GERİ GELDİ
-                { id: 'subscription', label: 'Abonelik & Paket', icon: CreditCard, href: '/dashboard/subscription' } // GERİ GELDİ
+                { id: 'stock', label: stockLabel, icon: stockIcon, href: '/dashboard/stock' },
+                { id: 'customers', label: customerLabel, icon: customerIcon, href: '/dashboard/customers' }
             );
+
+            // B) FİNANS (Rol Kontrolü: Teknik personel göremez)
+            if (role !== 'technical') {
+                items.push({ id: 'finance', label: 'Finans & Kasa', icon: Wallet, href: '/dashboard/finance' });
+            }
+
+            // C) SADECE "KURUMSAL" (Corporate) HESAPLARA ÖZEL MODÜLLER
+            // Esnaf veya Business hesaplarda bunlar gizlenir.
+            if (accountType === 'corporate') {
+                // Şube ve Personel Yönetimi (Teknik personel göremez)
+                if (role !== 'technical') {
+                    items.push(
+                        { id: 'branches', label: 'Şubeler', icon: Store, href: '/dashboard/branches' },
+                        { id: 'staff', label: 'Personel', icon: UserCog, href: '/dashboard/staff' }
+                    );
+                }
+                // Haberleşme (Kurumsal iletişim)
+                items.push(
+                    { id: 'communication', label: 'Haberleşme', icon: MessageSquare, href: '/dashboard/communication' }
+                );
+            }
+
+            // Abonelik (Herkes görsün, patron ödesin)
+            items.push({ id: 'subscription', label: 'Abonelik & Paket', icon: CreditCard, href: '/dashboard/subscription' });
         }
 
-        // Sabit Alt Menüler
+        // --- ALT SABİT MENÜLER ---
         items.push(
-            { id: 'support', label: 'Destek & Yardım', icon: LifeBuoy, href: '/dashboard/support' }, // GERİ GELDİ
-            { id: 'settings', label: 'Ayarlar', icon: Settings, href: '/dashboard/settings' }
+            { id: 'support', label: 'Destek & Yardım', icon: LifeBuoy, href: '/dashboard/support' }
         );
+
+        // Ayarlar (Teknik personel göremez)
+        if (role !== 'technical') {
+            items.push({ id: 'settings', label: 'Ayarlar', icon: Settings, href: '/dashboard/settings' });
+        }
 
         setMenuItems(items);
     };

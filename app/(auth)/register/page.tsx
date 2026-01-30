@@ -14,9 +14,8 @@ import { auth, db } from '../../../lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-    Loader2, Mail, Lock, User as UserIcon, Phone,
-    Briefcase, ArrowRight, LayoutDashboard,
-    CheckCircle2, Globe, Building2, Store, Users
+    Loader2, Mail, LayoutDashboard,
+    CheckCircle2, Briefcase, ArrowRight, User as UserIcon, Store
 } from 'lucide-react';
 
 export default function RegisterPage() {
@@ -26,11 +25,11 @@ export default function RegisterPage() {
         email: '',
         password: '',
         phone: '',
-        companyName: '' // Firma Adı
+        companyName: ''
     });
 
     // Seçimler
-    const [accountType, setAccountType] = useState<'individual' | 'business'>('business');
+    const [accountType, setAccountType] = useState<'individual' | 'business'>('business'); // Varsayılan business
     const [sectorType, setSectorType] = useState('technical_service');
     const [countryCode, setCountryCode] = useState('+90');
 
@@ -53,46 +52,45 @@ export default function RegisterPage() {
         setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') });
     };
 
-    const createProfile = async (user: User, isSocialLogin = false) => {
+    // SADECE E-POSTA İLE KAYIT OLANLAR İÇİN PROFİL OLUŞTURMA
+    // Google ile girenler /onboarding sayfasına gideceği için burayı kullanmayacak.
+    const createProfileForEmailUser = async (user: User) => {
         const userRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile');
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) return;
 
         const licenseEndsAt = new Date();
-        licenseEndsAt.setDate(licenseEndsAt.getDate() + 14);
-        const fullPhone = isSocialLogin ? '' : `${countryCode}${formData.phone}`;
+        licenseEndsAt.setDate(licenseEndsAt.getDate() + 14); // 14 Gün Deneme
+        const fullPhone = `${countryCode}${formData.phone}`;
 
-        // PROFİL VERİSİ (Sektör ve Tip burada saklanıyor)
+        // Profil Verisi
         const profileData = {
             uid: user.uid,
             email: user.email || formData.email,
-            fullName: user.displayName || formData.fullName,
+            fullName: formData.fullName,
             phone: fullPhone,
             companyName: formData.companyName || (accountType === 'individual' ? 'Bireysel Hesap' : 'İsimsiz Firma'),
 
-            // KRİTİK AYARLAR:
-            accountType: accountType, // individual (Bireysel) - business (Esnaf)
-            sectorType: sectorType,   // technical, retail, beauty, auto
-            role: 'patron',
+            // Kullanıcı formda ne seçtiyse onu kaydediyoruz
+            accountType: accountType,
+            sectorType: accountType === 'business' ? sectorType : 'individual', // Bireyselse sektör yok
+            role: 'patron', // İlk kayıt olan patrondur
 
-            status: 'active', // Pending payment yapılabilir
+            status: 'active',
             licenseEndsAt: Timestamp.fromDate(licenseEndsAt),
             createdAt: serverTimestamp(),
-            emailVerified: user.emailVerified
+            emailVerified: user.emailVerified,
+            setupCompleted: true // Formu doldurduğu için setup tamamlandı sayıyoruz
         };
 
         await setDoc(userRef, profileData);
 
-        // Admin Rehberi İçin
+        // Admin Rehberi (Public Directory)
         await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid), {
             uid: user.uid,
             fullName: profileData.fullName,
             companyName: profileData.companyName,
             email: profileData.email,
-            sectorType: sectorType, // Admin sektörleri görsün
+            accountType: accountType,
             status: 'active',
-            role: 'patron',
-            licenseEndsAt: Timestamp.fromDate(licenseEndsAt),
             createdAt: serverTimestamp()
         });
     };
@@ -108,27 +106,50 @@ export default function RegisterPage() {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
             await sendEmailVerification(userCredential.user);
-            await createProfile(userCredential.user);
+
+            // Form verileriyle profili oluştur
+            await createProfileForEmailUser(userCredential.user);
+
             setVerificationSent(true);
         } catch (err: any) {
             console.error(err);
-            if (err.code === 'auth/email-already-in-use') setError('E-posta kullanımda.');
-            else if (err.code === 'auth/weak-password') setError('Şifre zayıf.');
-            else setError('Kayıt hatası.');
+            if (err.code === 'auth/email-already-in-use') setError('Bu e-posta zaten kullanımda.');
+            else if (err.code === 'auth/weak-password') setError('Şifre çok zayıf.');
+            else setError('Kayıt sırasında bir hata oluştu.');
         } finally {
             setLoading(false);
         }
     };
 
+    // SOSYAL MEDYA İLE KAYIT (GOOGLE / APPLE)
     const handleSocialRegister = async (providerName: 'google' | 'apple') => {
         setLoading(true); setError('');
         try {
             const provider = providerName === 'google' ? new GoogleAuthProvider() : new OAuthProvider('apple.com');
             const result = await signInWithPopup(auth, provider);
-            await createProfile(result.user, true);
-            router.push('/dashboard');
+
+            // BURASI ÇOK ÖNEMLİ:
+            // Google ile girenin profili var mı bakıyoruz.
+            const userRef = doc(db, 'artifacts', 'servis-360-live', 'users', result.user.uid, 'users', 'profile');
+            const userSnap = await getDoc(userRef);
+
+            if (userSnap.exists() && userSnap.data().accountType) {
+                // Profili zaten varsa Dashboard'a git
+                router.push('/dashboard');
+            } else {
+                // Profili yoksa veya tipi seçilmemişse ONBOARDING'e git
+                // (Burada profil oluşturmuyoruz, Onboarding sayfası oluşturacak)
+                router.push('/onboarding');
+            }
         } catch (err: any) {
-            setError(`${providerName} kayıt hatası.`); setLoading(false);
+            console.error(err);
+            if (err.code === 'auth/popup-closed-by-user') {
+                setError('İşlem iptal edildi.');
+            } else {
+                setError(`${providerName} ile bağlantı kurulamadı.`);
+            }
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -172,7 +193,7 @@ export default function RegisterPage() {
                         <li className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-blue-500" /> Proforma Fatura Oluşturma</li>
                     </ul>
                 </div>
-                <div className="relative z-10 text-xs text-slate-500">© 2024 Servis360 Teknoloji A.Ş.</div>
+                <div className="relative z-10 text-xs text-slate-500">© 2026 Servis360 Teknoloji A.Ş.</div>
             </div>
 
             {/* SAĞ TARAF: Form */}
@@ -183,7 +204,7 @@ export default function RegisterPage() {
                         <p className="text-slate-500 text-sm">14 Gün Ücretsiz Deneme</p>
                     </div>
 
-                    {/* Hesap Tipi Seçimi */}
+                    {/* Hesap Tipi Seçimi (Sadece Form İçin) */}
                     <div className="grid grid-cols-2 gap-3 mb-6 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
                         <button
                             onClick={() => setAccountType('individual')}
