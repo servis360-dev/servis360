@@ -109,9 +109,13 @@ export default function SubscriptionPage() {
                 });
 
                 // 2. TELEGRAM BİLDİRİMİ GÖNDER (Backend Üzerinden)
+                // 👇 E-POSTA BİLGİSİ EKLENDİ
+                const userEmail = auth.currentUser.email || "E-posta bulunamadı";
+
                 const message = `
 💰 <b>YENİ ÖDEME BİLDİRİMİ!</b>
 
+📧 <b>Email:</b> ${userEmail}
 👤 <b>Kullanıcı:</b> ${userData.fullName}
 🏢 <b>Firma:</b> ${userData.companyName || 'Bireysel'}
 📞 <b>Tel:</b> ${userData.phone}
