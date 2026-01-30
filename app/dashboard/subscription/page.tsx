@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, addDoc, collection, serverTimestamp, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
+// 👇 İŞTE BU SATIR EKSİKTİ, EKLENDİ!
+import { sendTelegramMessage, sendTelegramPhoto } from '../../../lib/telegram';
 import {
     CreditCard,
     ShieldCheck,
@@ -83,7 +85,7 @@ export default function SubscriptionPage() {
     const handlePaymentRequest = async (planMonths: number, price: number, planName: string) => {
         if (!auth.currentUser || !userData) return;
 
-        // Dosya seçilmediyse uyar (Telegram için resim şart olsun istiyorsan)
+        // Dosya seçilmediyse uyar
         if (!selectedFile) {
             alert("Lütfen önce dekont resmini yükleyin.");
             return;
@@ -263,9 +265,9 @@ export default function SubscriptionPage() {
                             </div>
                         </div>
 
-                        {/* Dekont Yükleme (Opsiyonel Hale Geldi) */}
+                        {/* Dekont Yükleme Alanı */}
                         <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
-                            <p className="text-xs text-slate-500 mb-2 font-bold">DEKONT YÜKLE (Hızlandırmak İçin)</p>
+                            <p className="text-xs text-slate-500 mb-2 font-bold">DEKONT YÜKLE (Telegram'a Gider)</p>
                             <div className="flex gap-2">
                                 <label className="flex-1 cursor-pointer bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors">
                                     <Upload className="w-4 h-4 text-slate-400" />
@@ -275,12 +277,12 @@ export default function SubscriptionPage() {
                                     <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleFileChange} />
                                 </label>
                                 <button
-                                    onClick={() => selectedFile ? alert("Dekont gönderildi!") : alert("Lütfen önce dosya seçin")}
-                                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700"
+                                    onClick={() => handlePaymentRequest(0, 0, 'Manuel Dekont')} // Burası sadece buton aktifliği için, asıl işlem yukarıdaki plan butonlarında
+                                    className="hidden" // Bu butona gerek yok, plan butonları işi yapıyor
                                 >
-                                    Gönder
                                 </button>
                             </div>
+                            <p className="text-[10px] text-slate-400 mt-2">*Paket seçip "Satın Al" dediğinizde dekontunuz otomatik iletilir.</p>
                         </div>
                     </div>
                 </div>
