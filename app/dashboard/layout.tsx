@@ -5,8 +5,12 @@ import { useRouter, usePathname } from 'next/navigation';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import Sidebar from '../../components/layout/sidebar'; // Yolunu kontrol et
-import Header from '../../components/layout/header';   // Yolunu kontrol et
+
+// 👇 DÜZELTME BURADA: "default" import yerine "named" import ({}) kullanıyoruz.
+// Eğer yine hata alırsan, bileşen dosyalarında "export default" olup olmadığını kontrol et.
+import { Sidebar } from '../../components/layout/sidebar';
+import { Header } from '../../components/layout/header';
+
 import { Loader2, LockKeyhole } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -27,9 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     if (docSnap.exists()) {
                         setProfile(docSnap.data());
                     } else {
-                        // Profil hiç yoksa (Google ile ilk giriş vb.)
-                        // Onboarding sayfası yoksa direkt profili oluşturacak bir ara sayfaya yönlendirilmeli
-                        // Şimdilik subscription'a atıyoruz.
+                        // Profil yoksa (Google ile ilk giriş vb.)
                         router.push('/subscription');
                     }
                     setLoading(false);
@@ -45,25 +47,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     useEffect(() => {
         if (!loading && profile) {
 
-            // 1. ADIM: EKSİK BİLGİ KONTROLÜ (Google ile Gelenler İçin)
-            // Eğer telefon yoksa veya hesap türü seçilmemişse -> Ayarlara gitmeye zorla
-            // Not: Adminler bu kuraldan muaftır.
+            // 1. ADIM: EKSİK BİLGİ KONTROLÜ
             const isInfoMissing = !profile.phone || !profile.accountType;
+            // Adminler ve Settings sayfası hariç
             if (profile.role !== 'admin' && isInfoMissing && pathname !== '/settings') {
-                // Eğer /settings sayfasında değilse oraya at
-                // (Kullanıcıya bir uyarı modal'ı göstermek daha şık olur ama şimdilik redirect yapıyoruz)
-                 router.push('/settings'); 
-                // NOT: Eğer settings sayfan hazır değilse bu satırı yorum satırı yap, yoksa sonsuz döngüye girer.
+                // router.push('/settings'); // Ayarlar sayfası hazırsa aç
             }
 
-            // 2. ADIM: LİSANS / ÖDEME KONTROLÜ (Para Yoksa Hizmet Yok)
-            // Admin değilse VE (Lisans tarihi yoksa VEYA Lisans tarihi geçmişse)
+            // 2. ADIM: LİSANS / ÖDEME KONTROLÜ
             const now = new Date();
             const licenseDate = profile.licenseEndsAt ? profile.licenseEndsAt.toDate() : null;
             const isLicenseExpired = !licenseDate || licenseDate < now;
 
+            // Admin değilse ve lisansı bitmişse -> ABONELİK sayfasına hapis
             if (profile.role !== 'admin' && isLicenseExpired) {
-                // Eğer kullanıcı şu an '/subscription' sayfasında değilse, oraya zorla at.
                 if (pathname !== '/subscription') {
                     router.push('/subscription');
                 }
@@ -80,28 +77,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         );
     }
 
-    // LİSANS YOKSA SADECE ABONELİK SAYFASINI GÖSTER (Sidebar Gizlenebilir veya Kilitli Görünebilir)
-    // Aşağıdaki mantık: Lisans yoksa Sidebar'ı render etme veya kısıtlı render et.
+    // LİSANS GEÇERLİLİĞİ KONTROLÜ
     const isLicenseValid = profile?.role === 'admin' || (profile?.licenseEndsAt && profile.licenseEndsAt.toDate() > new Date());
 
     return (
         <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-            {/* LİSANS YOKSA SIDEBAR'I GİZLE Kİ KAÇAMASIN */}
+            {/* LİSANS YOKSA SIDEBAR GİZLENİR */}
             {isLicenseValid && <Sidebar userRole={profile?.role} />}
 
             <div className={`flex-1 flex flex-col transition-all duration-300 ${isLicenseValid ? 'ml-0 md:ml-64' : 'w-full'}`}>
+                {/* LİSANS YOKSA HEADER GİZLENİR */}
                 {isLicenseValid && <Header user={profile} />}
 
                 <main className="flex-1 p-4 md:p-6 overflow-y-auto">
-                    {/* LİSANS YOK UYARISI (Eğer Subscription sayfasında değilse) */}
+                    {/* LİSANS YOKSA VE ABONELİK SAYFASINDA DEĞİLSE UYARI GÖSTER (Zaten yönlendirilecek ama görsel güvenlik) */}
                     {!isLicenseValid && pathname !== '/subscription' ? (
-                        <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-                            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                                <LockKeyhole className="w-8 h-8 text-red-600" />
+                        <div className="flex flex-col items-center justify-center h-full text-center space-y-4 animate-in fade-in zoom-in duration-500">
+                            <div className="w-20 h-20 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center border-4 border-red-50 dark:border-red-900/50">
+                                <LockKeyhole className="w-10 h-10 text-red-600 dark:text-red-500" />
                             </div>
-                            <h2 className="text-2xl font-bold text-slate-800 dark:text-white">Deneme Süreniz Sona Erdi</h2>
-                            <p className="text-slate-500 max-w-md">Sistemi kullanmaya devam etmek için lütfen bir paket seçiniz.</p>
-                            <button onClick={() => router.push('/subscription')} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Paketleri İncele</button>
+                            <h2 className="text-3xl font-bold text-slate-800 dark:text-white">Deneme Süreniz Sona Erdi</h2>
+                            <p className="text-slate-500 dark:text-slate-400 max-w-md">Sistemi kullanmaya devam etmek ve verilerinize erişmek için lütfen bir paket seçiniz.</p>
+                            <button onClick={() => router.push('/subscription')} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/30">Paketleri İncele</button>
                         </div>
                     ) : (
                         children
