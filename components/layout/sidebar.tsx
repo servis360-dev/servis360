@@ -1,5 +1,9 @@
 ﻿'use client';
 
+// ---------------------------------------------------------------------------
+// ⚠️ NOT: Bu dosya projenin 'components/layout/sidebar.tsx' konumuna aittir.
+// ---------------------------------------------------------------------------
+
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -15,7 +19,9 @@ import {
     FileText,
     History,
     PlusCircle,
-    X
+    X,
+    CreditCard, // Abonelik için ikon
+    Gem // Alternatif Premium İkonu
 } from 'lucide-react';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -87,18 +93,18 @@ const MENU_ITEMS = [
                 label: 'Müşteriler',
                 href: '/dashboard/customers',
                 icon: Users,
-                allowedRoles: ['super_admin', 'admin', 'tradesman'] // Personel müşteri listesini göremesin istersen burdan 'staff'ı çıkar
+                allowedRoles: ['super_admin', 'admin', 'tradesman']
             },
             {
                 label: 'Personeller',
                 href: '/dashboard/staff',
                 icon: Users,
-                allowedRoles: ['super_admin', 'admin'] // Sadece patron ve super admin
+                allowedRoles: ['super_admin', 'admin']
             },
         ]
     },
 
-    // --- FİNANS (PERSONEL GÖREMEZ) ---
+    // --- FİNANS (SADECE PATRONLAR) ---
     {
         title: 'Finans',
         items: [
@@ -106,13 +112,22 @@ const MENU_ITEMS = [
                 label: 'Gelir/Gider',
                 href: '/dashboard/finance',
                 icon: Wallet,
-                allowedRoles: ['super_admin', 'admin', 'tradesman'] // Personel ve Bireysel göremez
+                allowedRoles: ['super_admin', 'admin', 'tradesman']
             },
             {
                 label: 'Teklifler',
                 href: '/dashboard/proposals',
                 icon: FileText,
                 allowedRoles: ['super_admin', 'admin', 'tradesman']
+            },
+            // 👇 YENİ EKLENEN KISIM: ABONELİK PAKETLERİ
+            // Sadece 'admin' (Firma Sahibi) ve 'tradesman' (Esnaf) görür.
+            // Personel (staff) görmez.
+            {
+                label: 'Abonelik Paketleri',
+                href: '/subscription',
+                icon: CreditCard,
+                allowedRoles: ['admin', 'tradesman']
             },
         ]
     },
