@@ -20,8 +20,9 @@ import {
     PiggyBank,
     CreditCard,
     Bell,
-    ArrowDownRight, // <-- EKLENDİ
-    ArrowUpRight    // <-- EKLENDİ
+    ArrowDownRight,
+    ArrowUpRight,
+    Clock // <-- İŞTE BU EKSİKTİ, EKLENDİ!
 } from 'lucide-react';
 import {
     BarChart,
