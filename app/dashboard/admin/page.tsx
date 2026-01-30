@@ -1,10 +1,5 @@
 ﻿'use client';
 
-// ---------------------------------------------------------------------------
-// ⚠️ NOT: Bu dosya projenin 'app/dashboard/admin/page.tsx' konumuna aittir.
-// Gerekli kütüphanelerin yüklü olduğundan emin ol: lucide-react, firebase
-// ---------------------------------------------------------------------------
-
 import { useEffect, useState } from 'react';
 import {
     collection,
@@ -22,17 +17,17 @@ import {
     where,
     getDocs
 } from 'firebase/firestore';
-// -------------------------------------------------------------
-// 👇 PROJE İÇİ IMPORTLAR (Hata alırsan yolları kontrol et)
+
+// 👇 PROJE İÇİ IMPORTLAR (Yolları kontrol et)
 import { auth, db } from '../../../lib/firebase';
 import RoleGuard from '../../../components/auth/role-guard';
-// -------------------------------------------------------------
 
 import {
     ShieldAlert, Search, Trash2, Users, Save,
     CreditCard, Phone, BellRing, RefreshCw, Wallet,
     BadgeCheck, X, TrendingUp, Building2, Store, User,
-    Mail, Calendar, Eye, Copy, CheckCircle2, ChevronRight, ChevronDown, UserPlus
+    Mail, Calendar, Eye, Copy, CheckCircle2, ChevronRight, ChevronDown, UserPlus,
+    AlertTriangle
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -43,6 +38,7 @@ export default function AdminPage() {
     const [stats, setStats] = useState({ totalRevenue: 0, activeUsers: 0, expiredUsers: 0 });
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [errorMsg, setErrorMsg] = useState(''); // Hata mesajlarını görmek için
 
     // Personel Görüntüleme (Hiyerarşi)
     const [expandedCompanyId, setExpandedCompanyId] = useState<string | null>(null);
@@ -79,24 +75,37 @@ export default function AdminPage() {
 
         // 1. Ayarları Çek
         const fetchSettings = async () => {
-            const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config');
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                setSettings(prev => ({
-                    bank: { ...prev.bank, ...data.bank },
-                    pricing: {
-                        individual: { ...prev.pricing.individual, ...data.pricing?.individual },
-                        business: { ...prev.pricing.business, ...data.pricing?.business },
-                        corporate: { ...prev.pricing.corporate, ...data.pricing?.corporate },
-                    }
-                }));
+            try {
+                const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config');
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    // Var olan verileri state ile birleştir
+                    setSettings(prev => ({
+                        bank: { ...prev.bank, ...data.bank },
+                        pricing: {
+                            individual: { ...prev.pricing.individual, ...data.pricing?.individual },
+                            business: { ...prev.pricing.business, ...data.pricing?.business },
+                            corporate: { ...prev.pricing.corporate, ...data.pricing?.corporate },
+                        }
+                    }));
+                }
+            } catch (err) {
+                console.error("Ayar çekme hatası:", err);
             }
         };
         fetchSettings();
 
         // 2. Kullanıcılar
-        const unsubUsers = onSnapshot(query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory'), orderBy('createdAt', 'desc')), (snapshot) => {
+        // NOT: Eğer veritabanında 'createdAt' için index yoksa orderBy hata verir.
+        // Hata almamak için şimdilik orderBy'ı kaldırabilirsin veya konsoldan index oluşturmalısın.
+        // Güvenli olsun diye şimdilik 'orderBy' kaldırıldı. İndex varsa ekleyebilirsin.
+        const q = query(
+            collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory')
+            // orderBy('createdAt', 'desc') // <-- İndex hatası verirse bunu yorum satırı yap
+        );
+
+        const unsubUsers = onSnapshot(q, (snapshot) => {
             const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             setUsers(userList);
 
@@ -104,10 +113,14 @@ export default function AdminPage() {
             const active = userList.filter((u: any) => u.status === 'active').length;
             setStats(prev => ({ ...prev, activeUsers: active, expiredUsers: userList.length - active }));
             setLoading(false);
+        }, (error) => {
+            console.error("Kullanıcıları çekerken hata:", error);
+            setErrorMsg("Kullanıcı listesi çekilemedi: " + error.message);
+            setLoading(false);
         });
 
         // 3. Ödemeler
-        const unsubRequests = onSnapshot(query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), where('status', '==', 'pending'), orderBy('createdAt', 'desc')), (snapshot) => {
+        const unsubRequests = onSnapshot(query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), where('status', '==', 'pending')), (snapshot) => {
             setRequests(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
@@ -135,7 +148,6 @@ export default function AdminPage() {
 
         try {
             // Firmanın 'staff' alt koleksiyonunu çek
-            // Not: Personeller 'users/{companyId}/staff' altında tutuluyorsa:
             const staffRef = collection(db, 'artifacts', 'servis-360-live', 'users', companyId, 'staff');
             const staffSnap = await getDocs(staffRef);
 
@@ -162,17 +174,29 @@ export default function AdminPage() {
     // --- HELPER: Tarih Formatla ---
     const formatDate = (timestamp: any) => {
         if (!timestamp) return '-';
-        return new Date(timestamp.seconds * 1000).toLocaleDateString('tr-TR');
+        // Firebase Timestamp kontrolü
+        if (timestamp.toDate) return timestamp.toDate().toLocaleDateString('tr-TR');
+        return new Date(timestamp).toLocaleDateString('tr-TR');
     };
 
-    // --- AYARLARI KAYDET ---
+    // --- AYARLARI KAYDET (DÜZELTİLDİ) ---
     const saveSettings = async () => {
         try {
-            await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'), settings);
-            alert("✅ Ayarlar güncellendi!");
-        } catch (error) {
-            console.error(error);
-            alert("Hata oluştu.");
+            // 1. undefined değerleri temizle (JSON trick)
+            // Firestore 'undefined' sevmez, bu işlem undefined olanları siler.
+            const cleanSettings = JSON.parse(JSON.stringify(settings));
+
+            // 2. merge: true kullanarak kaydet
+            await setDoc(
+                doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'),
+                cleanSettings,
+                { merge: true }
+            );
+
+            alert("✅ Tüm ayarlar (Fiyatlar ve Banka) başarıyla veritabanına kaydedildi!");
+        } catch (error: any) {
+            console.error("Kaydetme hatası detaylı:", error);
+            alert(`Ayarlar kaydedilirken hata oluştu: ${error.message}`);
         }
     };
 
@@ -217,8 +241,6 @@ export default function AdminPage() {
     const deleteUser = async (userId: string) => {
         if (confirm("Kullanıcı silinsin mi? Bu işlem geri alınamaz!")) {
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId));
-            // Dikkat: Kullanıcının alt koleksiyonlarını (users/{uid}/...) silmek için Cloud Functions gerekir, 
-            // burada sadece dizinden ve profilden siliyoruz.
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile'));
             alert("Kullanıcı silindi.");
         }
@@ -229,7 +251,7 @@ export default function AdminPage() {
             <span className="text-[10px] text-slate-500 uppercase">{label}</span>
             <div className="flex items-center bg-black border border-slate-700 rounded px-2">
                 <span className="text-slate-500 text-xs">₺</span>
-                <input type="number" value={value} onChange={e => onChange(Number(e.target.value))} className="w-full bg-transparent text-white text-xs p-2 outline-none" />
+                <input type="number" value={value || 0} onChange={e => onChange(Number(e.target.value))} className="w-full bg-transparent text-white text-xs p-2 outline-none" />
             </div>
         </div>
     );
@@ -241,7 +263,6 @@ export default function AdminPage() {
     );
 
     return (
-        // 👇 DÜZELTİLEN KISIM: Artık 'super_admin' olanlar girebilir
         <RoleGuard allowedRoles={['super_admin']}>
             <div className="space-y-6 bg-slate-950 min-h-screen p-6 text-slate-300 font-mono text-sm relative pb-32">
 
@@ -265,15 +286,23 @@ export default function AdminPage() {
                     </div>
                 </div>
 
+                {/* HATA MESAJI VARSA GÖSTER */}
+                {errorMsg && (
+                    <div className="bg-red-900/20 border border-red-900 p-4 rounded text-red-400 flex items-center gap-2">
+                        <AlertTriangle className="w-5 h-5" />
+                        <span>{errorMsg}</span>
+                    </div>
+                )}
+
                 {/* 1. BANKA VE FİYATLANDIRMA */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                     {/* BANKA BİLGİLERİ (Sol 4 birim) */}
                     <div className="lg:col-span-4 bg-slate-900 border border-slate-800 p-4 rounded-sm">
                         <h3 className="text-white font-bold mb-4 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500" /> BANKA BİLGİLERİ</h3>
                         <div className="space-y-3">
-                            <input value={settings.bank.bankName} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, bankName: e.target.value } })} placeholder="Banka Adı (Örn: Garanti)" className="w-full bg-black border border-slate-700 p-2 text-white text-xs rounded-sm" />
-                            <input value={settings.bank.accountHolder} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, accountHolder: e.target.value } })} placeholder="Alıcı Adı Soyadı" className="w-full bg-black border border-slate-700 p-2 text-white text-xs rounded-sm" />
-                            <input value={settings.bank.iban} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, iban: e.target.value } })} placeholder="TRXX 0000..." className="w-full bg-black border border-slate-700 p-2 text-white text-xs rounded-sm font-mono text-yellow-500" />
+                            <input value={settings.bank.bankName || ''} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, bankName: e.target.value } })} placeholder="Banka Adı (Örn: Garanti)" className="w-full bg-black border border-slate-700 p-2 text-white text-xs rounded-sm" />
+                            <input value={settings.bank.accountHolder || ''} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, accountHolder: e.target.value } })} placeholder="Alıcı Adı Soyadı" className="w-full bg-black border border-slate-700 p-2 text-white text-xs rounded-sm" />
+                            <input value={settings.bank.iban || ''} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, iban: e.target.value } })} placeholder="TRXX 0000..." className="w-full bg-black border border-slate-700 p-2 text-white text-xs rounded-sm font-mono text-yellow-500" />
                         </div>
                     </div>
 
@@ -335,6 +364,14 @@ export default function AdminPage() {
                             <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="İsim, Firma, Mail ara..." className="bg-black border border-slate-700 text-white text-xs p-2 pl-9 rounded w-full md:w-64" />
                         </div>
                     </div>
+
+                    {users.length === 0 && !loading && (
+                        <div className="p-8 text-center text-slate-500 border-b border-slate-800">
+                            <p>Henüz kayıtlı kullanıcı bulunamadı veya veriler çekilemiyor.</p>
+                            <p className="text-xs mt-2">Kayıtlı kullanıcı olduğundan eminseniz, konsol hatasını kontrol edin.</p>
+                        </div>
+                    )}
+
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs text-slate-400">
                             <thead className="text-slate-500 bg-slate-950 uppercase border-b border-slate-800">
