@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../../lib/firebase';
 import { useRouter } from 'next/navigation';
-import { collection, query, where, onSnapshot, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, doc, getDoc } from 'firebase/firestore';
 import {
     Wallet,
     TrendingUp,
@@ -19,7 +19,9 @@ import {
     User,
     PiggyBank,
     CreditCard,
-    Bell
+    Bell,
+    ArrowDownRight, // <-- EKLENDİ
+    ArrowUpRight    // <-- EKLENDİ
 } from 'lucide-react';
 import {
     BarChart,
@@ -89,7 +91,7 @@ export default function DashboardPage() {
                 // Dinleyicileri Başlat
                 const listeners = setupRealtimeListeners(currentUser.uid, timeFilter);
                 unsubTrans = listeners.unsubTrans;
-                unsubJobs = listeners.unsubJobs; // Bireyselde bu boş dönecek, sorun yok.
+                unsubJobs = listeners.unsubJobs;
             }
         });
 
@@ -168,8 +170,6 @@ export default function DashboardPage() {
         // 2. İŞ DİNLEYİCİSİ (Sadece Ticari Hesaplar İçin)
         let unsubJobs = () => { };
 
-        // Eğer hesap türü belli değilse veya business ise işleri dinle
-        // (useEffect içinde accountType state'i hemen güncellenmeyebilir, varsayılan olarak dinleyelim, hata vermez)
         const qJobs = query(collection(db, userPath, 'jobs'));
         unsubJobs = onSnapshot(qJobs, (snapshot) => {
             const pending = snapshot.docs.filter(d => ['pending', 'in_progress', 'waiting_parts'].includes(d.data().status)).length;
