@@ -1,58 +1,26 @@
 ﻿'use client';
 
-// ---------------------------------------------------------------------------
-// ⚠️ ÖNEMLİ: BU DOSYAYI PROJENİZE ALIRKEN ŞU ADIMLARI İZLEYİN:
-// 1. "MOCK / ÖNİZLEME" bloğunu tamamen SİLİN.
-// 2. "GERÇEK PROJE IMPORTLARI" bloğundaki yorum satırlarını (//) KALDIRIN.
-// ---------------------------------------------------------------------------
-
-// --- 1. MOCK / ÖNİZLEME (BURADA ÇALIŞMASI İÇİN) ---
-import React, { useState } from 'react';
-import {
-    LayoutDashboard, Briefcase, Users, Wallet, Settings,
-    CalendarDays, LogOut, ShieldAlert, Wrench, FileText,
-    History, PlusCircle, X, CreditCard, Gem
-} from 'lucide-react';
-
-// Next.js Link Simülasyonu
-const Link = ({ href, children, onClick, className }: any) => (
-    <a href="#" onClick={(e) => { e.preventDefault(); if (onClick) onClick(); }} className={className}>
-        {children}
-    </a>
-);
-
-// Next.js usePathname Simülasyonu
-const usePathname = () => '/dashboard';
-
-// Firebase Simülasyonu
-const auth = {};
-const signOut = async () => console.log("Çıkış yapıldı (Simülasyon)");
-// -------------------------------------------------------------------
-
-
-/* --- 2. GERÇEK PROJE IMPORTLARI (PROJENİZDE BUNLARI KULLANIN) ---
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-    LayoutDashboard, 
-    Briefcase, 
-    Users, 
-    Wallet, 
-    Settings, 
-    CalendarDays, 
-    LogOut, 
-    ShieldAlert, 
+import {
+    LayoutDashboard,
+    Briefcase,
+    Users,
+    Wallet,
+    Settings,
+    CalendarDays,
+    LogOut,
+    ShieldAlert,
     Wrench,
     FileText,
     History,
     PlusCircle,
     X,
-    CreditCard, 
-    Gem 
+    CreditCard, // Abonelik için ikon
+    Gem // Alternatif Premium İkonu
 } from 'lucide-react';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
-*/
 
 interface SidebarProps {
     userRole?: string; // 'super_admin' | 'admin' | 'staff' | 'tradesman' | 'individual'
@@ -61,6 +29,7 @@ interface SidebarProps {
 }
 
 // MENÜ YAPILANDIRMASI
+// allowedRoles: Bu menü öğesini kimler görebilir?
 const MENU_ITEMS = [
     // --- SAAS YÖNETİCİSİ (SADECE SEN) ---
     {
@@ -173,14 +142,13 @@ const MENU_ITEMS = [
 export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
 
-    // 👇 ÖNEMLİ DÜZELTME:
-    // Eğer veritabanından rol bilgisi henüz gelmediyse veya boşsa (undefined/null),
-    // varsayılan olarak 'individual' (Bireysel) kabul ediyoruz.
-    // Böylece menü asla boş kalmıyor.
+    // ROL KONTROLÜ (GÜVENLİK)
+    // Eğer rol undefined gelirse varsayılan olarak 'individual' kabul et.
+    // Böylece menü asla boş kalmaz.
     const safeRole = userRole || 'individual';
 
     const handleLogout = async () => {
-        await signOut(auth as any);
+        await signOut(auth);
     };
 
     return (
@@ -212,11 +180,12 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                 {/* MENÜ LİSTESİ */}
                 <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
                     {MENU_ITEMS.map((section, index) => {
-                        // safeRole kullanarak filtreleme yapıyoruz
+                        // Bölüm içindeki yetkili linkleri filtrele (safeRole kullanarak)
                         const authorizedItems = section.items.filter(item =>
                             item.allowedRoles.includes(safeRole)
                         );
 
+                        // Eğer bu bölümde kullanıcının göreceği hiçbir şey yoksa bölümü hiç gösterme
                         if (authorizedItems.length === 0) return null;
 
                         return (
@@ -233,7 +202,7 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                                             <Link
                                                 key={item.href}
                                                 href={item.href}
-                                                onClick={onClose}
+                                                onClick={onClose} // Mobilde tıklayınca menüyü kapat
                                                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isActive
                                                         ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
                                                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
@@ -261,7 +230,6 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                     </button>
                     <div className="mt-2 text-center">
                         <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full">
-                            {/* Ekrana basarken de safeRole kullanıyoruz ki boş görünmesin */}
                             {safeRole === 'super_admin' ? 'YÖNETİCİ' :
                                 safeRole === 'admin' ? 'KURUMSAL' :
                                     safeRole === 'staff' ? 'PERSONEL' :
