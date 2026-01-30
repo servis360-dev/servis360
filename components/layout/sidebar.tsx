@@ -3,145 +3,223 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-    LayoutDashboard, Users, Wrench, Settings, CreditCard, LogOut, Box, FileText,
-    ShieldAlert, UserCircle, Store, Megaphone, X // X ikonu eklendi (Kapatmak için)
+    LayoutDashboard,
+    Briefcase,
+    Users,
+    Wallet,
+    Settings,
+    CalendarDays,
+    LogOut,
+    ShieldAlert,
+    Wrench,
+    FileText,
+    History,
+    PlusCircle,
+    X
 } from 'lucide-react';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
 
 interface SidebarProps {
-    userRole?: string;
-    isOpen?: boolean;        // 👈 YENİ: Mobilde açık mı?
-    onClose?: () => void;    // 👈 YENİ: Kapatma fonksiyonu
+    userRole?: string; // 'super_admin' | 'admin' | 'staff' | 'tradesman' | 'individual'
+    isOpen: boolean;
+    onClose: () => void;
 }
 
-export function Sidebar({ userRole = 'user', isOpen = false, onClose }: SidebarProps) {
+// MENÜ YAPILANDIRMASI
+// allowedRoles: Bu menü öğesini kimler görebilir?
+const MENU_ITEMS = [
+    // --- SAAS YÖNETİCİSİ (SADECE SEN) ---
+    {
+        title: 'SaaS Yönetimi',
+        items: [
+            {
+                label: 'Admin Paneli',
+                href: '/dashboard/admin',
+                icon: ShieldAlert,
+                allowedRoles: ['super_admin']
+            },
+        ]
+    },
+
+    // --- GENEL MODÜLLER ---
+    {
+        title: 'Genel',
+        items: [
+            {
+                label: 'Genel Bakış',
+                href: '/dashboard',
+                icon: LayoutDashboard,
+                allowedRoles: ['super_admin', 'admin', 'staff', 'tradesman', 'individual']
+            },
+            {
+                label: 'Yeni Talep Oluştur',
+                href: '/dashboard/jobs/new',
+                icon: PlusCircle,
+                allowedRoles: ['individual']
+            },
+            {
+                label: 'Servis Geçmişim',
+                href: '/dashboard/jobs',
+                icon: History,
+                allowedRoles: ['individual']
+            },
+        ]
+    },
+
+    // --- İŞLETME YÖNETİMİ (KURUMSAL & ESNAF) ---
+    {
+        title: 'İşletme',
+        items: [
+            {
+                label: 'İş Yönetimi',
+                href: '/dashboard/jobs',
+                icon: Briefcase,
+                allowedRoles: ['super_admin', 'admin', 'staff', 'tradesman']
+            },
+            {
+                label: 'Randevular',
+                href: '/dashboard/appointments',
+                icon: CalendarDays,
+                allowedRoles: ['super_admin', 'admin', 'staff', 'tradesman']
+            },
+            {
+                label: 'Müşteriler',
+                href: '/dashboard/customers',
+                icon: Users,
+                allowedRoles: ['super_admin', 'admin', 'tradesman'] // Personel müşteri listesini göremesin istersen burdan 'staff'ı çıkar
+            },
+            {
+                label: 'Personeller',
+                href: '/dashboard/staff',
+                icon: Users,
+                allowedRoles: ['super_admin', 'admin'] // Sadece patron ve super admin
+            },
+        ]
+    },
+
+    // --- FİNANS (PERSONEL GÖREMEZ) ---
+    {
+        title: 'Finans',
+        items: [
+            {
+                label: 'Gelir/Gider',
+                href: '/dashboard/finance',
+                icon: Wallet,
+                allowedRoles: ['super_admin', 'admin', 'tradesman'] // Personel ve Bireysel göremez
+            },
+            {
+                label: 'Teklifler',
+                href: '/dashboard/proposals',
+                icon: FileText,
+                allowedRoles: ['super_admin', 'admin', 'tradesman']
+            },
+        ]
+    },
+
+    // --- AYARLAR ---
+    {
+        title: 'Diğer',
+        items: [
+            {
+                label: 'Ayarlar',
+                href: '/dashboard/settings',
+                icon: Settings,
+                allowedRoles: ['super_admin', 'admin', 'staff', 'tradesman', 'individual']
+            },
+        ]
+    }
+];
+
+export function Sidebar({ userRole = 'individual', isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
 
     const handleLogout = async () => {
         await signOut(auth);
-        window.location.href = '/login';
     };
-
-    // --- MENÜLER (Aynen kaldı) ---
-    const commonMenus = [
-        { name: 'Genel Bakış', href: '/dashboard', icon: LayoutDashboard },
-        { name: 'İş Emirleri', href: '/dashboard/jobs', icon: Wrench },
-        { name: 'Randevular', href: '/dashboard/appointments', icon: FileText },
-    ];
-
-    let roleMenus: any[] = [];
-    if (userRole === 'admin') {
-        roleMenus = [
-            { name: 'Müşteriler', href: '/dashboard/customers', icon: Users },
-            { name: 'Finans / Kasa', href: '/dashboard/finance', icon: CreditCard },
-            { name: 'Stok Yönetimi', href: '/dashboard/stock', icon: Box },
-            { name: 'Personel', href: '/dashboard/staff', icon: UserCircle },
-            { name: 'ADMIN PANELİ', href: '/dashboard/admin', icon: ShieldAlert, special: true },
-        ];
-    } else if (userRole === 'technical' || userRole === 'sales') {
-        roleMenus = [
-            { name: 'Müşteriler', href: '/dashboard/customers', icon: Users },
-            { name: 'Stok Listesi', href: '/dashboard/stock', icon: Box },
-        ];
-    } else {
-        roleMenus = [
-            { name: 'Müşterilerim', href: '/dashboard/customers', icon: Users },
-            { name: 'Finans', href: '/dashboard/finance', icon: CreditCard },
-            { name: 'Personel Yönetimi', href: '/dashboard/staff', icon: Users },
-            { name: 'Stok', href: '/dashboard/stock', icon: Box },
-        ];
-    }
-
-    const bottomMenus = [
-        { name: 'Abonelik', href: '/dashboard/subscription', icon: Store },
-        { name: 'Destek', href: '/dashboard/support', icon: Megaphone },
-        { name: 'Ayarlar', href: '/dashboard/settings', icon: Settings },
-    ];
-
-    const allMenus = [...commonMenus, ...roleMenus];
 
     return (
         <>
-            {/* MOBİL BACKDROP (SİYAH PERDE) */}
-            {/* isOpen true ise göster, tıklayınca kapat */}
-            {isOpen && (
-                <div
-                    className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
-                    onClick={onClose}
-                />
-            )}
+            {/* MOBİL İÇİN BACKDROP (Karanlık Arka Plan) */}
+            <div
+                className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                    }`}
+                onClick={onClose}
+            />
 
-            {/* SIDEBAR */}
-            {/* Masaüstünde (md) hep translate-0 (görünür), mobilde ise isOpen'a bağlı */}
-            <aside className={`
-                fixed top-0 left-0 z-50 h-screen w-64 bg-slate-900 border-r border-slate-800 text-slate-300 
-                transition-transform duration-300 ease-in-out
-                ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-            `}>
+            {/* SIDEBAR CONTAINER */}
+            <aside
+                className={`fixed top-0 left-0 z-50 h-full w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-transform duration-300 ease-in-out md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'
+                    }`}
+            >
                 {/* LOGO ALANI */}
-                <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800">
-                    <div className="flex items-center">
-                        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3 font-bold text-white">S</div>
-                        <span className="font-bold text-lg text-white tracking-tight">Servis360</span>
+                <div className="h-16 flex items-center justify-between px-6 border-b border-slate-200 dark:border-slate-800">
+                    <div className="flex items-center gap-2 font-bold text-xl text-blue-600 dark:text-blue-400">
+                        <Wrench className="w-6 h-6" />
+                        <span>Servis360</span>
                     </div>
-                    {/* Mobilde Kapatma Butonu */}
-                    <button onClick={onClose} className="md:hidden text-slate-500 hover:text-white">
-                        <X className="w-5 h-5" />
+                    {/* Mobil Kapatma Butonu */}
+                    <button onClick={onClose} className="md:hidden text-slate-500 hover:text-slate-800 dark:hover:text-white">
+                        <X className="w-6 h-6" />
                     </button>
                 </div>
 
                 {/* MENÜ LİSTESİ */}
-                <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1 custom-scrollbar">
-                    <p className="px-3 text-[10px] font-bold text-slate-500 uppercase mb-2">MENÜ</p>
-                    {allMenus.map((item, index) => {
-                        const isActive = pathname === item.href;
-                        return (
-                            <Link
-                                key={index}
-                                href={item.href}
-                                onClick={onClose} // Mobilde tıklayınca menüyü kapat
-                                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 
-                                ${isActive
-                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50'
-                                        : item.special
-                                            ? 'text-red-400 hover:bg-red-900/20 hover:text-red-300'
-                                            : 'hover:bg-slate-800 hover:text-white'}`}
-                            >
-                                <item.icon className={`w-4 h-4 ${isActive ? 'text-white' : item.special ? 'text-red-500' : 'text-slate-400'}`} />
-                                {item.name}
-                            </Link>
+                <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
+                    {MENU_ITEMS.map((section, index) => {
+                        // Bölüm içindeki yetkili linkleri filtrele
+                        const authorizedItems = section.items.filter(item =>
+                            item.allowedRoles.includes(userRole)
                         );
-                    })}
 
-                    <div className="my-4 border-t border-slate-800 mx-2"></div>
+                        // Eğer bu bölümde kullanıcının göreceği hiçbir şey yoksa bölümü hiç gösterme
+                        if (authorizedItems.length === 0) return null;
 
-                    <p className="px-3 text-[10px] font-bold text-slate-500 uppercase mb-2">HESAP</p>
-                    {bottomMenus.map((item, index) => {
-                        const isActive = pathname === item.href;
                         return (
-                            <Link
-                                key={`bottom-${index}`}
-                                href={item.href}
-                                onClick={onClose}
-                                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isActive ? 'bg-slate-800 text-white' : 'hover:bg-slate-800 hover:text-white'}`}
-                            >
-                                <item.icon className="w-4 h-4 text-slate-400" />
-                                {item.name}
-                            </Link>
+                            <div key={index}>
+                                <h3 className="px-3 mb-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                    {section.title}
+                                </h3>
+                                <div className="space-y-1">
+                                    {authorizedItems.map((item) => {
+                                        const isActive = pathname === item.href;
+                                        const Icon = item.icon;
+
+                                        return (
+                                            <Link
+                                                key={item.href}
+                                                href={item.href}
+                                                onClick={onClose} // Mobilde tıklayınca menüyü kapat
+                                                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isActive
+                                                        ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
+                                                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+                                                    }`}
+                                            >
+                                                <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
+                                                {item.label}
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         );
                     })}
                 </div>
 
-                {/* ÇIKIŞ YAP */}
-                <div className="p-4 border-t border-slate-800">
+                {/* ALT KISIM (PROFİL / ÇIKIŞ) */}
+                <div className="p-4 border-t border-slate-200 dark:border-slate-800">
                     <button
                         onClick={handleLogout}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-900/10 rounded-lg transition-colors"
+                        className="flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                     >
-                        <LogOut className="w-4 h-4" />
+                        <LogOut className="w-5 h-5" />
                         Çıkış Yap
                     </button>
+                    <div className="mt-2 text-center">
+                        <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full">
+                            {userRole === 'super_admin' ? 'YÖNETİCİ' : userRole === 'admin' ? 'KURUMSAL' : userRole === 'staff' ? 'PERSONEL' : 'KULLANICI'}
+                        </span>
+                    </div>
                 </div>
             </aside>
         </>
