@@ -5,12 +5,12 @@ import { Bell, Search, Menu, User, LogOut } from 'lucide-react';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
 
-// 👇 KRİTİK DÜZELTME: Header'ın 'user' verisini kabul etmesini sağlıyoruz.
 interface HeaderProps {
     user?: any;
+    onMenuClick?: () => void; // 👈 YENİ: Tıklama fonksiyonunu kabul et
 }
 
-export function Header({ user }: HeaderProps) {
+export function Header({ user, onMenuClick }: HeaderProps) {
     const [showProfileMenu, setShowProfileMenu] = useState(false);
 
     const handleLogout = async () => {
@@ -22,7 +22,11 @@ export function Header({ user }: HeaderProps) {
         <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-6 z-40 sticky top-0">
             {/* SOL TARAF - MOBİL MENÜ VE ARAMA */}
             <div className="flex items-center gap-4">
-                <button className="md:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+                {/* 👇 YENİ: Tıklayınca onMenuClick çalışsın */}
+                <button
+                    onClick={onMenuClick}
+                    className="md:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition-transform"
+                >
                     <Menu className="w-6 h-6" />
                 </button>
 
@@ -40,13 +44,11 @@ export function Header({ user }: HeaderProps) {
             {/* SAĞ TARAF - PROFİL VE BİLDİRİM */}
             <div className="flex items-center gap-3 md:gap-6">
 
-                {/* Bildirimler */}
                 <button className="relative p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
                     <Bell className="w-5 h-5" />
                     <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse"></span>
                 </button>
 
-                {/* Profil Alanı */}
                 <div className="relative">
                     <button
                         onClick={() => setShowProfileMenu(!showProfileMenu)}
@@ -65,19 +67,14 @@ export function Header({ user }: HeaderProps) {
                         </div>
                     </button>
 
-                    {/* Profil Dropdown Menü */}
                     {showProfileMenu && (
                         <>
-                            <div
-                                className="fixed inset-0 z-40"
-                                onClick={() => setShowProfileMenu(false)}
-                            ></div>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)}></div>
                             <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl py-2 animate-in fade-in zoom-in-95 duration-200 z-50">
                                 <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 md:hidden">
                                     <p className="text-sm font-bold text-slate-900 dark:text-white">{user?.fullName}</p>
                                     <p className="text-xs text-slate-500">{user?.role}</p>
                                 </div>
-
                                 <div className="px-2 py-2">
                                     <button
                                         onClick={handleLogout}

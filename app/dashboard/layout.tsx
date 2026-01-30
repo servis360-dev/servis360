@@ -8,14 +8,16 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 import { Sidebar } from '../../components/layout/sidebar';
 import { Header } from '../../components/layout/header';
-
-// 👇 DÜZELTME: "CreditCard" buraya eklendi
 import { Loader2, LockKeyhole, CreditCard } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<any>(null);
     const [profile, setProfile] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+
+    // 👇 YENİ: Mobil menü state'i
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
     const router = useRouter();
     const pathname = usePathname();
 
@@ -36,49 +38,50 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 return () => unsubProfile();
             }
         });
-
         return () => unsubscribeAuth();
     }, [router]);
 
-    // --- LİSANS KONTROLÜ ---
+    // Sayfa değişince mobil menüyü kapat
+    useEffect(() => {
+        setIsMobileMenuOpen(false);
+    }, [pathname]);
+
     useEffect(() => {
         if (!loading && profile) {
-
-            // 1. EKSİK BİLGİ KONTROLÜ
-            const isInfoMissing = !profile.phone || !profile.accountType;
-            if (profile.role !== 'admin' && isInfoMissing && pathname !== '/settings') {
-                // router.push('/settings'); 
-            }
-
-            // 2. SÜRE KONTROLÜ
             const now = new Date();
             const licenseDate = profile.licenseEndsAt ? profile.licenseEndsAt.toDate() : null;
             const isLicenseExpired = !licenseDate || licenseDate < now;
-
-            if (profile.role !== 'admin' && isLicenseExpired) {
-                if (pathname !== '/subscription') {
-                    router.push('/subscription');
-                }
+            if (profile.role !== 'admin' && isLicenseExpired && pathname !== '/subscription') {
+                router.push('/subscription');
             }
         }
     }, [loading, profile, pathname, router]);
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-950">
-                <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-            </div>
-        );
+        return <div className="min-h-screen flex items-center justify-center bg-slate-950"><Loader2 className="w-10 h-10 text-blue-500 animate-spin" /></div>;
     }
 
     const isLicenseValid = profile?.role === 'admin' || (profile?.licenseEndsAt && profile.licenseEndsAt.toDate() > new Date());
 
     return (
         <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-            {isLicenseValid && <Sidebar userRole={profile?.role} />}
+            {/* SIDEBAR: State ve Kapatma Fonksiyonu Eklendi */}
+            {isLicenseValid && (
+                <Sidebar
+                    userRole={profile?.role}
+                    isOpen={isMobileMenuOpen}
+                    onClose={() => setIsMobileMenuOpen(false)}
+                />
+            )}
 
             <div className={`flex-1 flex flex-col transition-all duration-300 ${isLicenseValid ? 'ml-0 md:ml-64' : 'w-full'}`}>
-                {isLicenseValid && <Header user={profile} />}
+                {/* HEADER: Açma Fonksiyonu Eklendi */}
+                {isLicenseValid && (
+                    <Header
+                        user={profile}
+                        onMenuClick={() => setIsMobileMenuOpen(true)}
+                    />
+                )}
 
                 <main className="flex-1 p-4 md:p-6 overflow-y-auto">
                     {!isLicenseValid && pathname !== '/subscription' ? (
