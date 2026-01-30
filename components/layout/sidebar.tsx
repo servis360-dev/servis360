@@ -1,244 +1,142 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
     LayoutDashboard,
-    Wallet,
-    Wrench,
-    Package,
     Users,
+    Wrench,
     Settings,
-    LogOut,
-    ShieldAlert,
     CreditCard,
-    ShoppingBag,
-    Scissors,
-    Car,
-    Briefcase,
+    LogOut,
+    Box,
     FileText,
-    Tag,
-    UserCog,
+    ShieldAlert,
+    UserCircle,
     Store,
-    MessageSquare,
-    LifeBuoy,
-    CalendarClock,
-    Contact,
-    X
+    Megaphone,
+    Ticket
 } from 'lucide-react';
-import { signOut, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../lib/firebase';
+import { auth } from '../../lib/firebase';
+import { signOut } from 'firebase/auth';
 
-const defaultMenuItems = [
-    { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard, href: '/dashboard' },
-    { id: 'settings', label: 'Ayarlar', icon: Settings, href: '/dashboard/settings' },
-];
-
+// 👇 İŞTE BU SATIR EKSİKTİ: Sidebar'ın ne tür veri kabul edeceğini tanımlıyoruz.
 interface SidebarProps {
-    isOpen?: boolean;
-    onClose?: () => void;
+    userRole?: string;
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ userRole = 'user' }: SidebarProps) {
     const pathname = usePathname();
-    const [menuItems, setMenuItems] = useState(defaultMenuItems);
-    const [isAdmin, setIsAdmin] = useState(false);
-    const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (window.innerWidth < 1024 && onClose) {
-            onClose();
-        }
-    }, [pathname]);
-
-    useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                try {
-                    const docRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile');
-                    const docSnap = await getDoc(docRef);
-
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-
-                        // Rol ve Hesap Türü Kontrolü
-                        const role = data.role || 'patron'; // patron, owner, admin, technical, sales
-                        const sector = data.sectorType || 'technical_service';
-
-                        // Register sayfasından 'business' geliyor, Onboarding'den 'esnaf'/'corporate' gelebilir.
-                        // 'business' ve 'esnaf'ı aynı kategoride (KOBİ) değerlendirelim.
-                        const type = data.accountType || 'business';
-
-                        setIsAdmin(role === 'admin');
-                        generateMenu(sector, type, role);
-                    }
-                } catch (error) {
-                    console.error("Menü hatası:", error);
-                }
-            }
-            setLoading(false);
-        });
-        return () => unsubscribe();
-    }, []);
-
-    const generateMenu = (sector: string, accountType: string, role: string) => {
-        // Temel Menü
-        let items = [
-            { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard, href: '/dashboard' }
-        ];
-
-        // --- 1. BİREYSEL KULLANICI ---
-        if (accountType === 'individual') {
-            items.push(
-                { id: 'finance', label: 'Gelir / Gider', icon: Wallet, href: '/dashboard/finance' },
-                { id: 'customers', label: 'Kişiler / Rehber', icon: Contact, href: '/dashboard/customers' },
-                { id: 'subscription', label: 'Paketim', icon: CreditCard, href: '/dashboard/subscription' },
-                { id: 'communication', label: 'Notlarım', icon: MessageSquare, href: '/dashboard/communication' }
-            );
-        }
-
-        // --- 2. TİCARİ KULLANICILAR (Esnaf, Business, Corporate) ---
-        else {
-            // Sektöre göre dinamik isimlendirme
-            let jobsLabel = 'İş Emirleri';
-            let jobsIcon = Wrench;
-            let stockLabel = 'Stok Takibi';
-            let stockIcon = Package;
-            let customerLabel = 'Müşteriler';
-            let customerIcon = Users;
-
-            if (sector === 'retail_wholesale') {
-                jobsLabel = 'Siparişler';
-                jobsIcon = ShoppingBag;
-                stockLabel = 'Ürünler';
-                stockIcon = Tag;
-            } else if (sector === 'beauty_health') {
-                jobsLabel = 'Randevular';
-                jobsIcon = Scissors;
-                stockLabel = 'Hizmet & Ürün';
-                stockIcon = Package;
-                customerLabel = 'Danışanlar';
-            } else if (sector === 'auto_rental') {
-                jobsLabel = 'Araç / Servis';
-                jobsIcon = Car;
-            } else if (sector === 'other') {
-                jobsLabel = 'İşlemler';
-                jobsIcon = Briefcase;
-            }
-
-            // A) ORTAK İŞLETME MODÜLLERİ (Her işletmede olur)
-            items.push(
-                { id: 'jobs', label: jobsLabel, icon: jobsIcon, href: '/dashboard/jobs' },
-                { id: 'appointments', label: 'Randevular', icon: CalendarClock, href: '/dashboard/appointments' },
-                { id: 'proposals', label: 'Teklif Hazırla', icon: FileText, href: '/dashboard/proposals' },
-                { id: 'stock', label: stockLabel, icon: stockIcon, href: '/dashboard/stock' },
-                { id: 'customers', label: customerLabel, icon: customerIcon, href: '/dashboard/customers' }
-            );
-
-            // B) FİNANS (Rol Kontrolü: Teknik personel göremez)
-            if (role !== 'technical') {
-                items.push({ id: 'finance', label: 'Finans & Kasa', icon: Wallet, href: '/dashboard/finance' });
-            }
-
-            // C) SADECE "KURUMSAL" (Corporate) HESAPLARA ÖZEL MODÜLLER
-            // Esnaf veya Business hesaplarda bunlar gizlenir.
-            if (accountType === 'corporate') {
-                // Şube ve Personel Yönetimi (Teknik personel göremez)
-                if (role !== 'technical') {
-                    items.push(
-                        { id: 'branches', label: 'Şubeler', icon: Store, href: '/dashboard/branches' },
-                        { id: 'staff', label: 'Personel', icon: UserCog, href: '/dashboard/staff' }
-                    );
-                }
-                // Haberleşme (Kurumsal iletişim)
-                items.push(
-                    { id: 'communication', label: 'Haberleşme', icon: MessageSquare, href: '/dashboard/communication' }
-                );
-            }
-
-            // Abonelik (Herkes görsün, patron ödesin)
-            items.push({ id: 'subscription', label: 'Abonelik & Paket', icon: CreditCard, href: '/dashboard/subscription' });
-        }
-
-        // --- ALT SABİT MENÜLER ---
-        items.push(
-            { id: 'support', label: 'Destek & Yardım', icon: LifeBuoy, href: '/dashboard/support' }
-        );
-
-        // Ayarlar (Teknik personel göremez)
-        if (role !== 'technical') {
-            items.push({ id: 'settings', label: 'Ayarlar', icon: Settings, href: '/dashboard/settings' });
-        }
-
-        setMenuItems(items);
+    // Çıkış Yap
+    const handleLogout = async () => {
+        await signOut(auth);
+        window.location.href = '/login';
     };
 
+    // --- MENÜ YAPILANDIRMASI ---
+    // Herkesin görebileceği ortak menüler
+    const commonMenus = [
+        { name: 'Genel Bakış', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'İş Emirleri', href: '/dashboard/jobs', icon: Wrench },
+        { name: 'Randevular', href: '/dashboard/appointments', icon: FileText },
+    ];
+
+    // Rol Bazlı Menüler
+    let roleMenus: any[] = [];
+
+    if (userRole === 'admin') {
+        // --- ADMIN MENÜSÜ ---
+        roleMenus = [
+            { name: 'Müşteriler', href: '/dashboard/customers', icon: Users },
+            { name: 'Finans / Kasa', href: '/dashboard/finance', icon: CreditCard },
+            { name: 'Stok Yönetimi', href: '/dashboard/stock', icon: Box },
+            { name: 'Personel', href: '/dashboard/staff', icon: UserCircle },
+            { name: 'ADMIN PANELİ', href: '/dashboard/admin', icon: ShieldAlert, special: true }, // Özel renkli
+        ];
+    } else if (userRole === 'technical' || userRole === 'sales') {
+        // --- PERSONEL MENÜSÜ ---
+        roleMenus = [
+            { name: 'Müşteriler', href: '/dashboard/customers', icon: Users },
+            { name: 'Stok Listesi', href: '/dashboard/stock', icon: Box },
+        ];
+    } else {
+        // --- STANDART PATRON / MÜŞTERİ MENÜSÜ ---
+        roleMenus = [
+            { name: 'Müşterilerim', href: '/dashboard/customers', icon: Users },
+            { name: 'Finans', href: '/dashboard/finance', icon: CreditCard },
+            { name: 'Personel Yönetimi', href: '/dashboard/staff', icon: Users },
+            { name: 'Stok', href: '/dashboard/stock', icon: Box },
+        ];
+    }
+
+    // Abonelik ve Destek (En altta)
+    const bottomMenus = [
+        { name: 'Abonelik', href: '/dashboard/subscription', icon: Store },
+        { name: 'Destek', href: '/dashboard/support', icon: Megaphone },
+        { name: 'Ayarlar', href: '/dashboard/settings', icon: Settings },
+    ];
+
+    // Tüm menüleri birleştir
+    const allMenus = [...commonMenus, ...roleMenus];
+
     return (
-        <aside className={`
-            fixed top-0 left-0 z-50 h-screen w-64 bg-slate-900 text-white border-r border-slate-800 
-            transition-transform duration-300 ease-in-out flex flex-col
-            ${isOpen ? 'translate-x-0' : '-translate-x-full'} 
-            lg:translate-x-0
-        `}>
-            {/* Logo ve Başlık */}
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/50">
-                        <span className="font-bold text-lg">S</span>
-                    </div>
-                    <h1 className="text-xl font-bold tracking-tight">Servis360</h1>
-                </div>
-                {onClose && (
-                    <button onClick={onClose} className="lg:hidden text-slate-400 hover:text-white">
-                        <X className="w-6 h-6" />
-                    </button>
-                )}
+        <aside className="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 bg-slate-900 border-r border-slate-800 text-slate-300 z-50">
+            {/* LOGO ALANI */}
+            <div className="h-16 flex items-center px-6 border-b border-slate-800">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3 font-bold text-white">S</div>
+                <span className="font-bold text-lg text-white tracking-tight">Servis360</span>
             </div>
 
-            {/* Menü Linkleri */}
-            <nav className="flex-1 px-4 space-y-2 py-6 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700">
-                {loading ? (
-                    <div className="text-center text-slate-600 text-xs py-4">Menü Yükleniyor...</div>
-                ) : (
-                    menuItems.map((item) => (
+            {/* MENÜ LİSTESİ */}
+            <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1 custom-scrollbar">
+
+                <p className="px-3 text-[10px] font-bold text-slate-500 uppercase mb-2">MENÜ</p>
+                {allMenus.map((item, index) => {
+                    const isActive = pathname === item.href;
+                    return (
                         <Link
-                            key={item.id}
+                            key={index}
                             href={item.href}
-                            className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 group font-medium text-sm ${pathname === item.href
-                                ? "bg-blue-600 text-white shadow-lg shadow-blue-900/40 translate-x-1"
-                                : "text-slate-400 hover:bg-slate-800 hover:text-white hover:translate-x-1"
-                                }`}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 
+                            ${isActive
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50'
+                                    : item.special
+                                        ? 'text-red-400 hover:bg-red-900/20 hover:text-red-300'
+                                        : 'hover:bg-slate-800 hover:text-white'}`}
                         >
-                            <item.icon className={`w-5 h-5 ${pathname === item.href ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
-                            <span>{item.label}</span>
+                            <item.icon className={`w-4 h-4 ${isActive ? 'text-white' : item.special ? 'text-red-500' : 'text-slate-400'}`} />
+                            {item.name}
                         </Link>
-                    ))
-                )}
+                    );
+                })}
 
-                {isAdmin && (
-                    <Link
-                        href="/dashboard/admin"
-                        className={`flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 group font-medium text-sm ${pathname === '/dashboard/admin'
-                            ? "bg-red-600 text-white shadow-lg shadow-red-900/40 translate-x-1"
-                            : "text-red-400 hover:bg-red-900/20 hover:text-red-300 hover:translate-x-1"
-                            }`}
-                    >
-                        <ShieldAlert className="w-5 h-5" />
-                        <span>Admin Paneli</span>
-                    </Link>
-                )}
-            </nav>
+                <div className="my-4 border-t border-slate-800 mx-2"></div>
 
-            {/* Çıkış Butonu */}
+                <p className="px-3 text-[10px] font-bold text-slate-500 uppercase mb-2">HESAP</p>
+                {bottomMenus.map((item, index) => {
+                    const isActive = pathname === item.href;
+                    return (
+                        <Link
+                            key={`bottom-${index}`}
+                            href={item.href}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isActive ? 'bg-slate-800 text-white' : 'hover:bg-slate-800 hover:text-white'}`}
+                        >
+                            <item.icon className="w-4 h-4 text-slate-400" />
+                            {item.name}
+                        </Link>
+                    );
+                })}
+            </div>
+
+            {/* ÇIKIŞ YAP */}
             <div className="p-4 border-t border-slate-800">
                 <button
-                    onClick={() => signOut(auth)}
-                    className="flex w-full items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors text-sm font-medium"
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-900/10 rounded-lg transition-colors"
                 >
-                    <LogOut className="w-5 h-5" />
-                    <span>Çıkış Yap</span>
+                    <LogOut className="w-4 h-4" />
+                    Çıkış Yap
                 </button>
             </div>
         </aside>
