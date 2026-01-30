@@ -1,4 +1,4 @@
-// Bu dosyayý lib/telegram.ts olarak kaydet
+ï»¿// Bu dosyayÄ± lib/telegram.ts olarak kaydet
 
 const BOT_TOKEN = '8386296481:AAHyae1tm-j1PDEc1pPsn48w2zYpiQakQvc';
 const CHAT_ID = '7571993053';
@@ -17,11 +17,11 @@ export const sendTelegramMessage = async (text: string) => {
             })
         });
     } catch (error) {
-        console.error("Telegram mesaj hatasý:", error);
+        console.error("Telegram mesaj hatasÄ±:", error);
     }
 };
 
-// Fotoðraf (Dekont) ve Mesaj Atar
+// FotoÄŸraf (Dekont) ve Mesaj Atar
 export const sendTelegramPhoto = async (file: File, caption: string) => {
     try {
         const formData = new FormData();
@@ -36,6 +36,6 @@ export const sendTelegramPhoto = async (file: File, caption: string) => {
             body: formData
         });
     } catch (error) {
-        console.error("Telegram fotoðraf hatasý:", error);
+        console.error("Telegram fotoÄŸraf hatasÄ±:", error);
     }
 };
