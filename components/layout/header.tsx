@@ -1,102 +1,95 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
-import { Bell, Search, Menu } from 'lucide-react';
-import { auth, db } from '../../lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { useState } from 'react';
+import { Bell, Search, Menu, User, LogOut } from 'lucide-react';
+import { auth } from '../../lib/firebase';
+import { signOut } from 'firebase/auth';
 
-// Props tanımı ekledik
+// 👇 KRİTİK DÜZELTME: Header'ın 'user' verisini kabul etmesini sağlıyoruz.
 interface HeaderProps {
-    onMenuClick: () => void;
+    user?: any;
 }
 
-export function Header({ onMenuClick }: HeaderProps) {
-    const [userData, setUserData] = useState<{ fullName: string, companyName: string, role: string } | null>(null);
+export function Header({ user }: HeaderProps) {
+    const [showProfileMenu, setShowProfileMenu] = useState(false);
 
-    useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                try {
-                    const userRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile');
-                    const userSnap = await getDoc(userRef);
-
-                    if (userSnap.exists()) {
-                        const data = userSnap.data();
-                        setUserData({
-                            fullName: data.fullName || user.displayName || 'Değerli Üyemiz',
-                            companyName: data.companyName || 'İşletmem',
-                            role: data.role || 'user'
-                        });
-                    } else {
-                        setUserData({
-                            fullName: user.displayName || user.email?.split('@')[0] || 'Kullanıcı',
-                            companyName: 'Yeni İşletme',
-                            role: 'user'
-                        });
-                    }
-                } catch (error) {
-                    console.error("Profil yüklenemedi:", error);
-                }
-            }
-        });
-        return () => unsubscribe();
-    }, []);
-
-    const getInitials = (name: string) => {
-        return name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
-    };
-
-    const getGreeting = () => {
-        const hour = new Date().getHours();
-        if (hour < 12) return 'Günaydın';
-        if (hour < 18) return 'Tünaydın';
-        return 'İyi Akşamlar';
+    const handleLogout = async () => {
+        await signOut(auth);
+        window.location.href = '/login';
     };
 
     return (
-        <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm transition-colors duration-300">
-            {/* Mobil Menü Butonu - Artık Çalışıyor! */}
-            <button
-                onClick={onMenuClick}
-                className="md:hidden mr-4 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-            >
-                <Menu className="w-6 h-6 text-slate-500" />
-            </button>
+        <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-6 z-40 sticky top-0">
+            {/* SOL TARAF - MOBİL MENÜ VE ARAMA */}
+            <div className="flex items-center gap-4">
+                <button className="md:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+                    <Menu className="w-6 h-6" />
+                </button>
 
-            {/* Arama Çubuğu */}
-            <div className="flex items-center gap-4 flex-1 max-w-md">
-                <div className="relative w-full">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                {/* Arama Çubuğu */}
+                <div className="hidden md:flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 w-64 md:w-96 transition-all focus-within:w-full focus-within:max-w-md focus-within:ring-2 focus-within:ring-blue-500/20">
+                    <Search className="w-4 h-4 text-slate-400 mr-2" />
                     <input
                         type="text"
-                        placeholder="Müşteri, ürün veya iş ara..."
-                        className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400"
+                        placeholder="Müşteri, iş emri veya stok ara..."
+                        className="bg-transparent border-none outline-none text-sm w-full text-slate-700 dark:text-slate-200 placeholder:text-slate-400"
                     />
                 </div>
             </div>
 
-            {/* Sağ Taraf */}
+            {/* SAĞ TARAF - PROFİL VE BİLDİRİM */}
             <div className="flex items-center gap-3 md:gap-6">
-                <button className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full relative transition-colors">
+
+                {/* Bildirimler */}
+                <button className="relative p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
                     <Bell className="w-5 h-5" />
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-900"></span>
+                    <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse"></span>
                 </button>
 
-                <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-700 hidden md:block"></div>
+                {/* Profil Alanı */}
+                <div className="relative">
+                    <button
+                        onClick={() => setShowProfileMenu(!showProfileMenu)}
+                        className="flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800 py-1.5 px-2 rounded-lg transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                    >
+                        <div className="text-right hidden md:block">
+                            <p className="text-sm font-bold text-slate-700 dark:text-white leading-none">
+                                {user?.fullName || 'Kullanıcı'}
+                            </p>
+                            <p className="text-[10px] text-slate-500 font-medium uppercase mt-1">
+                                {user?.companyName || user?.role || 'Misafir'}
+                            </p>
+                        </div>
+                        <div className="w-9 h-9 bg-gradient-to-tr from-blue-600 to-blue-400 text-white rounded-lg flex items-center justify-center font-bold shadow-lg shadow-blue-500/20">
+                            {user?.fullName ? user.fullName.charAt(0).toUpperCase() : <User className="w-5 h-5" />}
+                        </div>
+                    </button>
 
-                <div className="flex items-center gap-3 pl-1 cursor-pointer group">
-                    <div className="text-right hidden md:block">
-                        <p className="text-sm font-bold text-slate-800 dark:text-white group-hover:text-blue-600 transition-colors">
-                            {userData ? `${getGreeting()}, ${userData.fullName.split(' ')[0]}` : 'Yükleniyor...'}
-                        </p>
-                        <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wide truncate max-w-[150px]">
-                            {userData?.companyName}
-                        </p>
-                    </div>
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-blue-500/20 ring-2 ring-white dark:ring-slate-800">
-                        {userData ? getInitials(userData.fullName) : '...'}
-                    </div>
+                    {/* Profil Dropdown Menü */}
+                    {showProfileMenu && (
+                        <>
+                            <div
+                                className="fixed inset-0 z-40"
+                                onClick={() => setShowProfileMenu(false)}
+                            ></div>
+                            <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl py-2 animate-in fade-in zoom-in-95 duration-200 z-50">
+                                <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 md:hidden">
+                                    <p className="text-sm font-bold text-slate-900 dark:text-white">{user?.fullName}</p>
+                                    <p className="text-xs text-slate-500">{user?.role}</p>
+                                </div>
+
+                                <div className="px-2 py-2">
+                                    <button
+                                        onClick={handleLogout}
+                                        className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10 flex items-center gap-2 rounded-lg transition-colors font-medium"
+                                    >
+                                        <LogOut className="w-4 h-4" />
+                                        Çıkış Yap
+                                    </button>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
         </header>
