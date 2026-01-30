@@ -1,4 +1,4 @@
-// Dosya Yolu: app/api/send-receipt/route.ts
+ï»¿// Dosya Yolu: app/api/send-receipt/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -12,17 +12,17 @@ export async function POST(req: NextRequest) {
         const caption = formData.get("caption") as string;
 
         if (!photo) {
-            return NextResponse.json({ error: "Dosya bulunamadý" }, { status: 400 });
+            return NextResponse.json({ error: "Dosya bulunamadÄ±" }, { status: 400 });
         }
 
         // Telegram'a gidecek yeni form data
         const telegramFormData = new FormData();
         telegramFormData.append("chat_id", CHAT_ID);
-        telegramFormData.append("photo", photo); // Dosyayý olduðu gibi iletiyoruz
+        telegramFormData.append("photo", photo); // DosyayÄ± olduÄŸu gibi iletiyoruz
         telegramFormData.append("caption", caption || "");
         telegramFormData.append("parse_mode", "HTML");
 
-        // Telegram API'ye Sunucudan Ýstek Atýyoruz
+        // Telegram API'ye Sunucudan Ä°stek AtÄ±yoruz
         const telegramRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
             method: "POST",
             body: telegramFormData,
@@ -31,13 +31,13 @@ export async function POST(req: NextRequest) {
         const result = await telegramRes.json();
 
         if (!result.ok) {
-            throw new Error(result.description || "Telegram API hatasý");
+            throw new Error(result.description || "Telegram API hatasÄ±");
         }
 
         return NextResponse.json({ success: true });
 
     } catch (error: any) {
-        console.error("API Hatasý:", error);
+        console.error("API HatasÄ±:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
