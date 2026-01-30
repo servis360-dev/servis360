@@ -1,30 +1,58 @@
 ﻿'use client';
 
 // ---------------------------------------------------------------------------
-// ⚠️ NOT: Bu dosya projenin 'components/layout/sidebar.tsx' konumuna aittir.
+// ⚠️ ÖNEMLİ: BU DOSYAYI PROJENİZE ALIRKEN ŞU ADIMLARI İZLEYİN:
+// 1. "MOCK / ÖNİZLEME" bloğunu tamamen SİLİN.
+// 2. "GERÇEK PROJE IMPORTLARI" bloğundaki yorum satırlarını (//) KALDIRIN.
 // ---------------------------------------------------------------------------
 
+// --- 1. MOCK / ÖNİZLEME (BURADA ÇALIŞMASI İÇİN) ---
+import React, { useState } from 'react';
+import {
+    LayoutDashboard, Briefcase, Users, Wallet, Settings,
+    CalendarDays, LogOut, ShieldAlert, Wrench, FileText,
+    History, PlusCircle, X, CreditCard, Gem
+} from 'lucide-react';
+
+// Next.js Link Simülasyonu
+const Link = ({ href, children, onClick, className }: any) => (
+    <a href="#" onClick={(e) => { e.preventDefault(); if (onClick) onClick(); }} className={className}>
+        {children}
+    </a>
+);
+
+// Next.js usePathname Simülasyonu
+const usePathname = () => '/dashboard';
+
+// Firebase Simülasyonu
+const auth = {};
+const signOut = async () => console.log("Çıkış yapıldı (Simülasyon)");
+// -------------------------------------------------------------------
+
+
+/* --- 2. GERÇEK PROJE IMPORTLARI (PROJENİZDE BUNLARI KULLANIN) ---
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-    LayoutDashboard,
-    Briefcase,
-    Users,
-    Wallet,
-    Settings,
-    CalendarDays,
-    LogOut,
-    ShieldAlert,
+import { 
+    LayoutDashboard, 
+    Briefcase, 
+    Users, 
+    Wallet, 
+    Settings, 
+    CalendarDays, 
+    LogOut, 
+    ShieldAlert, 
     Wrench,
     FileText,
     History,
     PlusCircle,
     X,
-    CreditCard, // Abonelik için ikon
-    Gem // Alternatif Premium İkonu
+    CreditCard, 
+    Gem 
 } from 'lucide-react';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
+*/
 
 interface SidebarProps {
     userRole?: string; // 'super_admin' | 'admin' | 'staff' | 'tradesman' | 'individual'
@@ -33,7 +61,6 @@ interface SidebarProps {
 }
 
 // MENÜ YAPILANDIRMASI
-// allowedRoles: Bu menü öğesini kimler görebilir?
 const MENU_ITEMS = [
     // --- SAAS YÖNETİCİSİ (SADECE SEN) ---
     {
@@ -120,7 +147,6 @@ const MENU_ITEMS = [
                 icon: FileText,
                 allowedRoles: ['super_admin', 'admin', 'tradesman']
             },
-            // 👇 GÜNCELLENDİ: Link '/dashboard/subscription' yapıldı.
             {
                 label: 'Abonelik Paketleri',
                 href: '/dashboard/subscription',
@@ -144,11 +170,17 @@ const MENU_ITEMS = [
     }
 ];
 
-export function Sidebar({ userRole = 'individual', isOpen, onClose }: SidebarProps) {
+export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
 
+    // 👇 ÖNEMLİ DÜZELTME:
+    // Eğer veritabanından rol bilgisi henüz gelmediyse veya boşsa (undefined/null),
+    // varsayılan olarak 'individual' (Bireysel) kabul ediyoruz.
+    // Böylece menü asla boş kalmıyor.
+    const safeRole = userRole || 'individual';
+
     const handleLogout = async () => {
-        await signOut(auth);
+        await signOut(auth as any);
     };
 
     return (
@@ -180,8 +212,9 @@ export function Sidebar({ userRole = 'individual', isOpen, onClose }: SidebarPro
                 {/* MENÜ LİSTESİ */}
                 <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
                     {MENU_ITEMS.map((section, index) => {
+                        // safeRole kullanarak filtreleme yapıyoruz
                         const authorizedItems = section.items.filter(item =>
-                            item.allowedRoles.includes(userRole)
+                            item.allowedRoles.includes(safeRole)
                         );
 
                         if (authorizedItems.length === 0) return null;
@@ -228,7 +261,12 @@ export function Sidebar({ userRole = 'individual', isOpen, onClose }: SidebarPro
                     </button>
                     <div className="mt-2 text-center">
                         <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full">
-                            {userRole === 'super_admin' ? 'YÖNETİCİ' : userRole === 'admin' ? 'KURUMSAL' : userRole === 'staff' ? 'PERSONEL' : 'KULLANICI'}
+                            {/* Ekrana basarken de safeRole kullanıyoruz ki boş görünmesin */}
+                            {safeRole === 'super_admin' ? 'YÖNETİCİ' :
+                                safeRole === 'admin' ? 'KURUMSAL' :
+                                    safeRole === 'staff' ? 'PERSONEL' :
+                                        safeRole === 'tradesman' ? 'ESNAF' :
+                                            'BİREYSEL'}
                         </span>
                     </div>
                 </div>
