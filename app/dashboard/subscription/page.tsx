@@ -95,7 +95,7 @@ export default function SubscriptionPage() {
 
         if (confirm(`Ödeme bildirimi gönderilecek ve yöneticilere iletilecek. Onaylıyor musunuz?`)) {
             try {
-                // 1. Firebase'e Kaydet (Senin Admin Panelinde de gözüksün diye)
+                // 1. Firebase'e Kaydet
                 await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), {
                     userId: auth.currentUser.uid,
                     userName: userData.fullName || 'İsimsiz',
@@ -108,7 +108,7 @@ export default function SubscriptionPage() {
                     createdAt: serverTimestamp()
                 });
 
-                // 2. TELEGRAM BİLDİRİMİ GÖNDER 🚀
+                // 2. TELEGRAM BİLDİRİMİ GÖNDER (Backend Üzerinden)
                 const message = `
 💰 <b>YENİ ÖDEME BİLDİRİMİ!</b>
 
@@ -119,11 +119,21 @@ export default function SubscriptionPage() {
 💵 <b>Tutar:</b> ${price} TL
 🔑 <b>Ref Kodu:</b> ${refCode}
 
-<i>Admin panelinden onaylayın.</i>
-                `;
+<i>Admin panelinden onaylayın.</i>`;
 
-                // Fotoğraflı gönder
-                await sendTelegramPhoto(selectedFile, message);
+                // FormData Oluşturup Kendi API'mize atıyoruz
+                const formData = new FormData();
+                formData.append('photo', selectedFile);
+                formData.append('caption', message);
+
+                const response = await fetch('/api/send-receipt', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    throw new Error('Dekont gönderilemedi.');
+                }
 
                 alert(`Bildirim başarıyla gönderildi! \nReferans Kodunuz: ${refCode}`);
                 setSelectedFile(null);
