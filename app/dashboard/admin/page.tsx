@@ -18,7 +18,7 @@ import {
     getDocs
 } from 'firebase/firestore';
 
-// 👇 PROJE İÇİ IMPORTLAR (Yolları kontrol et)
+// 👇 PROJE İÇİ IMPORTLAR
 import { auth, db } from '../../../lib/firebase';
 import RoleGuard from '../../../components/auth/role-guard';
 
@@ -27,7 +27,7 @@ import {
     CreditCard, Phone, BellRing, RefreshCw, Wallet,
     BadgeCheck, X, TrendingUp, Building2, Store, User,
     Mail, Calendar, Eye, Copy, CheckCircle2, ChevronRight, ChevronDown, UserPlus,
-    AlertTriangle, Terminal
+    AlertTriangle
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -116,7 +116,6 @@ export default function AdminPage() {
             console.error("Kullanıcıları çekerken hata:", error);
             if (error.code === 'permission-denied') {
                 setPermissionError(true);
-                setErrorMsg("YETKİ HATASI: Firestore güvenlik kuralları veriyi okumayı engelliyor.");
             } else {
                 setErrorMsg("Veri çekme hatası: " + error.message);
             }
@@ -187,11 +186,10 @@ export default function AdminPage() {
         return new Date(timestamp).toLocaleDateString('tr-TR');
     };
 
-    // --- AYARLARI KAYDET (DÜZELTİLDİ) ---
+    // --- AYARLARI KAYDET ---
     const saveSettings = async () => {
         try {
             // 1. undefined değerleri temizle (JSON trick)
-            // Firestore 'undefined' sevmez, bu işlem undefined olanları siler.
             const cleanSettings = JSON.parse(JSON.stringify(settings));
 
             // 2. merge: true kullanarak kaydet
@@ -249,6 +247,8 @@ export default function AdminPage() {
     const deleteUser = async (userId: string) => {
         if (confirm("Kullanıcı silinsin mi? Bu işlem geri alınamaz!")) {
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId));
+            // Dikkat: Kullanıcının alt koleksiyonlarını (users/{uid}/...) silmek için Cloud Functions gerekir, 
+            // burada sadece dizinden ve profilden siliyoruz.
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile'));
             alert("Kullanıcı silindi.");
         }
@@ -304,7 +304,7 @@ export default function AdminPage() {
                         <p className="text-slate-300 mb-4 text-sm">
                             Bu hata, Firebase veritabanı kurallarının (Rules) bu veriyi okumanıza izin vermediğini gösterir.
                             Lütfen <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-400 underline font-bold">Firebase Console</a>'a gidin ve
-                            <strong>Firestore Database {'>'} Rules</strong> sekmesindeki kuralları şu şekilde güncelleyin:
+                            <strong>Firestore Database {'>'} Rules</strong> sekmesindeki kuralları güncelleyin.
                         </p>
                         <div className="bg-black border border-slate-800 rounded p-4 relative group">
                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -313,20 +313,9 @@ export default function AdminPage() {
                                 </button>
                             </div>
                             <pre className="text-green-400 font-mono text-xs overflow-x-auto">
-                                {`rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    
-    // Genel Public Data Erişimi (Admin Paneli İçin Gerekli)
-    match /artifacts/{appId}/public/data/{document=**} {
-      allow read, write: if request.auth != null;
-    }
-
-    // Kullanıcıya özel veriler
-    match /artifacts/{appId}/users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-  }
+                                {`// Admin Panelinin tüm public verileri görmesi için:
+match /artifacts/{appId}/public/data/{document=**} {
+  allow read, write: if request.auth != null;
 }`}
                             </pre>
                         </div>
@@ -436,7 +425,7 @@ service cloud.firestore {
                                     <>
                                         <tr key={u.id} className={`hover:bg-slate-800/50 transition-colors ${expandedCompanyId === u.id ? 'bg-slate-800/30' : ''}`}>
                                             <td className="p-3">
-                                                {(u.accountType === 'corporate' || u.accountType === 'business') && (
+                                                {(u.accountType === 'corporate' || u.accountType === 'business' || u.accountType === 'esnaf' || u.accountType === 'tradesman') && (
                                                     <button
                                                         onClick={() => toggleCompanyStaff(u.id)}
                                                         className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-all"
@@ -460,8 +449,11 @@ service cloud.firestore {
                                                 </div>
                                             </td>
                                             <td className="p-3">
-                                                {u.accountType === 'corporate' ? <span className="text-purple-400 font-bold bg-purple-900/20 px-2 py-1 rounded">Kurumsal</span> :
-                                                    u.accountType === 'business' ? <span className="text-yellow-400 font-bold bg-yellow-900/20 px-2 py-1 rounded">Esnaf</span> :
+                                                {/* 👇 GÜNCELLENDİ: ESNAF KONTROLÜ EKLENDİ */}
+                                                {['corporate', 'company'].includes(u.accountType) ?
+                                                    <span className="text-purple-400 font-bold bg-purple-900/20 px-2 py-1 rounded">Kurumsal</span> :
+                                                    ['business', 'esnaf', 'tradesman'].includes(u.accountType) ?
+                                                        <span className="text-yellow-400 font-bold bg-yellow-900/20 px-2 py-1 rounded">Esnaf</span> :
                                                         <span className="text-blue-400 font-bold bg-blue-900/20 px-2 py-1 rounded">Bireysel</span>}
                                             </td>
                                             <td className="p-3">
