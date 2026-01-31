@@ -10,7 +10,8 @@ import {
     Phone,
     Mail,
     MapPin,
-    Building2
+    Building2,
+    Download
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -25,9 +26,11 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 try {
+                    // 1. Teklif Verisini Çek
                     const docRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'proposals', params.id);
                     const docSnap = await getDoc(docRef);
 
+                    // 2. Şirket Profilini (Logo, Adres vb.) Çek
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
 
@@ -63,28 +66,36 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
         return new Date(dateVal).toLocaleDateString('tr-TR');
     };
 
-    if (loading) return <div className="flex h-screen items-center justify-center text-slate-500">Teklif yükleniyor...</div>;
+    if (loading) return <div className="flex h-screen items-center justify-center text-slate-500 bg-slate-50">Teklif yükleniyor...</div>;
     if (!proposal) return null;
 
     const kdvNote = proposal.taxRate === 0
         ? "Fiyatlarımızda KDV dahil değildir."
-        : "Fiyatlarımıza KDV dahildir.";
+        : `Fiyatlarımıza %${proposal.taxRate} KDV dahildir.`;
 
     return (
         <div className="min-h-screen bg-slate-100 dark:bg-slate-900 p-4 md:p-8 print:p-0 print:m-0 print:bg-white print:overflow-visible">
 
-            {/* BU STİL BLOKU ÇOK ÖNEMLİ: Sayfa kenar boşluklarını sıfırlar */}
+            {/* YAZDIRMA STİLLERİ (Print CSS) */}
             <style type="text/css" media="print">
                 {`
-                    @page { size: auto; margin: 0mm; }
-                    body { background-color: white; margin: 0; padding: 0; }
+                    @page { size: A4; margin: 0; }
+                    body { background-color: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; }
                     /* Yazdırma sırasında dashboard elementlerini gizle */
-                    nav, header, aside, .sidebar { display: none !important; }
+                    nav, header, aside, .sidebar, .no-print { display: none !important; }
+                    .print-container { 
+                        box-shadow: none !important; 
+                        margin: 0 !important; 
+                        width: 100% !important;
+                        max-width: none !important;
+                        border-radius: 0 !important;
+                        min-height: 100vh;
+                    }
                 `}
             </style>
 
             {/* Üst Bar (Baskıda Gizlenir) */}
-            <div className="max-w-[210mm] mx-auto mb-6 flex justify-between items-center print:hidden">
+            <div className="max-w-[210mm] mx-auto mb-6 flex justify-between items-center no-print">
                 <Link href="/dashboard/proposals" className="flex items-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors">
                     <ArrowLeft className="w-4 h-4 mr-2" /> Listeye Dön
                 </Link>
@@ -93,141 +104,153 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                         onClick={handlePrint}
                         className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"
                     >
-                        <Printer className="w-4 h-4" /> Yazdır / PDF İndir
+                        <Printer className="w-4 h-4" /> Yazdır
                     </button>
                 </div>
             </div>
 
-            {/* A4 Kağıt - Yazdırma Modu (Print Mode) Özellikleri Eklendi */}
-            <div className="
-                max-w-[210mm] mx-auto bg-white text-slate-900 shadow-2xl rounded-xl overflow-hidden min-h-[297mm] flex flex-col relative
-                print:fixed print:inset-0 print:w-full print:h-full print:z-[9999] print:shadow-none print:rounded-none print:mx-0 print:my-0
-            ">
+            {/* A4 Kağıt Formatı */}
+            <div className="print-container max-w-[210mm] mx-auto bg-white text-slate-900 shadow-2xl rounded-xl overflow-hidden min-h-[297mm] flex flex-col relative">
 
-                {/* Arka Plan Deseni (Print'te gizli) */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-50 pointer-events-none print:hidden"></div>
+                {/* 1. HEADER (LOGO & ŞİRKET BİLGİLERİ) */}
+                <div className="p-12 pb-8 flex justify-between items-start border-b border-slate-100">
 
-                {/* 1. Header */}
-                <div className="p-10 border-b-2 border-slate-100 flex justify-between items-start print:p-8">
-                    <div className="flex flex-col justify-center">
+                    {/* SOL TARAF: LOGO & ADRES */}
+                    <div className="w-1/2 pr-4">
+                        {/* Logo */}
                         {companyInfo?.logoUrl ? (
-                            <img src={companyInfo.logoUrl} alt="Firma Logosu" className="h-20 w-auto object-contain mb-4" />
+                            <img
+                                src={companyInfo.logoUrl}
+                                alt="Firma Logosu"
+                                className="h-24 w-auto object-contain mb-4 max-w-[200px]"
+                            />
                         ) : (
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="w-16 h-16 bg-slate-900 rounded-xl flex items-center justify-center text-white font-bold text-3xl print:border print:border-slate-900 print:text-black print:bg-transparent">
-                                    {companyInfo?.companyName?.charAt(0) || <Building2 />}
+                            // Logo yoksa Şık Bir İsim Kutusu
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-14 h-14 bg-slate-900 text-white flex items-center justify-center rounded-lg">
+                                    <Building2 className="w-8 h-8" />
                                 </div>
-                                <div className="flex flex-col">
-                                    <h1 className="text-2xl font-bold text-slate-900 uppercase tracking-tight leading-none">
+                                <div>
+                                    <h1 className="text-xl font-bold text-slate-900 uppercase tracking-tight leading-none">
                                         {companyInfo?.companyName || 'FİRMA ADI'}
                                     </h1>
-                                    <p className="text-sm text-slate-500 mt-1 font-medium">{companyInfo?.sector || 'Teknik Servis Hizmetleri'}</p>
+                                    <p className="text-xs text-slate-500 font-medium mt-1">{companyInfo?.sector || 'Hizmet Sağlayıcı'}</p>
                                 </div>
                             </div>
                         )}
-                        {companyInfo?.logoUrl && (
-                            <h1 className="text-xl font-bold text-slate-900 uppercase tracking-tight">
-                                {companyInfo?.companyName}
-                            </h1>
-                        )}
+
+                        {/* Şirket Adresi (Logonun Altında) */}
+                        <div className="text-xs text-slate-500 space-y-1 mt-2">
+                            <p className="font-bold text-slate-800 uppercase">{companyInfo?.companyName}</p>
+                            {companyInfo?.address && <p className="max-w-[250px] leading-relaxed">{companyInfo.address}</p>}
+                            <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-slate-100 w-fit">
+                                {companyInfo?.phone && <p className="flex items-center gap-2"><Phone className="w-3 h-3" /> {companyInfo.phone}</p>}
+                                {companyInfo?.email && <p className="flex items-center gap-2"><Mail className="w-3 h-3" /> {companyInfo.email}</p>}
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="text-right">
-                        {/* Print'te Siyah Olacak Şekilde Ayarlandı */}
-                        <h2 className="text-5xl font-black text-slate-100 uppercase tracking-widest print:text-black">TEKLİF</h2>
-                        <div className="mt-4 space-y-1">
-                            <p className="text-sm font-bold text-slate-900">TEKLİF NO: <span className="font-mono text-blue-600 print:text-black">{proposal.proposalNo}</span></p>
-                            <p className="text-sm text-slate-500">Tarih: {formatDate(proposal.createdAt)}</p>
-                            <p className="text-sm text-slate-500">Geçerlilik: {formatDate(proposal.validUntil) || 'Belirtilmedi'}</p>
+                    {/* SAĞ TARAF: TEKLİF DETAYLARI */}
+                    <div className="w-1/2 text-right">
+                        <h2 className="text-4xl font-black text-slate-200 uppercase tracking-widest leading-none mb-4 print:text-slate-300">TEKLİF</h2>
+
+                        <div className="inline-block text-left bg-slate-50 p-4 rounded-lg border border-slate-100 min-w-[200px]">
+                            <div className="mb-2 pb-2 border-b border-slate-200">
+                                <p className="text-[10px] uppercase font-bold text-slate-400">Teklif No</p>
+                                <p className="font-mono font-bold text-lg text-blue-600">{proposal.proposalNo}</p>
+                            </div>
+                            <div className="space-y-1">
+                                <div className="flex justify-between gap-4">
+                                    <span className="text-xs text-slate-500">Tarih:</span>
+                                    <span className="text-xs font-bold text-slate-700">{formatDate(proposal.createdAt)}</span>
+                                </div>
+                                <div className="flex justify-between gap-4">
+                                    <span className="text-xs text-slate-500">Geçerlilik:</span>
+                                    <span className="text-xs font-bold text-slate-700">{formatDate(proposal.validUntil)}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                {/* 2. İletişim */}
-                <div className="p-10 grid grid-cols-2 gap-12 print:p-8 print:gap-8">
-                    <div>
-                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider border-b pb-1 print:text-black">SAYIN / MÜŞTERİ</h3>
-                        <p className="text-lg font-bold text-slate-900">{proposal.customerName}</p>
-                        <p className="text-sm text-slate-600 mt-1">{proposal.customerPhone || 'Telefon Belirtilmedi'}</p>
-                    </div>
-                    <div className="text-right">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider border-b pb-1 print:text-black">SAĞLAYICI / YETKİLİ</h3>
-                        <p className="font-bold text-slate-900 text-lg">{companyInfo?.fullName || 'Firma Yetkilisi'}</p>
-                        <div className="text-sm text-slate-600 mt-2 space-y-1 flex flex-col items-end">
-                            {companyInfo?.phone && <p className="flex items-center gap-2">{companyInfo.phone} <Phone className="w-3 h-3" /></p>}
-                            {companyInfo?.email && <p className="flex items-center gap-2">{companyInfo.email} <Mail className="w-3 h-3" /></p>}
-                            {companyInfo?.address && <p className="flex items-center gap-2 text-right max-w-[200px]">{companyInfo.address} <MapPin className="w-3 h-3 shrink-0" /></p>}
-                        </div>
-                    </div>
+                {/* 2. MÜŞTERİ BİLGİSİ */}
+                <div className="px-12 py-8 bg-slate-50/50 border-b border-slate-100">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">SAYIN</p>
+                    <h3 className="text-xl font-bold text-slate-900">{proposal.customerName}</h3>
+                    {proposal.customerPhone && (
+                        <p className="text-sm text-slate-600 mt-1 flex items-center gap-2">
+                            <Phone className="w-3 h-3 text-slate-400" /> {proposal.customerPhone}
+                        </p>
+                    )}
                 </div>
 
-                {/* 3. Tablo */}
-                <div className="px-10 flex-1 print:px-8">
+                {/* 3. HİZMET TABLOSU */}
+                <div className="px-12 py-8 flex-1">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-slate-50 print:bg-slate-100 border-y border-slate-200 text-xs font-bold text-slate-700 uppercase tracking-wider print:text-black">
-                                <th className="py-3 px-4 w-12 text-center">#</th>
-                                <th className="py-3 px-4">Hizmet / Ürün Açıklaması</th>
-                                <th className="py-3 px-4 text-center">Adet</th>
-                                <th className="py-3 px-4 text-right">Birim Fiyat</th>
-                                <th className="py-3 px-4 text-right">Toplam</th>
+                            <tr className="border-b-2 border-slate-100">
+                                <th className="py-3 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider w-12">#</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Açıklama</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider text-center w-24">Miktar</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider text-right w-32">Birim Fiyat</th>
+                                <th className="py-3 px-2 text-xs font-bold text-slate-500 uppercase tracking-wider text-right w-32">Tutar</th>
                             </tr>
                         </thead>
-                        <tbody className="text-sm text-slate-600">
+                        <tbody className="text-sm text-slate-700">
                             {proposal.items.map((item: any, index: number) => (
-                                <tr key={index} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 print:border-slate-200">
-                                    <td className="py-4 px-4 text-center font-medium text-slate-400 print:text-black">{index + 1}</td>
-                                    <td className="py-4 px-4"><p className="font-bold text-slate-800 print:text-black">{item.description}</p></td>
-                                    <td className="py-4 px-4 text-center print:text-black">{item.quantity}</td>
-                                    <td className="py-4 px-4 text-right print:text-black">{Number(item.unitPrice).toLocaleString()} ₺</td>
-                                    <td className="py-4 px-4 text-right font-bold text-slate-900 print:text-black">{(item.quantity * item.unitPrice).toLocaleString()} ₺</td>
+                                <tr key={index} className="border-b border-slate-50 last:border-0">
+                                    <td className="py-4 px-2 font-medium text-slate-400">{index + 1}</td>
+                                    <td className="py-4 px-2 font-bold text-slate-800">{item.description}</td>
+                                    <td className="py-4 px-2 text-center">{item.quantity}</td>
+                                    <td className="py-4 px-2 text-right">{Number(item.unitPrice).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</td>
+                                    <td className="py-4 px-2 text-right font-bold">{(item.quantity * item.unitPrice).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
 
-                {/* 4. Toplamlar */}
-                <div className="p-10 flex justify-end print:p-8">
-                    <div className="w-72 space-y-3 bg-slate-50 p-6 rounded-xl print:bg-transparent print:p-0">
-                        <div className="flex justify-between text-sm text-slate-600 print:text-black">
+                {/* 4. TOPLAM VE NOTLAR */}
+                <div className="p-12 bg-slate-50 flex flex-col md:flex-row gap-12 border-t border-slate-200">
+
+                    {/* Sol: Notlar */}
+                    <div className="flex-1">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">NOTLAR & KOŞULLAR</h4>
+                        <ul className="text-xs text-slate-500 space-y-1.5 list-disc list-inside marker:text-slate-300">
+                            <li>Bu teklif <span className="font-bold text-slate-700">{formatDate(proposal.validUntil)}</span> tarihine kadar geçerlidir.</li>
+                            <li>{kdvNote}</li>
+                            <li>Ödeme iş tesliminde nakit veya havale yoluyla yapılacaktır.</li>
+                            {companyInfo?.bankAccount && <li>IBAN: <span className="font-mono">{companyInfo.bankAccount}</span></li>}
+                        </ul>
+
+                        <div className="mt-8 pt-8 border-t border-slate-200 w-48">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase text-center mb-8">ONAY / İMZA</p>
+                            <div className="h-0.5 bg-slate-300 w-full"></div>
+                        </div>
+                    </div>
+
+                    {/* Sağ: Hesap Özeti */}
+                    <div className="w-64 flex flex-col gap-2">
+                        <div className="flex justify-between text-sm text-slate-600">
                             <span>Ara Toplam</span>
-                            <span className="font-medium">{proposal.subtotal?.toLocaleString()} ₺</span>
+                            <span className="font-medium">{proposal.subtotal?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
                         </div>
-                        <div className="flex justify-between text-sm text-slate-600 print:text-black">
-                            <span>KDV (%{proposal.taxRate || 0})</span>
-                            <span className="font-medium">{proposal.taxAmount?.toLocaleString()} ₺</span>
+                        <div className="flex justify-between text-sm text-slate-600">
+                            <span>KDV (%{proposal.taxRate})</span>
+                            <span className="font-medium">{proposal.taxAmount?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
                         </div>
-                        <div className="flex justify-between text-xl font-black text-slate-900 pt-4 border-t-2 border-slate-900 items-end print:text-black">
-                            <span className="text-sm uppercase tracking-wider">GENEL TOPLAM</span>
-                            <span className="text-blue-700 print:text-black">{proposal.total?.toLocaleString()} ₺</span>
+                        <div className="h-px bg-slate-200 my-2"></div>
+                        <div className="flex justify-between items-end">
+                            <span className="text-sm font-bold text-slate-900 uppercase">GENEL TOPLAM</span>
+                            <span className="text-2xl font-black text-blue-600">{proposal.total?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
                         </div>
                     </div>
                 </div>
 
-                {/* 5. Alt Notlar */}
-                <div className="p-10 mt-auto border-t border-slate-100 bg-slate-50/30 print:bg-white print:p-8">
-                    <div className="grid grid-cols-2 gap-12 items-end">
-                        <div>
-                            <h4 className="font-bold text-[10px] text-slate-400 uppercase mb-2 print:text-black">NOTLAR & ŞARTLAR</h4>
-                            <div className="text-xs text-slate-500 leading-relaxed bg-white p-3 rounded-lg border border-slate-100 print:border-none print:p-0 print:text-black">
-                                <ul className="list-disc list-inside space-y-1">
-                                    <li>Bu teklif belirtilen tarihe kadar geçerlidir.</li>
-                                    <li>{kdvNote}</li>
-                                    <li>Ödeme, iş tesliminde nakit veya havale ile yapılacaktır.</li>
-                                </ul>
-                            </div>
-                        </div>
-                        <div className="text-center">
-                            <div className="h-20 mb-2 border-b border-slate-300 w-40 mx-auto"></div>
-                            <p className="text-xs font-bold text-slate-900 uppercase print:text-black">Kaşe / İmza</p>
-                        </div>
-                    </div>
-
-                    <div className="mt-8 flex justify-between items-center text-[10px] text-slate-400 font-medium print:text-black">
-                        <p>servis360.com ile oluşturuldu</p>
-                        <p>Sayfa 1 / 1</p>
-                    </div>
+                {/* Footer (Marka) */}
+                <div className="px-12 py-4 bg-slate-900 text-white flex justify-between items-center text-[10px] opacity-90 print:opacity-100 print:bg-slate-900 print:text-white">
+                    <span>{companyInfo?.companyName || 'Servis360'}</span>
+                    <span className="opacity-50">Servis360 Altyapısı ile Oluşturulmuştur</span>
                 </div>
 
             </div>
