@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import {
-    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench
+    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search
 } from 'lucide-react';
 
 export default function FinancePage() {
@@ -15,6 +15,9 @@ export default function FinancePage() {
     const [stats, setStats] = useState({ income: 0, expense: 0, profit: 0 });
     const [showModal, setShowModal] = useState(false);
     const [modalType, setModalType] = useState<'income' | 'expense'>('expense');
+
+    // Arama durumu
+    const [searchTerm, setSearchTerm] = useState('');
 
     const [formData, setFormData] = useState({
         amount: '',
@@ -27,7 +30,7 @@ export default function FinancePage() {
         const user = auth.currentUser;
         if (!user) return;
 
-        // "finance" koleksiyonunu dinliyoruz (İş Emirleri buraya yazıyor)
+        // "finance" koleksiyonunu dinliyoruz
         const q = query(
             collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'),
             orderBy('date', 'desc')
@@ -36,7 +39,7 @@ export default function FinancePage() {
         const unsub = onSnapshot(q, (snapshot) => {
             const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-            // Tarih ve Sıralama Düzeltmesi (Timestamp vs String)
+            // Tarih ve Sıralama Düzeltmesi
             data.sort((a: any, b: any) => {
                 const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
                 const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
@@ -63,13 +66,12 @@ export default function FinancePage() {
         const user = auth.currentUser;
         if (!user) return;
 
-        // Elle eklenenleri de 'finance' koleksiyonuna atıyoruz
         await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), {
             type: modalType,
             amount: parseFloat(formData.amount),
             category: formData.category,
             description: formData.description,
-            date: new Date(formData.date), // Date objesi olarak kaydediyoruz
+            date: new Date(formData.date),
             createdAt: serverTimestamp()
         });
 
@@ -85,7 +87,20 @@ export default function FinancePage() {
         }
     };
 
-    const categories = modalType === 'income' ? ['Satış', 'Hizmet', 'Ekstra Gelir'] : ['Kira', 'Fatura', 'Yemek', 'Malzeme', 'Maaş', 'Diğer'];
+    // ARAMA FİLTRESİ
+    const filteredTransactions = transactions.filter((t) => {
+        if (!searchTerm) return true; // Arama yoksa hepsini göster
+
+        const term = searchTerm.toLocaleLowerCase('tr-TR');
+
+        const descriptionMatch = t.description?.toLocaleLowerCase('tr-TR').includes(term);
+        const categoryMatch = t.category?.toLocaleLowerCase('tr-TR').includes(term);
+        const amountMatch = t.amount?.toString().includes(term);
+
+        return descriptionMatch || categoryMatch || amountMatch;
+    });
+
+    const categories = modalType === 'income' ? ['Satış', 'Hizmet', 'Ekstra Gelir'] : ['Kira', 'Fatura', 'Yemek', 'Malzeme', 'Maaş', 'Akaryakıt', 'Diğer'];
 
     return (
         <div className="space-y-6">
@@ -121,21 +136,51 @@ export default function FinancePage() {
 
             {/* LİSTE */}
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center"><h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2"><History className="w-5 h-5 text-slate-500" /> Hesap Hareketleri</h3><span className="text-xs text-slate-500">{transactions.length} kayıt</span></div>
+                {/* Header ve Arama */}
+                <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                        <History className="w-5 h-5 text-slate-500" />
+                        <h3 className="font-bold text-slate-900 dark:text-white">Hesap Hareketleri</h3>
+                        <span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-full text-slate-500">{filteredTransactions.length} kayıt</span>
+                    </div>
+
+                    {/* Arama Kutusu */}
+                    <div className="relative w-full sm:w-64">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Ara: Mazot, Kadir, vb..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        {searchTerm && (
+                            <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500">
+                                <X className="w-3 h-3" />
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                         <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
                             <tr><th className="p-4">Tarih</th><th className="p-4">Kategori</th><th className="p-4">Açıklama</th><th className="p-4 text-right">Tutar</th><th className="p-4 text-right">Sil</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {loading ? <tr><td colSpan={5} className="p-8 text-center">Yükleniyor...</td></tr> : transactions.length === 0 ? <tr><td colSpan={5} className="p-8 text-center text-slate-500">İşlem yok.</td></tr> : transactions.map((t) => {
+                            {loading ? (
+                                <tr><td colSpan={5} className="p-8 text-center">Yükleniyor...</td></tr>
+                            ) : filteredTransactions.length === 0 ? (
+                                <tr><td colSpan={5} className="p-8 text-center text-slate-500">
+                                    {searchTerm ? 'Aradığınız kriterlere uygun kayıt bulunamadı.' : 'İşlem yok.'}
+                                </td></tr>
+                            ) : filteredTransactions.map((t) => {
                                 const dateObj = t.date?.toDate ? t.date.toDate() : new Date(t.date);
                                 return (
                                     <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                         <td className="p-4 font-medium text-slate-900 dark:text-white">{dateObj.toLocaleDateString('tr-TR')}</td>
                                         <td className="p-4">
                                             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${t.type === 'income' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                                                {/* İş Emrinden Geliyorsa İkon Göster */}
                                                 {t.relatedJobId && <Wrench className="w-3 h-3" />}
                                                 {t.category}
                                             </span>
@@ -162,7 +207,7 @@ export default function FinancePage() {
                                 <div><label className="block text-sm font-medium mb-1">Kategori</label><select className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 rounded-xl outline-none" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} required><option value="">Seçiniz</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                                 <div><label className="block text-sm font-medium mb-1">Tarih</label><input type="date" required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 rounded-xl outline-none" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} /></div>
                             </div>
-                            <div><label className="block text-sm font-medium mb-1">Açıklama</label><input className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 rounded-xl outline-none" placeholder="Açıklama giriniz..." value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} /></div>
+                            <div><label className="block text-sm font-medium mb-1">Açıklama</label><input className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 rounded-xl outline-none" placeholder="Örn: Mazot, Kadir Maaş Avansı..." value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} /></div>
                             <button className={`w-full py-3 text-white font-bold rounded-xl flex items-center justify-center gap-2 mt-4 ${modalType === 'income' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}><Plus className="w-5 h-5" /> Kaydet</button>
                         </form>
                     </div>
