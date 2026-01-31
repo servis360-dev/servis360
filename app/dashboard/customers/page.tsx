@@ -25,28 +25,34 @@ import {
     X,
     Save,
     Contact,
-    BookUser
+    BookUser,
+    UserCog, // Personel ikonu
+    Briefcase
 } from 'lucide-react';
 
 export default function CustomersPage() {
-    const [customers, setCustomers] = useState<any[]>([]);
+    const [allContacts, setAllContacts] = useState<any[]>([]); // Tümü
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [user, setUser] = useState<any>(null);
+
+    // Görünüm Modu: 'customer' (Müşteriler) veya 'personnel' (Personel)
+    const [viewMode, setViewMode] = useState<'customer' | 'personnel'>('customer');
 
     // Kullanıcı Tipi (Bireysel mi, Ticari mi?)
     const [accountType, setAccountType] = useState<string>('business');
 
     // Modallar için State
     const [showAddModal, setShowAddModal] = useState(false);
-    const [transactionModal, setTransactionModal] = useState<{ open: boolean, customer: any | null, type: 'debt' | 'payment' }>({
+    // Transaction Modal
+    const [transactionModal, setTransactionModal] = useState<{ open: boolean, contact: any | null, type: 'debt' | 'payment' }>({
         open: false,
-        customer: null,
-        type: 'debt'
+        contact: null,
+        type: 'debt' // debt: Borçlandır/Avans, payment: Tahsilat/Ödeme
     });
 
     // Form Verileri
-    const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', note: '' });
+    const [newContact, setNewContact] = useState({ name: '', phone: '', note: '', type: 'customer' });
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
 
@@ -66,14 +72,19 @@ export default function CustomersPage() {
                     console.error("Profil yüklenemedi", error);
                 }
 
-                // 2. Müşterileri Dinle
+                // 2. Müşterileri ve Personelleri Dinle (Hepsi 'customers' koleksiyonunda, type field ile ayrılır)
                 const q = query(
                     collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'customers'),
                     orderBy('name')
                 );
 
                 const unsub = onSnapshot(q, (snapshot) => {
-                    setCustomers(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+                    const data = snapshot.docs.map(d => ({
+                        id: d.id,
+                        type: 'customer', // Varsayılan değer (eski kayıtlar için)
+                        ...d.data()
+                    }));
+                    setAllContacts(data);
                     setLoading(false);
                 });
 
@@ -83,109 +94,177 @@ export default function CustomersPage() {
         return () => unsubscribe();
     }, []);
 
-    // Müşteri Ekle
-    const handleAddCustomer = async (e: React.FormEvent) => {
+    // Yeni Kişi Ekle (Müşteri veya Personel)
+    const handleAddContact = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user) return;
 
+        // Formdaki seçime göre type belirlenir, ancak modal açılırken viewMode neyse onu default yapabiliriz
+        const contactType = newContact.type || viewMode;
+
         await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers'), {
-            name: newCustomer.name,
-            phone: newCustomer.phone,
-            note: newCustomer.note,
-            balance: 0, // Bireyselde 0 kalır, Ticaride değişir
+            name: newContact.name,
+            phone: newContact.phone,
+            note: newContact.note,
+            type: contactType,
+            balance: 0,
             createdAt: serverTimestamp()
         });
 
         setShowAddModal(false);
-        setNewCustomer({ name: '', phone: '', note: '' });
+        setNewContact({ name: '', phone: '', note: '', type: 'customer' });
     };
 
-    // Para İşlemi (Sadece Ticari Hesaplar İçin)
+    // Para İşlemi (Borç/Alacak/Maaş)
     const handleTransaction = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user || !transactionModal.customer || !amount) return;
+        if (!user || !transactionModal.contact || !amount) return;
 
         const val = parseFloat(amount);
-        const currentBalance = transactionModal.customer.balance || 0;
+        const currentBalance = transactionModal.contact.balance || 0;
+        const isPersonnel = transactionModal.contact.type === 'personnel';
 
-        // 1. Bakiye Güncelle
+        // MANTIK:
+        // Müşteri: 'debt' (Borç Ekle -> Bakiye Artar), 'payment' (Tahsilat -> Bakiye Azalır)
+        // Personel: 'debt' (Avans Ver -> Bakiye Artar), 'payment' (Maaş Öde -> Bakiye Düşer veya sadece ödenir)
+
+        // Basit Bakiye Mantığı:
+        // Herkes için: 'debt' (+), 'payment' (-)
         const newBalance = transactionModal.type === 'debt'
             ? currentBalance + val
             : currentBalance - val;
 
-        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers', transactionModal.customer.id), {
+        // 1. Bakiyeyi Güncelle
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers', transactionModal.contact.id), {
             balance: newBalance
         });
 
-        // 2. Geçmişe Ekle
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers', transactionModal.customer.id, 'history'), {
+        // 2. Kişi Geçmişine Ekle
+        let historyDesc = description;
+        if (!description) {
+            if (isPersonnel) {
+                historyDesc = transactionModal.type === 'debt' ? 'Avans Verildi' : 'Maaş/Ödeme Yapıldı';
+            } else {
+                historyDesc = transactionModal.type === 'debt' ? 'Borç Eklendi' : 'Tahsilat Alındı';
+            }
+        }
+
+        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers', transactionModal.contact.id, 'history'), {
             type: transactionModal.type,
             amount: val,
-            description: description || (transactionModal.type === 'debt' ? 'Veresiye / Borç' : 'Tahsilat'),
+            description: historyDesc,
             date: new Date().toISOString(),
             createdAt: serverTimestamp()
         });
 
-        // 3. Kasa Entegrasyonu (Sadece Tahsilat ise)
-        if (transactionModal.type === 'payment') {
+        // 3. FİNANS (KASA) ENTEGRASYONU
+        // ---------------------------------------------------------
+        // MÜŞTERİ: 'payment' (Tahsilat) -> GELİR (Income)
+        // PERSONEL: 'payment' (Maaş) VEYA 'debt' (Avans) -> GİDER (Expense)
+        // ---------------------------------------------------------
+
+        if (isPersonnel) {
+            // PERSONEL İŞLEMİ -> KASADAN PARA ÇIKAR (Expense)
+            // Hem avans verirken hem maaş öderken para çıkar.
+            // Ancak sadece "Ödeme yapıldığı" anı kasaya işlemek daha doğru olabilir.
+            // Buradaki mantık: İşletme sahibi "İşlem Gir" dediğinde kasadan para çıkıyorsa ekleriz.
+
+            // Eğer "Ödeme (payment)" veya "Avans (debt)" seçildiyse ve bu kasadan nakit çıkışıysa:
+            const expenseType = transactionModal.type === 'debt' ? 'Personel Avans' : 'Personel Maaş/Ödeme';
+
             await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), {
-                type: 'income',
+                type: 'expense', // Personel ödemesi daima giderdir
                 amount: val,
-                category: 'Tahsilat',
-                description: `${transactionModal.customer.name} - Cari Tahsilat`,
+                category: 'Personel',
+                description: `${transactionModal.contact.name} - ${description || expenseType}`,
                 date: new Date().toISOString().split('T')[0],
                 createdAt: serverTimestamp()
             });
+
+        } else {
+            // MÜŞTERİ İŞLEMİ
+            // Sadece Tahsilat (payment) yapıldığında Kasa Geliri (Income) olur.
+            // Borç eklemek (Veresiye yazmak) kasaya para sokmaz.
+            if (transactionModal.type === 'payment') {
+                await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), {
+                    type: 'income',
+                    amount: val,
+                    category: 'Tahsilat',
+                    description: `${transactionModal.contact.name} - Cari Tahsilat`,
+                    date: new Date().toISOString().split('T')[0],
+                    createdAt: serverTimestamp()
+                });
+            }
         }
 
-        setTransactionModal({ open: false, customer: null, type: 'debt' });
+        setTransactionModal({ open: false, contact: null, type: 'debt' });
         setAmount('');
         setDescription('');
     };
 
     // Akıllı WhatsApp Mesajı
-    const sendWhatsapp = (phone: string, name: string, balance: number) => {
+    const sendWhatsapp = (phone: string, name: string, balance: number, type: string) => {
         let msg = '';
-
-        if (accountType === 'individual') {
-            // Bireysel Mesaj
+        if (type === 'personnel') {
+            msg = `Merhaba ${name},`;
+        } else if (accountType === 'individual') {
             msg = `Merhaba ${name}, nasılsın?`;
         } else {
-            // Ticari Mesaj (Borç varsa hatırlatır)
             if (balance > 0) {
-                msg = `Sayın ${name}, işletmemize olan ${balance.toLocaleString()} TL bakiyeniz bulunmaktadır. Bilginize sunarız.`;
+                msg = `Sayın ${name}, işletmemize olan ${balance.toLocaleString()} TL bakiyeniz bulunmaktadır.`;
             } else {
                 msg = `Sayın ${name}, iyi günler dileriz.`;
             }
         }
-
-        // Numara temizleme
         const cleanPhone = phone.replace(/[^0-9]/g, '');
         window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
     };
 
-    const filteredCustomers = customers.filter(c =>
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone.includes(searchTerm)
-    );
+    // Filtreleme (İsim Arama + Tip Filtresi)
+    const filteredContacts = allContacts.filter(c => {
+        const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || c.phone.includes(searchTerm);
+        const matchesType = (c.type || 'customer') === viewMode;
+        return matchesSearch && matchesType;
+    });
 
     return (
         <div className="space-y-6 pb-20">
+            {/* ÜST BAŞLIK VE TABLAR */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        {accountType === 'individual' ? <Contact className="w-8 h-8 text-purple-600" /> : <Users className="w-8 h-8 text-blue-600" />}
-                        {accountType === 'individual' ? 'Kişiler & Rehber' : 'Müşteriler & Cari Hesap'}
+                        {viewMode === 'personnel' ? <UserCog className="w-8 h-8 text-orange-600" /> : <Users className="w-8 h-8 text-blue-600" />}
+                        {viewMode === 'personnel' ? 'Personel Listesi' : 'Müşteriler & Cari'}
                     </h1>
                     <p className="text-slate-500 dark:text-slate-400">
-                        {accountType === 'individual' ? 'Telefon rehberiniz ve kişisel notlarınız.' : 'Borç/Alacak takibi ve müşteri yönetimi.'}
+                        {viewMode === 'personnel' ? 'Çalışanlarınızın maaş ve avans takibi.' : 'Müşteri borç/alacak takibi.'}
                     </p>
                 </div>
+
+                {/* TAB BUTONLARI */}
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                    <button
+                        onClick={() => setViewMode('customer')}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'customer' ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        Müşteriler
+                    </button>
+                    <button
+                        onClick={() => setViewMode('personnel')}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'personnel' ? 'bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        Personel
+                    </button>
+                </div>
+
                 <button
-                    onClick={() => setShowAddModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
+                    onClick={() => {
+                        setNewContact({ ...newContact, type: viewMode }); // Modu otomatik seç
+                        setShowAddModal(true);
+                    }}
+                    className={`flex items-center gap-2 px-4 py-2 text-white rounded-xl font-bold transition-colors shadow-lg ${viewMode === 'personnel' ? 'bg-orange-600 hover:bg-orange-700 shadow-orange-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'}`}
                 >
-                    <Plus className="w-5 h-5" /> {accountType === 'individual' ? 'Kişi Ekle' : 'Müşteri Ekle'}
+                    <Plus className="w-5 h-5" /> {viewMode === 'personnel' ? 'Personel Ekle' : 'Müşteri Ekle'}
                 </button>
             </div>
 
@@ -194,7 +273,7 @@ export default function CustomersPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input
                     type="text"
-                    placeholder="İsim veya telefon ara..."
+                    placeholder={`${viewMode === 'personnel' ? 'Personel' : 'Müşteri'} ara...`}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
@@ -203,17 +282,24 @@ export default function CustomersPage() {
 
             {/* Liste */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {loading ? <p className="text-slate-500 text-center col-span-full">Yükleniyor...</p> : filteredCustomers.length === 0 ? (
+                {loading ? <p className="text-slate-500 text-center col-span-full">Yükleniyor...</p> : filteredContacts.length === 0 ? (
                     <div className="col-span-full text-center py-10 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
                         <BookUser className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                        <p className="text-slate-500">Listeniz boş.</p>
+                        <p className="text-slate-500">{viewMode === 'personnel' ? 'Henüz personel eklemediniz.' : 'Müşteri listeniz boş.'}</p>
                     </div>
-                ) : filteredCustomers.map(c => (
+                ) : filteredContacts.map(c => (
                     <div key={c.id} className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all relative group">
+
+                        {/* Personel Badge */}
+                        {c.type === 'personnel' && (
+                            <span className="absolute top-3 right-3 px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold uppercase rounded-full">
+                                Personel
+                            </span>
+                        )}
 
                         <div className="flex justify-between items-start mb-4">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 font-bold text-lg">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg ${c.type === 'personnel' ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
                                     {c.name.charAt(0).toUpperCase()}
                                 </div>
                                 <div>
@@ -224,10 +310,12 @@ export default function CustomersPage() {
                                 </div>
                             </div>
 
-                            {/* Bakiye Göstergesi (Sadece Ticari) */}
+                            {/* Bakiye Göstergesi */}
                             {accountType !== 'individual' && (
-                                <div className="text-right">
-                                    <p className="text-xs text-slate-400 mb-1">Bakiye</p>
+                                <div className="text-right pt-6">
+                                    <p className="text-xs text-slate-400 mb-1">
+                                        {c.type === 'personnel' ? 'Avans/Bakiye' : 'Bakiye'}
+                                    </p>
                                     <p className={`text-lg font-bold ${c.balance > 0 ? 'text-red-500' : 'text-green-500'}`}>
                                         {c.balance?.toLocaleString()} ₺
                                     </p>
@@ -235,50 +323,38 @@ export default function CustomersPage() {
                             )}
                         </div>
 
-                        {/* Not Alanı (Herkes görür) */}
+                        {/* Not Alanı */}
                         {c.note && (
                             <p className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-900 p-2 rounded mb-4 italic line-clamp-2">
                                 "{c.note}"
                             </p>
                         )}
 
-                        {/* Aksiyon Butonları (Sadece Ticari) */}
+                        {/* Aksiyon Butonları */}
                         {accountType !== 'individual' ? (
                             <div className="grid grid-cols-2 gap-2 mt-2">
                                 <button
-                                    onClick={() => setTransactionModal({ open: true, customer: c, type: 'debt' })}
+                                    onClick={() => setTransactionModal({ open: true, contact: c, type: 'debt' })}
                                     className="flex items-center justify-center gap-2 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg text-sm font-medium hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
                                 >
-                                    <ArrowDownRight className="w-4 h-4" /> Borç Ekle
+                                    <ArrowDownRight className="w-4 h-4" />
+                                    {c.type === 'personnel' ? 'Avans Ver' : 'Borç Ekle'}
                                 </button>
                                 <button
-                                    onClick={() => setTransactionModal({ open: true, customer: c, type: 'payment' })}
+                                    onClick={() => setTransactionModal({ open: true, contact: c, type: 'payment' })}
                                     className="flex items-center justify-center gap-2 py-2 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-lg text-sm font-medium hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
                                 >
-                                    <ArrowUpRight className="w-4 h-4" /> Tahsil Et
+                                    <ArrowUpRight className="w-4 h-4" />
+                                    {c.type === 'personnel' ? 'Ödeme/Maaş' : 'Tahsil Et'}
                                 </button>
                             </div>
                         ) : (
-                            // Bireysel İçin Sadece İletişim Butonları
                             <div className="grid grid-cols-1 gap-2 mt-2">
                                 <button
-                                    onClick={() => sendWhatsapp(c.phone, c.name, 0)}
+                                    onClick={() => sendWhatsapp(c.phone, c.name, 0, c.type)}
                                     className="flex items-center justify-center gap-2 py-2 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-lg text-sm font-medium hover:bg-green-100 transition-colors"
                                 >
                                     <MessageCircle className="w-4 h-4" /> WhatsApp Mesajı
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Ticari için Ekstra WhatsApp Butonu (Hover'da Çıkan) */}
-                        {accountType !== 'individual' && c.balance > 0 && (
-                            <div className="absolute top-2 right-2 hidden group-hover:flex gap-1">
-                                <button
-                                    onClick={() => sendWhatsapp(c.phone, c.name, c.balance)}
-                                    className="p-1.5 bg-green-500 text-white rounded-full hover:bg-green-600 shadow-lg"
-                                    title="WhatsApp'tan Hatırlat"
-                                >
-                                    <MessageCircle className="w-4 h-4" />
                                 </button>
                             </div>
                         )}
@@ -286,28 +362,46 @@ export default function CustomersPage() {
                 ))}
             </div>
 
-            {/* Müşteri Ekle Modal */}
+            {/* EKLEME MODALI */}
             {showAddModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl animate-in zoom-in-95">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                                {accountType === 'individual' ? 'Yeni Kişi Ekle' : 'Yeni Müşteri Ekle'}
+                                Yeni Kayıt
                             </h2>
                             <button onClick={() => setShowAddModal(false)}><X className="text-slate-400 hover:text-slate-600" /></button>
                         </div>
-                        <form onSubmit={handleAddCustomer} className="space-y-4">
+                        <form onSubmit={handleAddContact} className="space-y-4">
+                            {/* Tip Seçimi */}
+                            <div className="grid grid-cols-2 gap-2 mb-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setNewContact({ ...newContact, type: 'customer' })}
+                                    className={`p-3 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 ${newContact.type === 'customer' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-slate-200 text-slate-500'}`}
+                                >
+                                    <Users className="w-4 h-4" /> Müşteri
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setNewContact({ ...newContact, type: 'personnel' })}
+                                    className={`p-3 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 ${newContact.type === 'personnel' ? 'border-orange-500 bg-orange-50 text-orange-600' : 'border-slate-200 text-slate-500'}`}
+                                >
+                                    <UserCog className="w-4 h-4" /> Personel
+                                </button>
+                            </div>
+
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Ad Soyad</label>
-                                <input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" value={newCustomer.name} onChange={e => setNewCustomer({ ...newCustomer, name: e.target.value })} />
+                                <input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" value={newContact.name} onChange={e => setNewContact({ ...newContact, name: e.target.value })} />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Telefon</label>
-                                <input required type="tel" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" value={newCustomer.phone} onChange={e => setNewCustomer({ ...newCustomer, phone: e.target.value })} />
+                                <input required type="tel" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" value={newContact.phone} onChange={e => setNewContact({ ...newContact, phone: e.target.value })} />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Not (Opsiyonel)</label>
-                                <textarea className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" value={newCustomer.note} onChange={e => setNewCustomer({ ...newCustomer, note: e.target.value })} />
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Not</label>
+                                <textarea className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none" value={newContact.note} onChange={e => setNewContact({ ...newContact, note: e.target.value })} />
                             </div>
                             <button className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors">Kaydet</button>
                         </form>
@@ -315,21 +409,23 @@ export default function CustomersPage() {
                 </div>
             )}
 
-            {/* İşlem Modalı (Sadece Ticari) */}
-            {transactionModal.open && (
+            {/* İŞLEM MODALI */}
+            {transactionModal.open && transactionModal.contact && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-200 dark:border-slate-700">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className={`text-xl font-bold ${transactionModal.type === 'debt' ? 'text-red-600' : 'text-green-600'}`}>
-                                {transactionModal.type === 'debt' ? 'Borç Ekle' : 'Tahsilat Al'}
+                                {transactionModal.contact.type === 'personnel'
+                                    ? (transactionModal.type === 'debt' ? 'Avans Ver' : 'Ödeme Yap')
+                                    : (transactionModal.type === 'debt' ? 'Borç Ekle' : 'Tahsilat Al')}
                             </h2>
                             <button onClick={() => setTransactionModal({ ...transactionModal, open: false })}><X className="text-slate-400 hover:text-slate-600" /></button>
                         </div>
 
                         <div className="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg mb-4 text-center">
-                            <p className="text-sm text-slate-500">Müşteri</p>
-                            <p className="font-bold text-slate-900 dark:text-white text-lg">{transactionModal.customer?.name}</p>
-                            <p className="text-xs text-slate-400">Mevcut Bakiye: {transactionModal.customer?.balance} ₺</p>
+                            <p className="text-sm text-slate-500">{transactionModal.contact.type === 'personnel' ? 'Personel' : 'Müşteri'}</p>
+                            <p className="font-bold text-slate-900 dark:text-white text-lg">{transactionModal.contact.name}</p>
+                            <p className="text-xs text-slate-400">Güncel Bakiye: {transactionModal.contact.balance} ₺</p>
                         </div>
 
                         <form onSubmit={handleTransaction} className="space-y-4">
@@ -349,7 +445,11 @@ export default function CustomersPage() {
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Açıklama (Opsiyonel)</label>
                                 <input
                                     className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none"
-                                    placeholder={transactionModal.type === 'debt' ? 'Örn: Veresiye ürün satışı' : 'Örn: Nakit ödeme'}
+                                    placeholder={
+                                        transactionModal.contact.type === 'personnel'
+                                            ? (transactionModal.type === 'debt' ? 'Örn: Maaş Avansı' : 'Örn: Haftalık Ödeme')
+                                            : (transactionModal.type === 'debt' ? 'Örn: Veresiye ürün' : 'Örn: Nakit tahsilat')
+                                    }
                                     value={description}
                                     onChange={e => setDescription(e.target.value)}
                                 />
@@ -358,6 +458,12 @@ export default function CustomersPage() {
                                 <Save className="w-5 h-5" /> İşlemi Onayla
                             </button>
                         </form>
+
+                        {transactionModal.contact.type === 'personnel' && (
+                            <p className="text-xs text-center text-slate-400 mt-4">
+                                * Bu işlem otomatik olarak Kasa {transactionModal.type === 'debt' || transactionModal.type === 'payment' ? 'Giderlerine' : ''} eklenecektir.
+                            </p>
+                        )}
                     </div>
                 </div>
             )}
