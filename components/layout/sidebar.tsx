@@ -17,48 +17,54 @@ import {
     PlusCircle,
     X,
     CreditCard,
-    Gem,
-    PieChart
+    Store, // Şubeler için
+    Package, // Stok için
 } from 'lucide-react';
 import { auth } from '../../lib/firebase';
 import { signOut } from 'firebase/auth';
 
 interface SidebarProps {
     userRole?: string;
+    userProfile?: any; // Profil detayları (AccountType vb. için)
     isOpen: boolean;
     onClose: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // 🛠️ ROL NORMALLEŞTİRME (AKILLI KONTROL)
-// Veritabanından gelen rol ismi ne olursa olsun, sistemin anladığı dile çevirir.
 // ---------------------------------------------------------------------------
 const getNormalizedRole = (role?: string): string => {
-    if (!role) return 'individual'; // Rol yoksa Bireysel varsay
+    if (!role) return 'individual'; // Rol yoksa Bireysel
 
     const r = role.toLowerCase();
 
-    // 1. SÜPER YÖNETİCİ (SEN)
+    // 1. SÜPER YÖNETİCİ
     if (r === 'super_admin' || r === 'developer') return 'super_admin';
 
-    // 2. PATRON / İŞLETME SAHİBİ (Kurumsal & Esnaf)
-    // 👇 BURAYA 'esnaf' KELİMESİNİ DE EKLEDİM.
-    // Artık rolü "esnaf" olanlar da dükkan sahibi (admin) yetkilerini alacak.
-    if (['admin', 'corporate', 'business', 'tradesman', 'boss', 'owner', 'esnaf'].includes(r)) return 'admin';
+    // 2. KURUMSAL FİRMA SAHİBİ
+    if (r === 'corporate') return 'corporate';
 
-    // 3. PERSONEL / ÇALIŞAN
-    if (['staff', 'personnel', 'employee', 'worker', 'teknik', 'cirak', 'kalfa'].includes(r)) return 'staff';
+    // 3. ESNAF / KOBİ SAHİBİ (Genel Admin)
+    if (['esnaf', 'admin', 'business', 'tradesman', 'boss', 'owner'].includes(r)) return 'esnaf';
 
-    // 4. BİREYSEL KULLANICI
+    // 4. MUHASEBE PERSONELİ
+    if (['accounting', 'muhasebe', 'finans', 'on_muhasebe'].includes(r)) return 'accounting';
+
+    // 5. TEKNİSYEN / SAHA PERSONELİ
+    if (['technician', 'teknik', 'usta', 'ustam', 'field_agent'].includes(r)) return 'technician';
+
+    // 6. GENEL OFİS PERSONELİ
+    if (['staff', 'personnel', 'employee', 'worker', 'sekreter', 'danisma'].includes(r)) return 'staff';
+
+    // 7. BİREYSEL MÜŞTERİ
     return 'individual';
 };
 
 // ---------------------------------------------------------------------------
 // 📋 MENÜ YAPILANDIRMASI
-// allowedRoles: Bu menüyü hangi "Normalleştirilmiş Roller" görebilir?
 // ---------------------------------------------------------------------------
 const MENU_ITEMS = [
-    // --- 1. SAAS YÖNETİCİSİ (SADECE SEN) ---
+    // --- 1. SAAS YÖNETİCİSİ ---
     {
         title: 'SaaS Yönetimi',
         items: [
@@ -71,7 +77,7 @@ const MENU_ITEMS = [
         ]
     },
 
-    // --- 2. GENEL (HERKES) ---
+    // --- 2. GENEL BAKIŞ (Ortak) ---
     {
         title: 'Genel Bakış',
         items: [
@@ -79,13 +85,13 @@ const MENU_ITEMS = [
                 label: 'Özet Paneli',
                 href: '/dashboard',
                 icon: LayoutDashboard,
-                // Herkes kendi özetini görür
-                allowedRoles: ['super_admin', 'admin', 'staff', 'individual']
+                // Herkes kendi özet ekranını görür
+                allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'staff', 'individual']
             },
         ]
     },
 
-    // --- 3. BİREYSEL MÜŞTERİ İŞLEMLERİ ---
+    // --- 3. BİREYSEL HİZMET ALAN ---
     {
         title: 'Hizmet İşlemleri',
         items: [
@@ -104,43 +110,57 @@ const MENU_ITEMS = [
         ]
     },
 
-    // --- 4. İŞLETME YÖNETİMİ (PATRON & PERSONEL) ---
-    // Esnaf (Admin) burayı görür.
+    // --- 4. İŞLETME YÖNETİMİ (Operasyon) ---
     {
-        title: 'İşletme Yönetimi',
+        title: 'Operasyon',
         items: [
             {
                 label: 'İş Takibi',
                 href: '/dashboard/jobs',
                 icon: Briefcase,
-                // Personel işleri görür, Patron yönetir
-                allowedRoles: ['super_admin', 'admin', 'staff']
+                // Muhasebe hariç tüm işletme ekibi
+                allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician']
             },
             {
                 label: 'Randevu Takvimi',
                 href: '/dashboard/appointments',
                 icon: CalendarDays,
-                allowedRoles: ['super_admin', 'admin', 'staff']
+                // Muhasebe hariç tüm işletme ekibi
+                allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician']
             },
             {
                 label: 'Müşteri Listesi',
                 href: '/dashboard/customers',
                 icon: Users,
-                // Personel müşterileri görebilmeli (iletişim için)
-                allowedRoles: ['super_admin', 'admin', 'staff']
+                // Teknisyen hariç herkes (Teknisyen sadece gittiği işi görür, tüm listeyi görmesine gerek yok - opsiyonel)
+                // Ama iletişim için gerekebilir, şimdilik ekliyoruz.
+                allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'accounting', 'technician']
+            },
+            {
+                label: 'Stok Takibi',
+                href: '/dashboard/stock',
+                icon: Package,
+                // Bireysel ve Muhasebe hariç
+                allowedRoles: ['super_admin', 'corporate', 'esnaf', 'technician', 'staff']
+            },
+            {
+                label: 'Şubeler',
+                href: '/dashboard/branches',
+                icon: Store,
+                // Sadece Kurumsal Firmalar ve Süper Admin
+                allowedRoles: ['super_admin', 'corporate']
             },
             {
                 label: 'Personel Yönetimi',
                 href: '/dashboard/staff',
                 icon: Users,
-                // SADECE PATRON (Personel, diğer personelleri yönetemez)
-                allowedRoles: ['super_admin', 'admin']
+                // Sadece Patronlar (Esnaf ve Kurumsal)
+                allowedRoles: ['super_admin', 'corporate', 'esnaf']
             },
         ]
     },
 
-    // --- 5. FİNANS (PATRON & BİREYSEL) ---
-    // Esnaf (Admin) burayı görür. Personel GÖREMEZ.
+    // --- 5. FİNANS (Patron & Muhasebe & Bireysel) ---
     {
         title: 'Finansal Durum',
         items: [
@@ -148,22 +168,22 @@ const MENU_ITEMS = [
                 label: 'Gelir / Gider',
                 href: '/dashboard/finance',
                 icon: Wallet,
-                // Bireysel kullanıcı kendi bütçesini, Patron şirket kasasını görür.
-                allowedRoles: ['super_admin', 'admin', 'individual']
+                // Teknisyen ve Ofis Personeli Göremez! Sadece Yetkililer.
+                allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'individual']
             },
             {
                 label: 'Teklifler',
                 href: '/dashboard/proposals',
                 icon: FileText,
-                // Sadece işletmeler teklif hazırlar
-                allowedRoles: ['super_admin', 'admin']
+                // Teklifleri patron ve muhasebe hazırlar
+                allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting']
             },
             {
                 label: 'Abonelik Paketleri',
                 href: '/dashboard/subscription',
                 icon: CreditCard,
-                // Paket satın alma ekranı
-                allowedRoles: ['super_admin', 'admin', 'individual']
+                // PERSONEL GÖREMEZ. Sadece hesap sahipleri.
+                allowedRoles: ['super_admin', 'corporate', 'esnaf', 'individual']
             },
         ]
     },
@@ -176,7 +196,7 @@ const MENU_ITEMS = [
                 label: 'Ayarlar',
                 href: '/dashboard/settings',
                 icon: Settings,
-                allowedRoles: ['super_admin', 'admin', 'staff', 'individual']
+                allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'staff', 'individual']
             },
         ]
     }
@@ -185,7 +205,7 @@ const MENU_ITEMS = [
 export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
 
-    // Rolü standart hale getir (Safe Guard)
+    // Rolü standart hale getir
     const normalizedRole = getNormalizedRole(userRole);
 
     const handleLogout = async () => {
@@ -220,7 +240,7 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                 {/* MENÜ LİSTESİ */}
                 <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
                     {MENU_ITEMS.map((section, index) => {
-                        // Rol kontrolü: Bu bölümdeki öğelerden en az biri kullanıcının rolüne uyuyor mu?
+                        // Rol kontrolü: Kullanıcının rolü bu item'ın izin verilen rollerinde var mı?
                         const authorizedItems = section.items.filter(item =>
                             item.allowedRoles.includes(normalizedRole)
                         );
@@ -244,8 +264,8 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                                                 href={item.href}
                                                 onClick={onClose}
                                                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isActive
-                                                        ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
-                                                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+                                                    ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
+                                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
                                                     }`}
                                             >
                                                 <Icon className={`w-5 h-5 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
@@ -269,22 +289,21 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                         Çıkış Yap
                     </button>
 
-                    {/* Hata Ayıklama Bilgisi (Kullanıcının Sistemdeki Rolü) */}
+                    {/* Rol Etiketi */}
                     <div className="mt-3 text-center">
                         <span className={`text-[10px] uppercase font-bold tracking-widest px-2 py-1 rounded-full border ${normalizedRole === 'super_admin' ? 'border-red-500 text-red-500 bg-red-500/10' :
-                                normalizedRole === 'admin' ? 'border-purple-500 text-purple-500 bg-purple-500/10' :
-                                    normalizedRole === 'staff' ? 'border-yellow-500 text-yellow-500 bg-yellow-500/10' :
+                                ['corporate', 'esnaf'].includes(normalizedRole) ? 'border-purple-500 text-purple-500 bg-purple-500/10' :
+                                    ['technician', 'staff', 'accounting'].includes(normalizedRole) ? 'border-yellow-500 text-yellow-500 bg-yellow-500/10' :
                                         'border-blue-500 text-blue-500 bg-blue-500/10'
                             }`}>
-                            {normalizedRole === 'super_admin' ? 'GELİŞTİRİCİ' :
-                                normalizedRole === 'admin' ? 'YÖNETİCİ' :
-                                    normalizedRole === 'staff' ? 'PERSONEL' :
-                                        'BİREYSEL'}
+                            {normalizedRole === 'super_admin' ? 'YAZILIMCI' :
+                                normalizedRole === 'corporate' ? 'KURUMSAL' :
+                                    normalizedRole === 'esnaf' ? 'İŞLETME' :
+                                        normalizedRole === 'accounting' ? 'MUHASEBE' :
+                                            normalizedRole === 'technician' ? 'TEKNİSYEN' :
+                                                normalizedRole === 'staff' ? 'PERSONEL' :
+                                                    'BİREYSEL'}
                         </span>
-                        {/* Ham rol verisini de göster ki veritabanında ne yazdığını anla (Geliştirme bitince silersin) */}
-                        <div className="text-[9px] text-slate-400 mt-1">
-                            (DB Rolü: {userRole || 'Yok'})
-                        </div>
                     </div>
                 </div>
             </aside>
