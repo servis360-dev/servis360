@@ -1,0 +1,37 @@
+Folder PATH listing for volume Windows
+Volume serial number is 00000045 D04A:F309
+C:\USERS\PERSP\DESKTOP\SERVIS360-PRO\APP
+ÃÄÄÄ(auth)
+³   ÃÄÄÄforgot-password
+³   ÃÄÄÄlogin
+³   ÀÄÄÄregister
+ÃÄÄÄ.vs
+³   ÀÄÄÄapp
+³       ÃÄÄÄFileContentIndex
+³       ÀÄÄÄv17
+ÃÄÄÄapi
+³   ÀÄÄÄsend-receipt
+ÃÄÄÄdashboard
+³   ÃÄÄÄadmin
+³   ÃÄÄÄappointments
+³   ÃÄÄÄbranches
+³   ÃÄÄÄcommunication
+³   ÃÄÄÄcustomers
+³   ÃÄÄÄfinance
+³   ÃÄÄÄjobs
+³   ³   ÃÄÄÄnew
+³   ³   ÀÄÄÄ[id]
+³   ÃÄÄÄproposals
+³   ³   ÃÄÄÄnew
+³   ³   ÀÄÄÄ[id]
+³   ÃÄÄÄsettings
+³   ÃÄÄÄstaff
+³   ÃÄÄÄstock
+³   ÃÄÄÄsubscription
+³   ÀÄÄÄsupport
+³       ÃÄÄÄnew
+³       ÀÄÄÄ[id]
+ÃÄÄÄhelp
+ÃÄÄÄonboarding
+ÃÄÄÄprivacy
+ÀÄÄÄterms
