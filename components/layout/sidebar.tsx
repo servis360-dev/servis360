@@ -32,15 +32,20 @@ interface SidebarProps {
 }
 
 // ---------------------------------------------------------------------------
-// 🛠️ ROL NORMALLEŞTİRME
+// 🛠️ ROL NORMALLEŞTİRME (KESİN ÇÖZÜM)
 // ---------------------------------------------------------------------------
-const getNormalizedRole = (role?: string): string => {
+const getNormalizedRole = (role?: string, accountType?: string): string => {
+    // 🛑 KRİTİK KONTROL: Eğer hesap türü BİREYSEL ise, rolü ne olursa olsun (owner vb.) yetkisini 'individual' yap.
+    // Bu satır, bireysel kullanıcıların yanlışlıkla esnaf menüsü görmesini engeller.
+    if (accountType === 'individual') return 'individual';
+
     if (!role) return 'individual';
 
     const r = role.toLowerCase();
+
     // 1. ÜST YÖNETİM
     if (r === 'super_admin' || r === 'developer') return 'super_admin';
-    if (r === 'corporate') return 'corporate'; // Kurumsal Patron
+    if (r === 'corporate') return 'corporate';
 
     // 2. ESNAF / KOBİ
     if (['esnaf', 'admin', 'business', 'tradesman', 'boss', 'owner'].includes(r)) return 'esnaf';
@@ -48,14 +53,14 @@ const getNormalizedRole = (role?: string): string => {
     // 3. PERSONEL ROLLERİ
     if (['accounting', 'muhasebe', 'finans', 'on_muhasebe'].includes(r)) return 'accounting';
     if (['technician', 'teknik', 'usta', 'ustam', 'field_agent'].includes(r)) return 'technician';
-    if (['staff', 'personnel', 'employee', 'worker', 'sekreter', 'danisma'].includes(r)) return 'staff'; // Genel ofis personeli
+    if (['staff', 'personnel', 'employee', 'worker', 'sekreter', 'danisma'].includes(r)) return 'staff';
 
-    // 4. BİREYSEL MÜŞTERİ
+    // 4. VARSAYILAN
     return 'individual';
 };
 
 // ---------------------------------------------------------------------------
-// 📋 MENÜ YAPILANDIRMASI (YETKİ MATRİSİ)
+// 📋 MENÜ YAPILANDIRMASI
 // ---------------------------------------------------------------------------
 const MENU_ITEMS = [
     {
@@ -67,14 +72,13 @@ const MENU_ITEMS = [
     {
         title: 'Genel Bakış',
         items: [
-            // Herkes özet panelini görür (İçeriği dashboard/page.tsx'te filtrelenecek)
             { label: 'Özet Paneli', href: '/dashboard', icon: LayoutDashboard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'staff', 'individual'] },
         ]
     },
     {
         title: 'Hizmet İşlemleri',
         items: [
-            // Sadece Bireysel Müşteriler için talep ekranları
+            // Bireysel Kullanıcı Sadece Burayı ve Ayarları/Finansı Görebilir
             { label: 'Yeni Talep Oluştur', href: '/dashboard/jobs/new', icon: PlusCircle, allowedRoles: ['individual'] },
             { label: 'Servis Geçmişim', href: '/dashboard/jobs', icon: History, allowedRoles: ['individual'] },
         ]
@@ -82,14 +86,10 @@ const MENU_ITEMS = [
     {
         title: 'Operasyon',
         items: [
-            // Muhasebe teknik işleri görmez. Bireysel göremez.
             { label: 'İş Takibi', href: '/dashboard/jobs', icon: Briefcase, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician'] },
             { label: 'Randevu Takvimi', href: '/dashboard/appointments', icon: CalendarDays, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician'] },
-            // Müşteri listesi: Tekniker hariç herkes görebilir mi? Genelde tekniker de müşteri arar. Şimdilik hepsi görüyor (Bireysel hariç).
             { label: 'Müşteri Listesi', href: '/dashboard/customers', icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'accounting', 'technician'] },
-            // Stok: Muhasebe ve Bireysel göremez.
             { label: 'Stok Takibi', href: '/dashboard/stock', icon: Package, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'technician', 'staff'] },
-            // Şube ve Personel: Sadece Patronlar.
             { label: 'Şubeler', href: '/dashboard/branches', icon: Store, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
             { label: 'Personel Yönetimi', href: '/dashboard/staff', icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
         ]
@@ -97,10 +97,8 @@ const MENU_ITEMS = [
     {
         title: 'Finansal Durum',
         items: [
-            // Tekniker ve Ofis personeli kasayı görmez.
             { label: 'Gelir / Gider', href: '/dashboard/finance', icon: Wallet, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'individual'] },
             { label: 'Teklifler', href: '/dashboard/proposals', icon: FileText, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting'] },
-            // Abonelik: Personel görmez.
             { label: 'Abonelik Paketleri', href: '/dashboard/subscription', icon: CreditCard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'individual'] },
         ]
     },
@@ -112,9 +110,12 @@ const MENU_ITEMS = [
     }
 ];
 
-export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
+export function Sidebar({ userRole, userProfile, isOpen, onClose }: SidebarProps) {
     const pathname = usePathname();
-    const normalizedRole = getNormalizedRole(userRole);
+
+    // 🔥 DÜZELTME: Sadece role değil, accountType'a da bakarak yetki belirliyoruz.
+    // userProfile.accountType undefined gelirse sorun çıkmaması için optional chaining (?) kullanıldı.
+    const normalizedRole = getNormalizedRole(userRole, userProfile?.accountType);
 
     const handleLogout = async () => {
         await signOut(auth);
@@ -122,14 +123,13 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
 
     return (
         <>
-            {/* MOBİL BACKDROP (iOS Blur Effect) */}
+            {/* MOBİL BACKDROP */}
             <div
-                className={`fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-md md:hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                    }`}
+                className={`fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-md md:hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 onClick={onClose}
             />
 
-            {/* SIDEBAR CONTAINER (Glassmorphism & iOS 26 Spring Animation) */}
+            {/* SIDEBAR CONTAINER */}
             <aside
                 className={`
                     fixed top-0 left-0 z-50 h-full w-[85%] max-w-[320px] md:w-64 
@@ -155,10 +155,7 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                             <span className="text-[10px] text-blue-400 font-medium tracking-wider mt-1">PRO SUITE</span>
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="md:hidden w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors backdrop-blur-md"
-                    >
+                    <button onClick={onClose} className="md:hidden w-8 h-8 flex items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors backdrop-blur-md">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -166,7 +163,9 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                 {/* 2. MENÜ LİSTESİ */}
                 <div className="flex-1 overflow-y-auto py-6 px-4 space-y-8 scrollbar-hide overscroll-contain">
                     {MENU_ITEMS.map((section, index) => {
+                        // Yetki Kontrolü
                         const authorizedItems = section.items.filter(item => item.allowedRoles.includes(normalizedRole));
+
                         if (authorizedItems.length === 0) return null;
 
                         return (
@@ -196,7 +195,6 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                                                     <Icon className={`w-5 h-5 transition-transform group-hover:scale-110 ${isActive ? 'text-blue-400 md:text-blue-600' : 'text-slate-500 md:text-slate-400'}`} />
                                                     <span>{item.label}</span>
                                                 </div>
-
                                                 {isActive && <ChevronRight className="w-4 h-4 text-blue-500 opacity-50" />}
                                             </Link>
                                         );
@@ -209,10 +207,7 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
 
                 {/* 3. ALT PROFİL ALANI */}
                 <div className="flex-shrink-0 p-4 border-t border-white/5 md:border-slate-200 md:dark:border-slate-800 bg-[#0B1121]/50 md:bg-transparent backdrop-blur-xl">
-                    <button
-                        onClick={handleLogout}
-                        className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20"
-                    >
+                    <button onClick={handleLogout} className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20">
                         <LogOut className="w-4 h-4" />
                         Çıkış Yap
                     </button>

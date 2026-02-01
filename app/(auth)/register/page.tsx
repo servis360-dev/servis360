@@ -1,4 +1,4 @@
-﻿'use client';
+﻿''use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -88,7 +88,7 @@ export default function RegisterPage() {
             // 3. Rol ve Şirket Belirleme (Kritik Adım)
             let finalRole = 'owner';
             let finalCompanyId = user.uid; // Patron ise kendi ID'si şirket ID'sidir
-            let finalOwnerId = user.uid;   // Varsayılan olarak kendisi
+            let finalOwnerId = user.uid;   // Varsayılan olarak kendisi (Dashboard veriyi buradan çeker)
             let finalCompanyName = formData.companyName;
             let finalAccountType = formData.accountType;
             let finalSector = formData.sectorType;
@@ -97,12 +97,13 @@ export default function RegisterPage() {
             if (isStaff) {
                 finalRole = staffData.assignedRole;         // Patronun verdiği rol (tekniker, satis vb.)
                 finalCompanyId = staffData.targetCompanyId; // Patronun ID'si
-                finalOwnerId = staffData.targetCompanyId;   // Verilerin çekileceği asıl ID
+                finalOwnerId = staffData.targetCompanyId;   // Verilerin çekileceği asıl ID (Patronun verisi)
                 finalCompanyName = staffData.targetCompanyName;
                 finalSector = staffData.targetSector;
                 finalAccountType = 'corporate';             // Personel kurumsal statüdedir
             } else if (finalAccountType === 'individual') {
                 finalCompanyName = 'Bireysel Hesap';
+                finalRole = 'individual'; // 🔥 GÜNCELLEME: Bireysel kullanıcı için rolü 'individual' olarak sabitliyoruz.
             }
 
             // 4. Firestore Profil Kaydı
@@ -122,7 +123,7 @@ export default function RegisterPage() {
                 role: finalRole,
                 status: 'active',
                 createdAt: serverTimestamp(),
-                licenseEndsAt: null // Personelin lisansı patrona bağlıdır
+                licenseEndsAt: null // Personelin lisansı patrona bağlıdır (Bireysel/Patron için null başlar, sonra satın alır)
             });
 
             // 5. Public Directory (Admin Paneli İçin)
