@@ -9,7 +9,7 @@ import {
     signOut,
     sendEmailVerification
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore'; // 🔥 EKLENDİ
 import { auth, db } from '../../../lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -31,6 +31,76 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const router = useRouter();
 
+    // --- YENİ: DAVETİYE KONTROLÜ VE PROFİL OLUŞTURMA ---
+    const checkInvitationAndCreateProfile = async (user: any) => {
+        try {
+            // 1. IP Adresini Al (Loglama için)
+            let clientIp = '0.0.0.0';
+            try {
+                const ipRes = await fetch('https://api.ipify.org?format=json');
+                const ipData = await ipRes.json();
+                clientIp = ipData.ip;
+            } catch (e) { console.error("IP alınamadı", e); }
+
+            // 2. Davetiyeyi Kontrol Et
+            const inviteRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', user.email || '');
+            const inviteSnap = await getDoc(inviteRef);
+
+            if (inviteSnap.exists()) {
+                const staffData = inviteSnap.data();
+
+                console.log("📢 Personel Daveti Bulundu! Şirkete bağlanıyor...");
+
+                // 3. EĞER PERSONEL İSE: Profili otomatik oluştur ve içeri al
+                await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'), {
+                    uid: user.uid,
+                    email: user.email,
+                    fullName: user.displayName || 'İsimsiz Personel',
+                    phone: '', // Google'dan gelmez, panelde sorarız
+
+                    // Şirket Bağlantıları
+                    companyId: staffData.targetCompanyId,
+                    ownerId: staffData.targetCompanyId, // 🔥 Patronun ID'si
+                    companyName: staffData.targetCompanyName,
+
+                    accountType: 'corporate', // Personel kurumsal statüdedir
+                    sectorType: staffData.targetSector,
+                    role: staffData.assignedRole,
+                    status: 'active',
+                    createdAt: serverTimestamp(),
+                    licenseEndsAt: null
+                });
+
+                // 4. Public Directory kaydı
+                await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid), {
+                    id: user.uid,
+                    uid: user.uid,
+                    fullName: user.displayName,
+                    email: user.email,
+                    phone: '',
+                    companyName: staffData.targetCompanyName,
+                    accountType: 'corporate',
+                    role: staffData.assignedRole,
+                    status: 'active',
+                    ip: clientIp,
+                    createdAt: serverTimestamp()
+                });
+
+                // 5. Davet durumunu güncelle
+                await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', staffData.targetCompanyId, 'staff', user.email!), {
+                    status: 'active',
+                    uid: user.uid,
+                    joinedAt: serverTimestamp()
+                });
+
+                return true; // Personel kaydı yapıldı
+            }
+        } catch (error) {
+            console.error("Personel kontrol hatası:", error);
+        }
+        return false; // Davetiye yok
+    };
+
     const checkUserAndRedirect = async (user: any) => {
         try {
             // Önce veritabanı kaydını kontrol et
@@ -46,12 +116,10 @@ export default function LoginPage() {
                     return;
                 }
 
-                // 2. E-POSTA ONAYI KONTROLÜ (GELİŞTİRİCİ VE YÖNETİCİLER MUAF)
-                // Admin, Super Admin veya Developer hesapları doğrulamaya takılmaz.
+                // 2. E-POSTA ONAYI KONTROLÜ
                 const exemptRoles = ['admin', 'super_admin', 'developer'];
                 const isExempt = exemptRoles.includes(userData.role);
 
-                // Eğer muaf değilse ve mail onaysızsa hata ver
                 if (!isExempt && !user.emailVerified) {
                     await signOut(auth);
                     setError('E-posta adresiniz henüz doğrulanmamış. Lütfen gelen kutunuzu kontrol edin.');
@@ -59,7 +127,7 @@ export default function LoginPage() {
                     return;
                 }
 
-                // 3. Hesap Durumu Kontrolü (Dondurulmuş mu?)
+                // 3. Hesap Durumu Kontrolü
                 if (userData.status === 'suspended') {
                     await signOut(auth);
                     setError('Hesabınız dondurulmuştur. Lütfen ödeme yapın veya yönetici ile iletişime geçin.');
@@ -67,12 +135,20 @@ export default function LoginPage() {
                     return;
                 }
 
-                // Her şey yolunda, içeri al
                 router.push('/dashboard');
 
             } else {
-                // PROFİL HİÇ YOKSA -> ONBOARDING
-                router.push('/onboarding');
+                // 🔥 PROFİL YOKSA BURASI ÇALIŞIR
+                // Önce "Acaba bu kişi davetli bir personel mi?" diye bakıyoruz.
+                const isStaffCreated = await checkInvitationAndCreateProfile(user);
+
+                if (isStaffCreated) {
+                    // Personel ise direkt dashboard'a al
+                    router.push('/dashboard');
+                } else {
+                    // Değilse normal kayıt akışı (Onboarding)
+                    router.push('/onboarding');
+                }
             }
         } catch (err) {
             console.error("Giriş kontrol hatası:", err);
