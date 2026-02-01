@@ -46,9 +46,13 @@ export default function LoginPage() {
                     return;
                 }
 
-                // 2. Admin Değilse E-posta Onayı Kontrolü
-                // Not: Google/Apple ile girenlerde emailVerified genelde true gelir.
-                if (userData.role !== 'admin' && !user.emailVerified) {
+                // 2. E-POSTA ONAYI KONTROLÜ (GELİŞTİRİCİ VE YÖNETİCİLER MUAF)
+                // Admin, Super Admin veya Developer hesapları doğrulamaya takılmaz.
+                const exemptRoles = ['admin', 'super_admin', 'developer'];
+                const isExempt = exemptRoles.includes(userData.role);
+
+                // Eğer muaf değilse ve mail onaysızsa hata ver
+                if (!isExempt && !user.emailVerified) {
                     await signOut(auth);
                     setError('E-posta adresiniz henüz doğrulanmamış. Lütfen gelen kutunuzu kontrol edin.');
                     setLoading(false);
@@ -67,8 +71,7 @@ export default function LoginPage() {
                 router.push('/dashboard');
 
             } else {
-                // PROFİL HİÇ YOKSA (Örn: Yeni Google Girişi) -> ONBOARDING'E GİT
-                // Burada hata vermek yerine kurulum sayfasına yolluyoruz.
+                // PROFİL HİÇ YOKSA -> ONBOARDING
                 router.push('/onboarding');
             }
         } catch (err) {
