@@ -52,6 +52,7 @@ export default function SubscriptionPage() {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 setUserData(data);
+                // Hesap türünü gönderiyoruz
                 fetchSystemSettings(data.accountType || 'individual');
             }
             setLoading(false);
@@ -61,8 +62,14 @@ export default function SubscriptionPage() {
     }, []);
 
     // 2. SİSTEM AYARLARINI ÇEK
-    const fetchSystemSettings = async (accountType: string) => {
+    const fetchSystemSettings = async (rawAccountType: string) => {
         try {
+            // 🔥 KRİTİK DÜZELTME: Hesap türünü sistemdeki fiyat anahtarına çeviriyoruz.
+            // Esnaf -> business, Corporate -> corporate, Diğerleri -> individual
+            let pricingKey = 'individual';
+            if (['esnaf', 'business', 'tradesman'].includes(rawAccountType)) pricingKey = 'business';
+            else if (['corporate', 'company'].includes(rawAccountType)) pricingKey = 'corporate';
+
             const snap = await getDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'));
             if (snap.exists()) {
                 const data = snap.data();
@@ -71,9 +78,10 @@ export default function SubscriptionPage() {
                 if (data.bank) setBankInfo(data.bank);
 
                 // Fiyatlar
-                if (data.pricing && data.pricing[accountType]) {
-                    setPrices(data.pricing[accountType]);
+                if (data.pricing && data.pricing[pricingKey]) {
+                    setPrices(data.pricing[pricingKey]);
                 } else {
+                    // Eğer uygun fiyat yoksa bireysele düş
                     setPrices(data.pricing?.individual || { monthly: 0, sixMonth: 0, yearly: 0 });
                 }
 
@@ -178,8 +186,11 @@ export default function SubscriptionPage() {
 
     // UI İkon ve Renk Ayarları
     const accountType = userData?.accountType || 'individual';
-    const isCorporate = accountType === 'corporate';
-    const isBusiness = accountType === 'business';
+    // const isCorporate = accountType === 'corporate'; // ARTIK NORMALİZASYON YAPMAMIZ LAZIM
+
+    // UI Gösterimi için basit kontrol
+    const isCorporate = ['corporate', 'company'].includes(accountType);
+    const isBusiness = ['esnaf', 'business', 'tradesman'].includes(accountType);
 
     let typeLabel = "Bireysel";
     let typeIcon = <User className="w-4 h-4 text-blue-400" />;
