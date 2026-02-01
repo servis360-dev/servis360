@@ -26,6 +26,7 @@ import { signOut } from 'firebase/auth';
 
 interface SidebarProps {
     userRole?: string;
+    userProfile?: any; // 👈 HATA BURADAYDI: Bu satır eklenerek tip hatası giderildi.
     isOpen: boolean;
     onClose: () => void;
 }
