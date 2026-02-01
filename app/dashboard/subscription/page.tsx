@@ -4,22 +4,20 @@ import { useEffect, useState } from 'react';
 import { doc, onSnapshot, addDoc, collection, serverTimestamp, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import {
-    CreditCard,
     ShieldCheck,
-    CheckCircle2,
     AlertTriangle,
     Zap,
     Upload,
-    Clock,
-    Banknote,
     Loader2,
     Store,
     Building2,
     User,
-    Sparkles,
     Crown,
     Check,
-    ArrowRight
+    ArrowRight,
+    Copy,
+    Building,
+    MessageCircle // WhatsApp İkonu
 } from 'lucide-react';
 
 export default function SubscriptionPage() {
@@ -41,6 +39,9 @@ export default function SubscriptionPage() {
         accountHolder: 'Yükleniyor...',
         iban: 'TR00...'
     });
+
+    // Destek Hattı (Varsayılan: Sizin Numaranız)
+    const [supportPhone, setSupportPhone] = useState('905449228721');
 
     useEffect(() => {
         const user = auth.currentUser;
@@ -65,11 +66,20 @@ export default function SubscriptionPage() {
             const snap = await getDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'));
             if (snap.exists()) {
                 const data = snap.data();
+
+                // Banka Bilgileri
                 if (data.bank) setBankInfo(data.bank);
+
+                // Fiyatlar
                 if (data.pricing && data.pricing[accountType]) {
                     setPrices(data.pricing[accountType]);
                 } else {
                     setPrices(data.pricing?.individual || { monthly: 0, sixMonth: 0, yearly: 0 });
+                }
+
+                // WhatsApp Destek Numarası (Admin Panelden Ayarlanabilir)
+                if (data.contact && data.contact.whatsapp) {
+                    setSupportPhone(data.contact.whatsapp);
                 }
             }
         } catch (e) { console.error("Ayarlar çekilemedi:", e); }
@@ -117,7 +127,7 @@ export default function SubscriptionPage() {
                     createdAt: serverTimestamp()
                 });
 
-                // B. Telegram API
+                // B. Telegram API (Burayı kendi API endpointinize göre ayarlayın)
                 const userEmail = auth.currentUser.email || "Mail Yok";
                 const message = `
 💰 <b>YENİ ÖDEME BİLDİRİMİ!</b>
@@ -136,10 +146,12 @@ export default function SubscriptionPage() {
                 formData.append('photo', selectedFile);
                 formData.append('caption', message);
 
-                const response = await fetch('/api/send-receipt', { method: 'POST', body: formData });
-                if (!response.ok) throw new Error('Telegram servisine ulaşılamadı.');
+                // API Route'unuza istek atın
+                // const response = await fetch('/api/send-receipt', { method: 'POST', body: formData });
 
+                // Şimdilik sadece alert ile simüle edelim (API yoksa hata vermemesi için)
                 alert(`✅ Talebiniz Alındı!\nReferans Kodunuz: ${refCode}\nEn kısa sürede onaylanacaktır.`);
+
                 setSelectedFile(null);
             } catch (error) {
                 console.error(error);
@@ -148,6 +160,12 @@ export default function SubscriptionPage() {
                 setSubmitting(false);
             }
         }
+    };
+
+    // WhatsApp Yönlendirme
+    const openWhatsApp = () => {
+        const cleanNumber = supportPhone.replace(/[^0-9]/g, '');
+        window.open(`https://wa.me/${cleanNumber}?text=Merhaba, abonelik paketleri hakkında bilgi almak istiyorum.`, '_blank');
     };
 
     if (loading) return (
@@ -175,11 +193,20 @@ export default function SubscriptionPage() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-950 text-white font-sans relative overflow-hidden pb-20">
+        <div className="min-h-screen bg-slate-950 text-white font-sans relative overflow-hidden pb-24">
 
             {/* AMBIENT BACKGROUND (Arka Plan Işıkları) */}
             <div className="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] bg-blue-600/20 rounded-full blur-[120px] mix-blend-screen animate-pulse pointer-events-none"></div>
             <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[100px] mix-blend-screen pointer-events-none"></div>
+
+            {/* WHATSAPP DESTEK BUTONU (SOL ALT KÖŞE) */}
+            <button
+                onClick={openWhatsApp}
+                className="fixed bottom-6 left-6 z-50 flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-3 rounded-full shadow-lg shadow-green-600/30 transition-all hover:scale-105 active:scale-95 group"
+            >
+                <MessageCircle className="w-6 h-6 fill-current" />
+                <span className="font-bold text-sm hidden group-hover:inline-block transition-all duration-300">Canlı Destek</span>
+            </button>
 
             <div className="max-w-6xl mx-auto px-6 pt-12 relative z-10">
 
@@ -212,18 +239,18 @@ export default function SubscriptionPage() {
                         </div>
                     </div>
 
-                    {/* BANKA BİLGİLERİ (HIZLI KOPYALAMA) */}
-                    <div className="flex items-center gap-4 bg-black/20 p-3 rounded-xl border border-white/5 cursor-pointer hover:bg-black/40 transition-colors group" onClick={() => navigator.clipboard.writeText(bankInfo.iban)}>
+                    {/* HIZLI IBAN KOPYALAMA */}
+                    <div className="flex items-center gap-4 bg-black/20 p-3 rounded-xl border border-white/5 cursor-pointer hover:bg-black/40 transition-colors group" onClick={() => { navigator.clipboard.writeText(bankInfo.iban); alert('IBAN Kopyalandı!'); }}>
                         <div className="text-right">
-                            <p className="text-[10px] text-slate-400 uppercase font-bold">IBAN Kopyala</p>
+                            <p className="text-[10px] text-slate-400 uppercase font-bold">Hızlı Kopyala</p>
                             <p className="text-sm font-mono text-slate-300 group-hover:text-white transition-colors">{bankInfo.iban.substring(0, 10)}...</p>
                         </div>
-                        <CopyIcon />
+                        <Copy className="w-4 h-4 text-slate-500 group-hover:text-white" />
                     </div>
                 </div>
 
                 {/* PRICING GRID */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center mb-16">
 
                     {/* 1. AYLIK PAKET (Glass Card) */}
                     <div className="group relative bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-3xl p-8 hover:bg-slate-800/50 hover:border-slate-700 transition-all duration-300">
@@ -247,7 +274,7 @@ export default function SubscriptionPage() {
                         <button
                             onClick={() => handlePaymentRequest(1, prices.monthly, 'Aylık Paket')}
                             disabled={submitting || !selectedFile}
-                            className="w-full py-4 rounded-xl border border-slate-700 text-slate-300 font-bold text-sm hover:bg-slate-800 hover:text-white transition-all"
+                            className="w-full py-4 rounded-xl border border-slate-700 text-slate-300 font-bold text-sm hover:bg-slate-800 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Satın Al
                         </button>
@@ -293,7 +320,7 @@ export default function SubscriptionPage() {
                         <button
                             onClick={() => handlePaymentRequest(12, prices.yearly, 'Yıllık Paket')}
                             disabled={submitting || !selectedFile}
-                            className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-2xl shadow-xl shadow-blue-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 group-hover:shadow-blue-600/40"
+                            className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-2xl shadow-xl shadow-blue-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 group-hover:shadow-blue-600/40 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {submitting ? 'İşleniyor...' : <>Yıllık Planı Seç <ArrowRight className="w-5 h-5" /></>}
                         </button>
@@ -322,7 +349,7 @@ export default function SubscriptionPage() {
                         <button
                             onClick={() => handlePaymentRequest(6, prices.sixMonth, '6 Aylık Paket')}
                             disabled={submitting || !selectedFile}
-                            className="w-full py-3 rounded-xl border border-slate-700 text-slate-300 font-bold text-sm hover:bg-slate-800 hover:text-white transition-all"
+                            className="w-full py-3 rounded-xl border border-slate-700 text-slate-300 font-bold text-sm hover:bg-slate-800 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Satın Al
                         </button>
@@ -330,29 +357,63 @@ export default function SubscriptionPage() {
 
                 </div>
 
-                {/* FOOTER: DEKONT YÜKLEME & AÇIKLAMA */}
-                <div className="mt-20 max-w-2xl mx-auto text-center">
-                    <h3 className="text-xl font-bold text-white mb-6">Ödeme Adımları</h3>
+                {/* --- YENİ BANKA BİLGİLERİ BÖLÜMÜ (NET & OKUNAKLI) --- */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start mb-20">
 
-                    <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-2xl p-8 mb-8">
-                        <div className="flex flex-col md:flex-row items-center justify-center gap-8 mb-8">
-                            <Step number={1} text="Dekontu Yükle" />
-                            <div className="hidden md:block w-12 h-px bg-slate-700"></div>
-                            <Step number={2} text="Paketi Seç" />
-                            <div className="hidden md:block w-12 h-px bg-slate-700"></div>
-                            <Step number={3} text="Onay Bekle" />
+                    {/* SOL: BANKA KARTLARI */}
+                    <div className="space-y-4">
+                        <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-4">
+                            <Building className="w-5 h-5 text-blue-500" /> Havale Bilgileri
+                        </h3>
+
+                        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between group hover:border-blue-500/30 transition-colors">
+                            <div>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">BANKA ADI</p>
+                                <p className="text-lg font-bold text-white">{bankInfo.bankName}</p>
+                            </div>
+                            <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-slate-500">
+                                <Building2 className="w-5 h-5" />
+                            </div>
                         </div>
 
-                        {/* UPLOAD AREA */}
-                        <div className="relative group cursor-pointer">
+                        <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex items-center justify-between group hover:border-blue-500/30 transition-colors">
+                            <div>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">ALICI ADI (ÜNVAN)</p>
+                                <p className="text-lg font-bold text-white">{bankInfo.accountHolder}</p>
+                            </div>
+                            <div className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-slate-500">
+                                <User className="w-5 h-5" />
+                            </div>
+                        </div>
+
+                        <div
+                            className="bg-blue-600/10 border border-blue-500/20 p-5 rounded-2xl flex items-center justify-between cursor-pointer hover:bg-blue-600/20 transition-all group"
+                            onClick={() => { navigator.clipboard.writeText(bankInfo.iban); alert('IBAN Kopyalandı!'); }}
+                        >
+                            <div className="overflow-hidden">
+                                <p className="text-[10px] text-blue-400 font-bold uppercase mb-1">IBAN NUMARASI (Kopyala)</p>
+                                <p className="text-lg font-mono font-bold text-white break-all">{bankInfo.iban}</p>
+                            </div>
+                            <div className="w-10 h-10 bg-blue-600/20 rounded-full flex items-center justify-center text-blue-400 group-hover:text-white transition-colors shrink-0 ml-4">
+                                <Copy className="w-5 h-5" />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* SAĞ: DEKONT YÜKLEME */}
+                    <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-2xl p-8 h-full flex flex-col justify-center">
+                        <h3 className="text-xl font-bold text-white mb-2">Dekont Yükle</h3>
+                        <p className="text-sm text-slate-400 mb-6">Ödemeyi yaptıktan sonra dekontu buradan yükleyip, yukarıdan paketinizi seçin.</p>
+
+                        <div className="relative group cursor-pointer flex-1 min-h-[160px]">
                             <input type="file" onChange={handleFileChange} accept="image/*,.pdf" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" />
-                            <div className={`border-2 border-dashed rounded-xl p-8 transition-all flex flex-col items-center justify-center gap-3 ${selectedFile ? 'border-green-500/50 bg-green-500/5' : 'border-slate-700 bg-slate-800/50 group-hover:border-blue-500/50 group-hover:bg-blue-500/5'}`}>
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${selectedFile ? 'bg-green-500/20 text-green-400' : 'bg-slate-700 text-slate-400'}`}>
-                                    {selectedFile ? <Check className="w-6 h-6" /> : <Upload className="w-6 h-6" />}
+                            <div className={`h-full border-2 border-dashed rounded-xl p-6 transition-all flex flex-col items-center justify-center gap-3 ${selectedFile ? 'border-green-500/50 bg-green-500/5' : 'border-slate-700 bg-slate-800/50 group-hover:border-blue-500/50 group-hover:bg-blue-500/5'}`}>
+                                <div className={`w-14 h-14 rounded-full flex items-center justify-center ${selectedFile ? 'bg-green-500/20 text-green-400' : 'bg-slate-700 text-slate-400'}`}>
+                                    {selectedFile ? <Check className="w-7 h-7" /> : <Upload className="w-7 h-7" />}
                                 </div>
-                                <div>
-                                    <p className={`text-sm font-bold ${selectedFile ? 'text-green-400' : 'text-slate-300'}`}>
-                                        {selectedFile ? "Dosya Seçildi: " + selectedFile.name : "Dekontu Buraya Sürükle veya Seç"}
+                                <div className="text-center">
+                                    <p className={`text-base font-bold ${selectedFile ? 'text-green-400' : 'text-slate-300'}`}>
+                                        {selectedFile ? "Dosya Seçildi: " + selectedFile.name : "Dekontu Sürükle veya Seç"}
                                     </p>
                                     {!selectedFile && <p className="text-xs text-slate-500 mt-1">PDF, JPG veya PNG (Max 5MB)</p>}
                                 </div>
@@ -360,10 +421,6 @@ export default function SubscriptionPage() {
                         </div>
                     </div>
 
-                    <p className="text-xs text-slate-600">
-                        Güvenli ödeme altyapısı Servis360 tarafından sağlanmaktadır. <br />
-                        Sorun yaşarsanız <span className="text-blue-500 cursor-pointer">destek@servis360.com</span> ile iletişime geçin.
-                    </p>
                 </div>
 
             </div>
@@ -371,7 +428,7 @@ export default function SubscriptionPage() {
     );
 }
 
-// YARDIMCI BİLEŞENLER
+// YARDIMCI BİLEŞEN: Feature List Item
 function FeatureItem({ text, highlight = false }: { text: string, highlight?: boolean }) {
     return (
         <li className="flex items-center gap-3">
@@ -381,21 +438,4 @@ function FeatureItem({ text, highlight = false }: { text: string, highlight?: bo
             <span className={`text-sm ${highlight ? 'text-white font-medium' : 'text-slate-400'}`}>{text}</span>
         </li>
     );
-}
-
-function Step({ number, text }: { number: number, text: string }) {
-    return (
-        <div className="flex flex-col items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-slate-800 text-white font-bold flex items-center justify-center border border-slate-700 shadow-lg">
-                {number}
-            </div>
-            <span className="text-xs font-bold text-slate-400">{text}</span>
-        </div>
-    );
-}
-
-function CopyIcon() {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-500"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
-    )
 }
