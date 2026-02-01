@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import {
-    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search
+    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search, Calendar, Tag
 } from 'lucide-react';
 
 export default function FinancePage() {
@@ -103,15 +103,16 @@ export default function FinancePage() {
     const categories = modalType === 'income' ? ['Satış', 'Hizmet', 'Ekstra Gelir'] : ['Kira', 'Fatura', 'Yemek', 'Malzeme', 'Maaş', 'Akaryakıt', 'Diğer'];
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 pb-20">
+            {/* BAŞLIK VE BUTONLAR */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Kasa & Giderler</h1>
                     <p className="text-slate-500 dark:text-slate-400">Tüm gelir ve gider hareketleriniz.</p>
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={() => { setModalType('income'); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-lg shadow-green-500/30"><Plus className="w-5 h-5" /> Gelir Ekle</button>
-                    <button onClick={() => { setModalType('expense'); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-lg shadow-red-500/30"><Minus className="w-5 h-5" /> Gider Ekle</button>
+                <div className="flex w-full md:w-auto gap-2">
+                    <button onClick={() => { setModalType('income'); setShowModal(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 shadow-lg shadow-green-500/30 active:scale-95 transition-transform"><Plus className="w-5 h-5" /> Gelir Ekle</button>
+                    <button onClick={() => { setModalType('expense'); setShowModal(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-lg shadow-red-500/30 active:scale-95 transition-transform"><Minus className="w-5 h-5" /> Gider Ekle</button>
                 </div>
             </div>
 
@@ -119,18 +120,18 @@ export default function FinancePage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-10"><TrendingUp className="w-24 h-24 text-green-600" /></div>
-                    <p className="text-slate-500 font-medium">Toplam Gelir</p>
-                    <h3 className="text-3xl font-bold text-green-600 mt-2">{stats.income.toLocaleString()} ₺</h3>
+                    <p className="text-slate-500 font-medium text-xs uppercase tracking-wider">Toplam Gelir</p>
+                    <h3 className="text-3xl font-black text-green-600 mt-2 tracking-tight">{stats.income.toLocaleString()} ₺</h3>
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-10"><TrendingDown className="w-24 h-24 text-red-600" /></div>
-                    <p className="text-slate-500 font-medium">Toplam Gider</p>
-                    <h3 className="text-3xl font-bold text-red-600 mt-2">{stats.expense.toLocaleString()} ₺</h3>
+                    <p className="text-slate-500 font-medium text-xs uppercase tracking-wider">Toplam Gider</p>
+                    <h3 className="text-3xl font-black text-red-600 mt-2 tracking-tight">{stats.expense.toLocaleString()} ₺</h3>
                 </div>
                 <div className={`p-6 rounded-2xl border shadow-sm relative overflow-hidden text-white ${stats.profit >= 0 ? 'bg-gradient-to-br from-blue-600 to-indigo-700 border-blue-500' : 'bg-gradient-to-br from-red-600 to-orange-700 border-red-500'}`}>
                     <div className="absolute top-0 right-0 p-4 opacity-20"><Wallet className="w-24 h-24 text-white" /></div>
-                    <p className="text-blue-100 font-medium">Net Kasa</p>
-                    <h3 className="text-3xl font-bold mt-2">{stats.profit.toLocaleString()} ₺</h3>
+                    <p className="text-blue-100 font-medium text-xs uppercase tracking-wider">Net Kasa</p>
+                    <h3 className="text-3xl font-black mt-2 tracking-tight">{stats.profit.toLocaleString()} ₺</h3>
                 </div>
             </div>
 
@@ -141,7 +142,7 @@ export default function FinancePage() {
                     <div className="flex items-center gap-2">
                         <History className="w-5 h-5 text-slate-500" />
                         <h3 className="font-bold text-slate-900 dark:text-white">Hesap Hareketleri</h3>
-                        <span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-full text-slate-500">{filteredTransactions.length} kayıt</span>
+                        <span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-full text-slate-500 font-bold">{filteredTransactions.length}</span>
                     </div>
 
                     {/* Arama Kutusu */}
@@ -162,7 +163,52 @@ export default function FinancePage() {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                {/* 🔥 MOBİL KART GÖRÜNÜMÜ (MD Altı) */}
+                <div className="grid grid-cols-1 gap-4 md:hidden p-4 bg-slate-50 dark:bg-slate-900/50">
+                    {loading ? <p className="text-center text-slate-500 py-4">Yükleniyor...</p> : filteredTransactions.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500">
+                            {searchTerm ? 'Aradığınız kriterlere uygun kayıt bulunamadı.' : 'İşlem yok.'}
+                        </div>
+                    ) : filteredTransactions.map((t) => {
+                        const dateObj = t.date?.toDate ? t.date.toDate() : new Date(t.date);
+                        return (
+                            <div key={t.id} className={`bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 shadow-sm relative ${t.type === 'income' ? 'border-l-green-500' : 'border-l-red-500'}`}>
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${t.type === 'income' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                {t.category}
+                                            </span>
+                                            {t.relatedJobId && <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[10px]"><Wrench className="w-3 h-3" /></span>}
+                                        </div>
+                                        <h4 className="font-bold text-slate-900 dark:text-white mt-1 text-sm line-clamp-1">{t.description || 'Açıklama yok'}</h4>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className={`block text-lg font-black ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                            {t.type === 'income' ? '+' : '-'} {t.amount} ₺
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                                    <div className="flex items-center gap-1 text-xs text-slate-500">
+                                        <Calendar className="w-3 h-3" />
+                                        {dateObj.toLocaleDateString('tr-TR')}
+                                    </div>
+                                    <button
+                                        onClick={() => handleDelete(t.id)}
+                                        className="text-slate-400 hover:text-red-500 p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* 🔥 MASAÜSTÜ TABLO GÖRÜNÜMÜ (MD Üzeri) */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                         <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
                             <tr><th className="p-4">Tarih</th><th className="p-4">Kategori</th><th className="p-4">Açıklama</th><th className="p-4 text-right">Tutar</th><th className="p-4 text-right">Sil</th></tr>
@@ -177,7 +223,7 @@ export default function FinancePage() {
                             ) : filteredTransactions.map((t) => {
                                 const dateObj = t.date?.toDate ? t.date.toDate() : new Date(t.date);
                                 return (
-                                    <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                    <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                         <td className="p-4 font-medium text-slate-900 dark:text-white">{dateObj.toLocaleDateString('tr-TR')}</td>
                                         <td className="p-4">
                                             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${t.type === 'income' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
@@ -187,7 +233,7 @@ export default function FinancePage() {
                                         </td>
                                         <td className="p-4">{t.description}</td>
                                         <td className={`p-4 text-right font-bold font-mono text-base ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'} {t.amount} ₺</td>
-                                        <td className="p-4 text-right"><button onClick={() => handleDelete(t.id)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg"><Trash2 className="w-4 h-4" /></button></td>
+                                        <td className="p-4 text-right"><button onClick={() => handleDelete(t.id)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button></td>
                                     </tr>
                                 );
                             })}

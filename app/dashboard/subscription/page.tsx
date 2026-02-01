@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, addDoc, collection, serverTimestamp, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
-// ❌ ESKİ HATALI IMPORT SİLİNDİ (lib/telegram yok)
 import {
     CreditCard,
     ShieldCheck,
@@ -16,7 +15,11 @@ import {
     Loader2,
     Store,
     Building2,
-    User
+    User,
+    Sparkles,
+    Crown,
+    Check,
+    ArrowRight
 } from 'lucide-react';
 
 export default function SubscriptionPage() {
@@ -25,7 +28,7 @@ export default function SubscriptionPage() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
-    // Dinamik Fiyatlar (Varsayılan 0, Admin'den güncellenecek)
+    // Dinamik Fiyatlar
     const [prices, setPrices] = useState({
         monthly: 0,
         sixMonth: 0,
@@ -48,9 +51,6 @@ export default function SubscriptionPage() {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 setUserData(data);
-
-                // Kullanıcı verisi geldikten sonra sistem ayarlarını çekelim
-                // Çünkü kullanıcının tipine (bireysel/esnaf) göre fiyat çekeceğiz.
                 fetchSystemSettings(data.accountType || 'individual');
             }
             setLoading(false);
@@ -59,24 +59,16 @@ export default function SubscriptionPage() {
         return () => unsubUser();
     }, []);
 
-    // 2. SİSTEM AYARLARINI ÇEK (Fiyatlar ve Banka)
+    // 2. SİSTEM AYARLARINI ÇEK
     const fetchSystemSettings = async (accountType: string) => {
         try {
             const snap = await getDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'));
             if (snap.exists()) {
                 const data = snap.data();
-
-                // Banka Bilgilerini Al
-                if (data.bank) {
-                    setBankInfo(data.bank);
-                }
-
-                // Fiyatları Kullanıcı Tipine Göre Seç
-                // data.pricing.individual, data.pricing.business vb.
+                if (data.bank) setBankInfo(data.bank);
                 if (data.pricing && data.pricing[accountType]) {
                     setPrices(data.pricing[accountType]);
                 } else {
-                    // Eğer admin panelinde bu tip için fiyat girilmediyse varsayılanları (individual) al veya 0 yap
                     setPrices(data.pricing?.individual || { monthly: 0, sixMonth: 0, yearly: 0 });
                 }
             }
@@ -99,21 +91,20 @@ export default function SubscriptionPage() {
         }
     };
 
-    // Ödeme Bildirimi Gönder (API Kullanarak)
     const handlePaymentRequest = async (planMonths: number, price: number, planName: string) => {
         if (!auth.currentUser || !userData) return;
 
         if (!selectedFile) {
-            alert("Lütfen önce dekont resmini veya PDF'ini yükleyin.");
+            alert("⚠️ Lütfen ödeme dekontunuzu yükleyin!");
             return;
         }
 
         const refCode = `REF-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        if (confirm(`${price} TL tutarındaki ${planName} için bildirim gönderilsin mi?`)) {
+        if (confirm(`${price} TL tutarındaki ${planName} satın alımını onaylıyor musunuz?`)) {
             setSubmitting(true);
             try {
-                // A. Firestore'a Kaydet (Admin Panelinde Görünmesi İçin)
+                // A. Firestore Kaydı
                 await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), {
                     userId: auth.currentUser.uid,
                     userName: userData.fullName || 'İsimsiz',
@@ -126,7 +117,7 @@ export default function SubscriptionPage() {
                     createdAt: serverTimestamp()
                 });
 
-                // B. TELEGRAM BİLDİRİMİ (API ROUTE ÜZERİNDEN) ✅
+                // B. Telegram API
                 const userEmail = auth.currentUser.email || "Mail Yok";
                 const message = `
 💰 <b>YENİ ÖDEME BİLDİRİMİ!</b>
@@ -139,21 +130,16 @@ export default function SubscriptionPage() {
 💵 <b>Tutar:</b> ${price} TL
 🔑 <b>Ref:</b> ${refCode}
 
-<i>Lütfen Admin Panelinden Kontrol Edin.</i>`;
+<i>Admin Panelinden onay bekleniyor...</i>`;
 
                 const formData = new FormData();
                 formData.append('photo', selectedFile);
                 formData.append('caption', message);
 
-                // Kendi yazdığımız API'ye istek atıyoruz
-                const response = await fetch('/api/send-receipt', {
-                    method: 'POST',
-                    body: formData,
-                });
-
+                const response = await fetch('/api/send-receipt', { method: 'POST', body: formData });
                 if (!response.ok) throw new Error('Telegram servisine ulaşılamadı.');
 
-                alert(`Bildirim başarıyla iletildi! \nReferans Kodunuz: ${refCode}\nEn kısa sürede onaylanacaktır.`);
+                alert(`✅ Talebiniz Alındı!\nReferans Kodunuz: ${refCode}\nEn kısa sürede onaylanacaktır.`);
                 setSelectedFile(null);
             } catch (error) {
                 console.error(error);
@@ -165,8 +151,8 @@ export default function SubscriptionPage() {
     };
 
     if (loading) return (
-        <div className="min-h-screen flex items-center justify-center">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <div className="min-h-screen flex items-center justify-center bg-slate-950">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
         </div>
     );
 
@@ -177,184 +163,239 @@ export default function SubscriptionPage() {
     const isCorporate = accountType === 'corporate';
     const isBusiness = accountType === 'business';
 
-    let typeLabel = "Bireysel Hesap";
-    let typeIcon = <User className="w-5 h-5 text-blue-600" />;
-    let typeColor = "blue";
+    let typeLabel = "Bireysel";
+    let typeIcon = <User className="w-4 h-4 text-blue-400" />;
 
     if (isCorporate) {
-        typeLabel = "Kurumsal Hesap";
-        typeIcon = <Building2 className="w-5 h-5 text-purple-600" />;
-        typeColor = "purple";
+        typeLabel = "Kurumsal";
+        typeIcon = <Building2 className="w-4 h-4 text-purple-400" />;
     } else if (isBusiness) {
-        typeLabel = "Esnaf Hesabı";
-        typeIcon = <Store className="w-5 h-5 text-yellow-600" />;
-        typeColor = "yellow";
+        typeLabel = "Esnaf";
+        typeIcon = <Store className="w-4 h-4 text-yellow-400" />;
     }
 
     return (
-        <div className="max-w-5xl mx-auto space-y-8 pb-20 p-4 md:p-0">
+        <div className="min-h-screen bg-slate-950 text-white font-sans relative overflow-hidden pb-20">
 
-            {/* Durum Kartı */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <CreditCard className="text-blue-600" /> Abonelik Yönetimi
+            {/* AMBIENT BACKGROUND (Arka Plan Işıkları) */}
+            <div className="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] bg-blue-600/20 rounded-full blur-[120px] mix-blend-screen animate-pulse pointer-events-none"></div>
+            <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[100px] mix-blend-screen pointer-events-none"></div>
+
+            <div className="max-w-6xl mx-auto px-6 pt-12 relative z-10">
+
+                {/* HEADER */}
+                <div className="text-center mb-16 space-y-4">
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/50 border border-slate-700 backdrop-blur-md text-xs font-medium text-slate-300">
+                        {typeIcon} <span>{typeLabel} Planı Aktif</span>
+                    </div>
+                    <h1 className="text-4xl md:text-6xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">
+                        Sınırları Kaldırın.
                     </h1>
-                    <div className="flex items-center gap-2 mt-2">
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2 bg-${typeColor}-50 text-${typeColor}-700 border-${typeColor}-200`}>
-                            {typeIcon} {typeLabel}
-                        </span>
-                        <span className="text-xs text-slate-500">Size özel fiyatlandırma aktif.</span>
-                    </div>
+                    <p className="text-slate-400 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
+                        İşletmenizi büyütmek için ihtiyacınız olan tüm araçlar, tek bir güçlü platformda.
+                        <br />Süre dolmadan yenileyin, kesintisiz devam edin.
+                    </p>
                 </div>
 
-                <div className={`px-6 py-4 rounded-xl flex items-center gap-4 border ${daysLeft > 5 ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400' : 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400'}`}>
-                    {daysLeft > 5 ? <ShieldCheck className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
-                    <div>
-                        <span className="block text-[10px] font-bold uppercase opacity-70">KALAN LİSANS SÜRESİ</span>
-                        <span className="text-2xl font-black">{daysLeft > 0 ? `${daysLeft} Gün` : 'SÜRE DOLDU'}</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Fiyatlar Yüklenmediyse Uyarı */}
-            {prices.monthly === 0 && (
-                <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-yellow-700 dark:text-yellow-400 text-sm text-center">
-                    ⚠️ Fiyat bilgileri yükleniyor veya Admin tarafından henüz tanımlanmadı. Lütfen bekleyin.
-                </div>
-            )}
-
-            {/* Paketler */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-                {/* Aylık */}
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-blue-500 transition-all flex flex-col group">
-                    <div className="mb-4">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Aylık Paket</h3>
-                        <p className="text-slate-500 text-sm">Esnek başlangıç.</p>
-                    </div>
-                    <div className="mb-6">
-                        <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">{prices.monthly} ₺</span>
-                        <span className="text-slate-500 font-medium">/ay</span>
-                    </div>
-                    <ul className="space-y-3 mb-8 flex-1">
-                        <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle2 className="w-4 h-4 text-green-500" /> Tüm Özellikler</li>
-                        <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle2 className="w-4 h-4 text-green-500" /> Standart Destek</li>
-                    </ul>
-                    <button
-                        onClick={() => handlePaymentRequest(1, prices.monthly, 'Aylık Paket')}
-                        disabled={submitting || !selectedFile}
-                        className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-                    >
-                        Satın Al
-                    </button>
-                </div>
-
-                {/* Yıllık (Öne Çıkan) */}
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border-2 border-blue-600 shadow-xl relative flex flex-col transform md:-translate-y-4 z-10">
-                    <div className="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-bl-xl rounded-tr-lg">EN POPÜLER</div>
-                    <div className="mb-4">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                            Yıllık Paket <Zap className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                        </h3>
-                        <p className="text-blue-600 dark:text-blue-400 text-sm font-medium">2 Ay Bedava!</p>
-                    </div>
-                    <div className="mb-6">
-                        <span className="text-5xl font-black text-slate-900 dark:text-white tracking-tight">{prices.yearly} ₺</span>
-                        <span className="text-slate-500 font-medium">/yıl</span>
-                    </div>
-                    <ul className="space-y-3 mb-8 flex-1">
-                        <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle2 className="w-4 h-4 text-blue-500" /> <strong>VIP</strong> Destek</li>
-                        <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle2 className="w-4 h-4 text-blue-500" /> Fiyat Garantisi</li>
-                        <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle2 className="w-4 h-4 text-blue-500" /> Öncelikli Sunucu</li>
-                    </ul>
-                    <button
-                        onClick={() => handlePaymentRequest(12, prices.yearly, 'Yıllık Paket')}
-                        disabled={submitting || !selectedFile}
-                        className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30 disabled:opacity-50"
-                    >
-                        {submitting ? 'Gönderiliyor...' : 'Yıllık Al (Avantajlı)'}
-                    </button>
-                </div>
-
-                {/* 6 Aylık */}
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-blue-500 transition-all flex flex-col group">
-                    <div className="mb-4">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">6 Aylık Paket</h3>
-                        <p className="text-slate-500 text-sm">Dengeli seçim.</p>
-                    </div>
-                    <div className="mb-6">
-                        <span className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">{prices.sixMonth} ₺</span>
-                        <span className="text-slate-500 font-medium">/6ay</span>
-                    </div>
-                    <ul className="space-y-3 mb-8 flex-1">
-                        <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle2 className="w-4 h-4 text-green-500" /> Tüm Özellikler</li>
-                        <li className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><CheckCircle2 className="w-4 h-4 text-green-500" /> Standart Destek</li>
-                    </ul>
-                    <button
-                        onClick={() => handlePaymentRequest(6, prices.sixMonth, '6 Aylık Paket')}
-                        disabled={submitting || !selectedFile}
-                        className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-                    >
-                        Satın Al
-                    </button>
-                </div>
-            </div>
-
-            {/* Havale Bilgileri */}
-            <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8">
-                <div className="flex items-center gap-3 mb-6">
-                    <Banknote className="w-6 h-6 text-slate-700 dark:text-slate-300" />
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Banka / Havale Bilgileri</h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-5">
-                        <div className="bg-white dark:bg-black p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-                            <p className="text-xs text-slate-500 uppercase font-bold mb-1">Banka Adı</p>
-                            <p className="font-medium text-slate-900 dark:text-white">{bankInfo.bankName}</p>
+                {/* STATUS BAR (Cam Efektli) */}
+                <div className="mb-12 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 flex flex-col md:flex-row justify-between items-center gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br ${daysLeft > 5 ? 'from-green-500/20 to-emerald-500/20 text-green-400' : 'from-red-500/20 to-orange-500/20 text-red-400'}`}>
+                            {daysLeft > 5 ? <ShieldCheck className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
                         </div>
-                        <div className="bg-white dark:bg-black p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-                            <p className="text-xs text-slate-500 uppercase font-bold mb-1">Alıcı Adı (Ünvan)</p>
-                            <p className="font-medium text-slate-900 dark:text-white">{bankInfo.accountHolder}</p>
-                        </div>
-                        <div className="bg-white dark:bg-black p-4 rounded-xl border border-slate-200 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors" onClick={() => navigator.clipboard.writeText(bankInfo.iban)}>
-                            <p className="text-xs text-slate-500 uppercase font-bold mb-1">IBAN Numarası (Kopyalamak için tıkla)</p>
-                            <p className="font-mono text-lg font-bold text-slate-900 dark:text-white tracking-wider break-all text-blue-600 dark:text-blue-400">{bankInfo.iban}</p>
-                        </div>
-                    </div>
-
-                    <div className="bg-blue-50 dark:bg-blue-900/10 p-6 rounded-xl border border-blue-100 dark:border-blue-800 flex flex-col justify-center">
-                        <div className="flex items-start gap-3 mb-4">
-                            <Clock className="w-6 h-6 text-blue-600 mt-1" />
-                            <div>
-                                <h4 className="font-bold text-slate-900 dark:text-white">Ödeme Süreci Nasıl İşler?</h4>
-                                <ol className="list-decimal list-inside text-sm text-slate-600 dark:text-slate-300 mt-2 space-y-2">
-                                    <li>Önce aşağıdaki alandan dekontunuzu yükleyin.</li>
-                                    <li>Ardından yukarıdaki paketlerden "Satın Al" butonuna basın.</li>
-                                    <li>Banka uygulamanızdan havale yaparken açıklama kısmını boş bırakabilirsiniz.</li>
-                                    <li>Sistem bildirimleri otomatik olarak Admin'e iletir.</li>
-                                </ol>
+                        <div>
+                            <p className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Kalan Lisans Süresi</p>
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-2xl font-bold text-white">{daysLeft} Gün</span>
+                                {daysLeft <= 5 && <span className="text-xs text-red-400 animate-pulse font-bold">Yenileme Vakti!</span>}
                             </div>
                         </div>
+                    </div>
 
-                        {/* Dekont Yükleme Alanı */}
-                        <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
-                            <p className="text-xs text-slate-500 mb-2 font-bold uppercase">Dekont Yükle (Zorunlu)</p>
-                            <div className="flex gap-2">
-                                <label className={`flex-1 cursor-pointer border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 transition-colors ${selectedFile ? 'bg-green-50 border-green-300' : 'bg-white dark:bg-black border-slate-300 dark:border-slate-700 hover:bg-slate-50'}`}>
-                                    <Upload className={`w-5 h-5 ${selectedFile ? 'text-green-600' : 'text-slate-400'}`} />
-                                    <span className={`text-xs font-bold truncate max-w-[200px] ${selectedFile ? 'text-green-700' : 'text-slate-500'}`}>
-                                        {selectedFile ? selectedFile.name : "Dekont Seçmek İçin Tıkla..."}
-                                    </span>
-                                    <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleFileChange} />
-                                </label>
-                            </div>
-                            <p className="text-[10px] text-slate-400 mt-2 text-center">*Önce dekontu seçip sonra yukarıdan paketi satın almalısınız.</p>
+                    {/* BANKA BİLGİLERİ (HIZLI KOPYALAMA) */}
+                    <div className="flex items-center gap-4 bg-black/20 p-3 rounded-xl border border-white/5 cursor-pointer hover:bg-black/40 transition-colors group" onClick={() => navigator.clipboard.writeText(bankInfo.iban)}>
+                        <div className="text-right">
+                            <p className="text-[10px] text-slate-400 uppercase font-bold">IBAN Kopyala</p>
+                            <p className="text-sm font-mono text-slate-300 group-hover:text-white transition-colors">{bankInfo.iban.substring(0, 10)}...</p>
                         </div>
+                        <CopyIcon />
                     </div>
                 </div>
+
+                {/* PRICING GRID */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+
+                    {/* 1. AYLIK PAKET (Glass Card) */}
+                    <div className="group relative bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-3xl p-8 hover:bg-slate-800/50 hover:border-slate-700 transition-all duration-300">
+                        <div className="absolute inset-0 bg-gradient-to-b from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-3xl pointer-events-none"></div>
+
+                        <div className="mb-6">
+                            <h3 className="text-lg font-bold text-slate-200">Başlangıç</h3>
+                            <p className="text-slate-500 text-xs mt-1">Aylık ödeme planı.</p>
+                        </div>
+                        <div className="flex items-baseline gap-1 mb-8">
+                            <span className="text-4xl font-bold text-white">{prices.monthly}</span>
+                            <span className="text-sm text-slate-500 font-medium">₺/ay</span>
+                        </div>
+
+                        <ul className="space-y-4 mb-8">
+                            <FeatureItem text="Tüm Temel Özellikler" />
+                            <FeatureItem text="Standart Destek" />
+                            <FeatureItem text="Bulut Yedekleme" />
+                        </ul>
+
+                        <button
+                            onClick={() => handlePaymentRequest(1, prices.monthly, 'Aylık Paket')}
+                            disabled={submitting || !selectedFile}
+                            className="w-full py-4 rounded-xl border border-slate-700 text-slate-300 font-bold text-sm hover:bg-slate-800 hover:text-white transition-all"
+                        >
+                            Satın Al
+                        </button>
+                    </div>
+
+                    {/* 2. YILLIK PAKET (HERO CARD - COINGLASS STYLE) */}
+                    <div className="relative bg-gradient-to-b from-slate-900 to-black border border-blue-500/30 rounded-[32px] p-8 md:p-10 shadow-2xl shadow-blue-900/20 transform md:-translate-y-6 z-10 overflow-hidden group">
+
+                        {/* Parlama Efekti */}
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-50"></div>
+                        <div className="absolute top-[-50%] left-[-50%] w-[200%] h-[200%] bg-blue-600/10 rotate-45 blur-[100px] pointer-events-none"></div>
+
+                        <div className="absolute top-6 right-6">
+                            <span className="bg-blue-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg shadow-blue-600/40 animate-pulse">
+                                EN POPÜLER
+                            </span>
+                        </div>
+
+                        <div className="mb-6 relative">
+                            <div className="w-12 h-12 bg-blue-600/20 rounded-2xl flex items-center justify-center mb-4 text-blue-400">
+                                <Crown className="w-6 h-6" />
+                            </div>
+                            <h3 className="text-2xl font-bold text-white">Yıllık Pro</h3>
+                            <p className="text-blue-200/60 text-sm mt-1">Profesyonellerin tercihi.</p>
+                        </div>
+
+                        <div className="flex items-baseline gap-1 mb-2 relative">
+                            <span className="text-6xl font-black text-white tracking-tighter">{prices.yearly}</span>
+                            <span className="text-lg text-slate-400 font-medium">₺/yıl</span>
+                        </div>
+                        <p className="text-green-400 text-xs font-bold mb-8 flex items-center gap-1">
+                            <Zap className="w-3 h-3 fill-current" /> 2 Ay Bedava Geliyor!
+                        </p>
+
+                        <div className="space-y-4 mb-10 relative">
+                            <FeatureItem text="VIP Öncelikli Destek" highlight />
+                            <FeatureItem text="Sınırsız Şube Yönetimi" highlight />
+                            <FeatureItem text="Gelişmiş Raporlama" highlight />
+                            <FeatureItem text="Yapay Zeka Asistanı" highlight />
+                            <FeatureItem text="Özel Domain Desteği" highlight />
+                        </div>
+
+                        <button
+                            onClick={() => handlePaymentRequest(12, prices.yearly, 'Yıllık Paket')}
+                            disabled={submitting || !selectedFile}
+                            className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-2xl shadow-xl shadow-blue-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 group-hover:shadow-blue-600/40"
+                        >
+                            {submitting ? 'İşleniyor...' : <>Yıllık Planı Seç <ArrowRight className="w-5 h-5" /></>}
+                        </button>
+                        <p className="text-[10px] text-center text-slate-500 mt-4">365 gün kesintisiz erişim.</p>
+                    </div>
+
+                    {/* 3. 6 AYLIK PAKET (Glass Card) */}
+                    <div className="group relative bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-3xl p-8 hover:bg-slate-800/50 hover:border-slate-700 transition-all duration-300">
+                        <div className="absolute inset-0 bg-gradient-to-b from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-3xl pointer-events-none"></div>
+
+                        <div className="mb-6">
+                            <h3 className="text-lg font-bold text-slate-200">Standart</h3>
+                            <p className="text-slate-500 text-xs mt-1">Dengeli büyüme.</p>
+                        </div>
+                        <div className="flex items-baseline gap-1 mb-8">
+                            <span className="text-4xl font-bold text-white">{prices.sixMonth}</span>
+                            <span className="text-sm text-slate-500 font-medium">₺/6ay</span>
+                        </div>
+
+                        <ul className="space-y-4 mb-8">
+                            <FeatureItem text="Tüm Temel Özellikler" />
+                            <FeatureItem text="Standart Destek" />
+                            <FeatureItem text="Mobil Erişim" />
+                        </ul>
+
+                        <button
+                            onClick={() => handlePaymentRequest(6, prices.sixMonth, '6 Aylık Paket')}
+                            disabled={submitting || !selectedFile}
+                            className="w-full py-3 rounded-xl border border-slate-700 text-slate-300 font-bold text-sm hover:bg-slate-800 hover:text-white transition-all"
+                        >
+                            Satın Al
+                        </button>
+                    </div>
+
+                </div>
+
+                {/* FOOTER: DEKONT YÜKLEME & AÇIKLAMA */}
+                <div className="mt-20 max-w-2xl mx-auto text-center">
+                    <h3 className="text-xl font-bold text-white mb-6">Ödeme Adımları</h3>
+
+                    <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-2xl p-8 mb-8">
+                        <div className="flex flex-col md:flex-row items-center justify-center gap-8 mb-8">
+                            <Step number={1} text="Dekontu Yükle" />
+                            <div className="hidden md:block w-12 h-px bg-slate-700"></div>
+                            <Step number={2} text="Paketi Seç" />
+                            <div className="hidden md:block w-12 h-px bg-slate-700"></div>
+                            <Step number={3} text="Onay Bekle" />
+                        </div>
+
+                        {/* UPLOAD AREA */}
+                        <div className="relative group cursor-pointer">
+                            <input type="file" onChange={handleFileChange} accept="image/*,.pdf" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" />
+                            <div className={`border-2 border-dashed rounded-xl p-8 transition-all flex flex-col items-center justify-center gap-3 ${selectedFile ? 'border-green-500/50 bg-green-500/5' : 'border-slate-700 bg-slate-800/50 group-hover:border-blue-500/50 group-hover:bg-blue-500/5'}`}>
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${selectedFile ? 'bg-green-500/20 text-green-400' : 'bg-slate-700 text-slate-400'}`}>
+                                    {selectedFile ? <Check className="w-6 h-6" /> : <Upload className="w-6 h-6" />}
+                                </div>
+                                <div>
+                                    <p className={`text-sm font-bold ${selectedFile ? 'text-green-400' : 'text-slate-300'}`}>
+                                        {selectedFile ? "Dosya Seçildi: " + selectedFile.name : "Dekontu Buraya Sürükle veya Seç"}
+                                    </p>
+                                    {!selectedFile && <p className="text-xs text-slate-500 mt-1">PDF, JPG veya PNG (Max 5MB)</p>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p className="text-xs text-slate-600">
+                        Güvenli ödeme altyapısı Servis360 tarafından sağlanmaktadır. <br />
+                        Sorun yaşarsanız <span className="text-blue-500 cursor-pointer">destek@servis360.com</span> ile iletişime geçin.
+                    </p>
+                </div>
+
             </div>
         </div>
     );
+}
+
+// YARDIMCI BİLEŞENLER
+function FeatureItem({ text, highlight = false }: { text: string, highlight?: boolean }) {
+    return (
+        <li className="flex items-center gap-3">
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${highlight ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-800 text-slate-500'}`}>
+                <Check className="w-3 h-3" />
+            </div>
+            <span className={`text-sm ${highlight ? 'text-white font-medium' : 'text-slate-400'}`}>{text}</span>
+        </li>
+    );
+}
+
+function Step({ number, text }: { number: number, text: string }) {
+    return (
+        <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-slate-800 text-white font-bold flex items-center justify-center border border-slate-700 shadow-lg">
+                {number}
+            </div>
+            <span className="text-xs font-bold text-slate-400">{text}</span>
+        </div>
+    );
+}
+
+function CopyIcon() {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-500"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
+    )
 }
