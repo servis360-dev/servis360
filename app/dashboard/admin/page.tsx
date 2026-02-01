@@ -27,7 +27,7 @@ import {
     CreditCard, Phone, BellRing, RefreshCw, Wallet,
     BadgeCheck, X, TrendingUp, Building2, Store, User,
     Mail, Calendar, Eye, Copy, CheckCircle2, ChevronRight, ChevronDown, UserPlus,
-    AlertTriangle, MoreVertical, Plus
+    AlertTriangle, MoreVertical, Plus, Briefcase
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -68,6 +68,23 @@ export default function AdminPage() {
             corporate: { monthly: 0, sixMonth: 0, yearly: 0 }
         }
     });
+
+    // --- YARDIMCI: Personel Rolleri Listesi ---
+    const staffRoles = [
+        'staff', 'personnel', 'employee',
+        'technical', 'technician', 'teknik',
+        'sales', 'satis', 'kasa',
+        'accountant', 'accounting', 'muhasebe'
+    ];
+
+    // --- YARDIMCI: Gerçek İşletme Sahibi Kontrolü ---
+    // (Personeller de 'corporate' tipinde olabilir ama onlar işletme sahibi değildir)
+    const isBusinessOwner = (u: any) => {
+        if (!u) return false;
+        const isCompanyType = ['corporate', 'business', 'esnaf', 'tradesman', 'company'].includes(u.accountType);
+        const isStaffRole = staffRoles.includes(u.role);
+        return isCompanyType && !isStaffRole;
+    };
 
     // --- VERİ ÇEKME ---
     useEffect(() => {
@@ -357,7 +374,18 @@ export default function AdminPage() {
         u.email?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const isBusiness = (type: string) => ['corporate', 'business', 'esnaf', 'tradesman', 'company'].includes(type);
+    // 🔥 GÖRSEL YARDIMCI: ROZE ALIMI
+    const getUserBadge = (u: any) => {
+        if (staffRoles.includes(u.role)) {
+            return <span className="text-slate-300 bg-slate-800 px-2 py-1 rounded font-bold flex items-center gap-1"><Briefcase className="w-3 h-3" /> Personel</span>;
+        } else if (['corporate', 'company'].includes(u.accountType)) {
+            return <span className="text-purple-400 bg-purple-900/20 px-2 py-1 rounded font-bold">Kurumsal</span>;
+        } else if (['business', 'esnaf'].includes(u.accountType)) {
+            return <span className="text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded font-bold">Esnaf</span>;
+        } else {
+            return <span className="text-blue-400 bg-blue-900/20 px-2 py-1 rounded font-bold">Bireysel</span>;
+        }
+    };
 
     return (
         <RoleGuard allowedRoles={['super_admin']}>
@@ -493,9 +521,7 @@ export default function AdminPage() {
                                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 mb-4">
                                     <div className="bg-slate-900 p-2 rounded flex flex-col gap-1">
                                         <span className="font-bold text-slate-400">PAKET</span>
-                                        {['corporate', 'company'].includes(u.accountType) ? <span className="text-purple-400">Kurumsal</span> :
-                                            ['business', 'esnaf'].includes(u.accountType) ? <span className="text-yellow-400">Esnaf</span> :
-                                                <span className="text-blue-400">Bireysel</span>}
+                                        {getUserBadge(u)}
                                     </div>
                                     <div className="bg-slate-900 p-2 rounded flex flex-col gap-1">
                                         <span className="font-bold text-slate-400">LİSANS</span>
@@ -518,7 +544,7 @@ export default function AdminPage() {
 
                                 {/* Alt Aksiyonlar */}
                                 <div className="flex items-center justify-between border-t border-slate-800 pt-3">
-                                    {isBusiness(u.accountType) && (
+                                    {isBusinessOwner(u) && (
                                         <button
                                             onClick={() => toggleCompanyStaff(u.id)}
                                             className="text-xs font-bold text-slate-400 flex items-center gap-1 bg-slate-900 px-3 py-2 rounded"
@@ -574,7 +600,7 @@ export default function AdminPage() {
                                     <>
                                         <tr key={u.id} className={`hover:bg-slate-800/50 transition-colors ${expandedCompanyId === u.id ? 'bg-slate-800/30' : ''}`}>
                                             <td className="p-3">
-                                                {isBusiness(u.accountType) && (
+                                                {isBusinessOwner(u) && (
                                                     <button onClick={() => toggleCompanyStaff(u.id)} className="p-1 hover:bg-slate-700 rounded transition-all">
                                                         {expandedCompanyId === u.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                                     </button>
@@ -589,9 +615,7 @@ export default function AdminPage() {
                                                 <div className="flex items-center gap-1 group cursor-pointer" onClick={() => copyToClipboard(u.phone)}><Phone className="w-3 h-3" /> {u.phone || '-'}</div>
                                             </td>
                                             <td className="p-3">
-                                                {['corporate', 'company'].includes(u.accountType) ? <span className="text-purple-400 bg-purple-900/20 px-2 py-1 rounded font-bold">Kurumsal</span> :
-                                                    ['business', 'esnaf'].includes(u.accountType) ? <span className="text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded font-bold">Esnaf</span> :
-                                                        <span className="text-blue-400 bg-blue-900/20 px-2 py-1 rounded font-bold">Bireysel</span>}
+                                                {getUserBadge(u)}
                                             </td>
                                             <td className="p-3">
                                                 <div className="flex items-center gap-1">
@@ -695,8 +719,8 @@ export default function AdminPage() {
                                         </div>
                                     </div>
 
-                                    {/* ŞUBE YÖNETİMİ PANELİ */}
-                                    {isBusiness(viewUser.accountType) && userProfileData && (
+                                    {/* ŞUBE YÖNETİMİ PANELİ (Sadece Gerçek İşletme Sahipleri Görür) */}
+                                    {isBusinessOwner(viewUser) && userProfileData && (
                                         <div className="bg-black/40 p-4 rounded border border-slate-800 animate-pulse-slow">
                                             <p className="text-[10px] text-purple-500 uppercase font-bold mb-2 flex items-center gap-2">
                                                 <Store className="w-3 h-3" /> ŞUBE YÖNETİMİ
@@ -736,8 +760,8 @@ export default function AdminPage() {
                                         </div>
                                     )}
 
-                                    {/* YENİ PERSONEL YÖNETİMİ PANELİ */}
-                                    {isBusiness(viewUser.accountType) && userProfileData && (
+                                    {/* YENİ PERSONEL YÖNETİMİ PANELİ (Sadece Gerçek İşletme Sahipleri Görür) */}
+                                    {isBusinessOwner(viewUser) && userProfileData && (
                                         <div className="bg-black/40 p-4 rounded border border-slate-800 animate-pulse-slow mt-4">
                                             <p className="text-[10px] text-blue-500 uppercase font-bold mb-2 flex items-center gap-2">
                                                 <Users className="w-3 h-3" /> PERSONEL YÖNETİMİ
