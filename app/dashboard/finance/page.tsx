@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import {
-    collection, query, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, orderBy
+    collection, query, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, orderBy, getDoc
 } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth'; // Auth dinleyici eklendi
 import {
-    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search, Calendar, Tag
+    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search, Calendar, Tag, AlertTriangle
 } from 'lucide-react';
 
 export default function FinancePage() {
@@ -15,6 +16,10 @@ export default function FinancePage() {
     const [stats, setStats] = useState({ income: 0, expense: 0, profit: 0 });
     const [showModal, setShowModal] = useState(false);
     const [modalType, setModalType] = useState<'income' | 'expense'>('expense');
+
+    // Kullanıcı ve Hedef ID
+    const [user, setUser] = useState<any>(null);
+    const [targetUid, setTargetUid] = useState<string | null>(null); // 🔥 Verinin çekileceği asıl ID
 
     // Arama durumu
     const [searchTerm, setSearchTerm] = useState('');
@@ -27,63 +32,104 @@ export default function FinancePage() {
     });
 
     useEffect(() => {
-        const user = auth.currentUser;
-        if (!user) return;
+        let unsubSnapshot: () => void;
 
-        // "finance" koleksiyonunu dinliyoruz
-        const q = query(
-            collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'),
-            orderBy('date', 'desc')
-        );
+        const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+            if (currentUser) {
+                setUser(currentUser);
 
-        const unsub = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                try {
+                    // 1. Profil ve Hedef ID Belirleme
+                    const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
+                    const profileSnap = await getDoc(profileRef);
 
-            // Tarih ve Sıralama Düzeltmesi
-            data.sort((a: any, b: any) => {
-                const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
-                const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
-                return dateB - dateA; // En yeni en üstte
-            });
+                    let ownerId = currentUser.uid; // Varsayılan: Kendisi
 
-            setTransactions(data);
+                    if (profileSnap.exists()) {
+                        const data = profileSnap.data();
+                        // Eğer personel ise (ownerId var ve farklı), patronun ID'sini al
+                        if (data.ownerId && data.ownerId !== currentUser.uid) {
+                            ownerId = data.ownerId;
+                        }
+                    }
 
-            let inc = 0, exp = 0;
-            data.forEach((t: any) => {
-                const val = parseFloat(t.amount) || 0;
-                if (t.type === 'income') inc += val; else exp += val;
-            });
+                    setTargetUid(ownerId);
 
-            setStats({ income: inc, expense: exp, profit: inc - exp });
-            setLoading(false);
+                    // 2. Finans Verilerini Dinle (Patronun ID'sine göre)
+                    const q = query(
+                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'finance'),
+                        orderBy('date', 'desc')
+                    );
+
+                    unsubSnapshot = onSnapshot(q, (snapshot) => {
+                        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                        // JS tarafında Tarih Sıralamasını Garantiye Al
+                        data.sort((a: any, b: any) => {
+                            const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
+                            const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
+                            return dateB - dateA; // En yeni en üstte
+                        });
+
+                        setTransactions(data);
+
+                        let inc = 0, exp = 0;
+                        data.forEach((t: any) => {
+                            const val = parseFloat(t.amount) || 0;
+                            if (t.type === 'income') inc += val; else exp += val;
+                        });
+
+                        setStats({ income: inc, expense: exp, profit: inc - exp });
+                        setLoading(false);
+                    });
+
+                } catch (error) {
+                    console.error("Veri çekme hatası", error);
+                    setLoading(false);
+                }
+            } else {
+                setLoading(false);
+            }
         });
 
-        return () => unsub();
+        return () => {
+            unsubscribeAuth();
+            if (unsubSnapshot) unsubSnapshot();
+        };
     }, []);
 
     const handleAddTransaction = async (e: React.FormEvent) => {
         e.preventDefault();
-        const user = auth.currentUser;
-        if (!user) return;
+        if (!user || !targetUid) return;
 
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), {
-            type: modalType,
-            amount: parseFloat(formData.amount),
-            category: formData.category,
-            description: formData.description,
-            date: new Date(formData.date),
-            createdAt: serverTimestamp()
-        });
+        try {
+            await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance'), {
+                type: modalType,
+                amount: parseFloat(formData.amount),
+                category: formData.category,
+                description: formData.description,
+                date: new Date(formData.date), // Timestamp olarak kaydetmek daha iyi olabilir ama mevcut yapıya uyduk
+                processedBy: user.uid, // İşlemi yapan personel
+                createdAt: serverTimestamp()
+            });
 
-        setShowModal(false);
-        setFormData({ amount: '', category: '', description: '', date: new Date().toISOString().split('T')[0] });
+            setShowModal(false);
+            setFormData({ amount: '', category: '', description: '', date: new Date().toISOString().split('T')[0] });
+        } catch (error) {
+            console.error("Ekleme hatası:", error);
+            alert("İşlem kaydedilemedi.");
+        }
     };
 
     const handleDelete = async (id: string) => {
+        if (!targetUid) return;
         if (confirm('Bu işlemi silmek istiyor musunuz? Kasa bakiyesi etkilenecektir.')) {
-            const user = auth.currentUser;
-            if (!user) return;
-            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance', id));
+            try {
+                await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance', id));
+            } catch (error) {
+                console.error("Silme hatası:", error);
+                alert("Silinemedi.");
+            }
         }
     };
 
@@ -100,7 +146,7 @@ export default function FinancePage() {
         return descriptionMatch || categoryMatch || amountMatch;
     });
 
-    const categories = modalType === 'income' ? ['Satış', 'Hizmet', 'Ekstra Gelir'] : ['Kira', 'Fatura', 'Yemek', 'Malzeme', 'Maaş', 'Akaryakıt', 'Diğer'];
+    const categories = modalType === 'income' ? ['Satış', 'Hizmet', 'Ekstra Gelir', 'Tahsilat'] : ['Kira', 'Fatura', 'Yemek', 'Malzeme', 'Maaş', 'Akaryakıt', 'Diğer'];
 
     return (
         <div className="space-y-6 pb-20">

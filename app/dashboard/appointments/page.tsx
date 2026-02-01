@@ -27,13 +27,13 @@ const COUNTRY_CODES = [
     { code: '+44', country: 'UK', label: 'İngiltere (+44)' },
     { code: '+1', country: 'US', label: 'ABD (+1)' },
     { code: '+994', country: 'AZ', label: 'Azerbaycan (+994)' },
-    // İhtiyaca göre burası artırılabilir
 ];
 
 export default function AppointmentsPage() {
     const [appointments, setAppointments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<any>(null);
+    const [targetUid, setTargetUid] = useState<string | null>(null); // 🔥 Verinin çekileceği asıl ID
     const [showModal, setShowModal] = useState(false);
 
     // Ayarlar
@@ -46,7 +46,7 @@ export default function AppointmentsPage() {
     const [countryCode, setCountryCode] = useState('+90');
     const [formData, setFormData] = useState({
         customerName: '',
-        phoneNumberBody: '', // Sadece numara kısmı (5XX...)
+        phoneNumberBody: '',
         date: '',
         time: '',
         note: ''
@@ -57,40 +57,61 @@ export default function AppointmentsPage() {
             if (currentUser) {
                 setUser(currentUser);
 
-                // 1. Profil ve Şablon Çek
-                const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
-                getDoc(profileRef).then((snap) => {
-                    if (snap.exists()) {
-                        const data = snap.data();
-                        setSettings({
-                            duration: data.appointmentDuration || '60',
-                            template: data.whatsappTemplates?.appointmentReminder || settings.template
-                        });
+                try {
+                    // 1. Profil Kontrolü (Personel mi Patron mu?)
+                    const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
+                    const profileSnap = await getDoc(profileRef);
+
+                    let ownerId = currentUser.uid; // Varsayılan: Kendisi
+
+                    if (profileSnap.exists()) {
+                        const data = profileSnap.data();
+                        // Eğer ownerId varsa ve farklıysa, o personelin patronudur.
+                        if (data.ownerId && data.ownerId !== currentUser.uid) {
+                            ownerId = data.ownerId;
+                        }
                     }
-                });
 
-                // 2. Randevuları Çek (DÜZELTME: orderBy kaldırıldı, JS ile sıralanacak)
-                // Bu sayede "Index" hatası almadan veriler anında gelir.
-                const q = query(
-                    collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'appointments')
-                );
+                    setTargetUid(ownerId);
 
-                const unsubSnap = onSnapshot(q, (snapshot) => {
-                    let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-                    // JS tarafında Tarih ve Saate göre sıralama
-                    data.sort((a: any, b: any) => {
-                        const dateA = new Date(`${a.date}T${a.time}`);
-                        const dateB = new Date(`${b.date}T${b.time}`);
-                        return dateA.getTime() - dateB.getTime();
+                    // 2. Ayarları Çek (Patronun ayarlarını kullan)
+                    const ownerProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'users', 'profile');
+                    getDoc(ownerProfileRef).then((snap) => {
+                        if (snap.exists()) {
+                            const data = snap.data();
+                            setSettings({
+                                duration: data.appointmentDuration || '60',
+                                template: data.whatsappTemplates?.appointmentReminder || settings.template
+                            });
+                        }
                     });
 
-                    setAppointments(data);
+                    // 3. Randevuları Çek (Patronun ID'sine göre)
+                    const q = query(
+                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'appointments')
+                    );
+
+                    const unsubSnap = onSnapshot(q, (snapshot) => {
+                        let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                        // JS tarafında Tarih ve Saate göre sıralama
+                        data.sort((a: any, b: any) => {
+                            const dateA = new Date(`${a.date}T${a.time}`);
+                            const dateB = new Date(`${b.date}T${b.time}`);
+                            return dateA.getTime() - dateB.getTime();
+                        });
+
+                        setAppointments(data);
+                        setLoading(false);
+                    });
+                    return () => unsubSnap();
+
+                } catch (err) {
+                    console.error("Veri çekme hatası", err);
                     setLoading(false);
-                });
-                return () => unsubSnap();
+                }
             } else {
-                setLoading(false); // Kullanıcı yoksa da loading'i kapat
+                setLoading(false);
             }
         });
         return () => unsubscribe();
@@ -98,23 +119,23 @@ export default function AppointmentsPage() {
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user) return;
+        if (!user || !targetUid) return;
 
-        // Telefonu birleştir (+90 555...)
         const fullPhone = `${countryCode} ${formData.phoneNumberBody}`;
 
         try {
-            await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'appointments'), {
+            // 🔥 Kaydı Patronun DB'sine yap
+            await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'appointments'), {
                 customerName: formData.customerName,
-                customerPhone: fullPhone, // Birleşmiş numara kaydedilir
+                customerPhone: fullPhone,
                 date: formData.date,
                 time: formData.time,
                 note: formData.note,
                 status: 'pending',
+                createdBy: user.uid, // Oluşturan personel
                 createdAt: serverTimestamp()
             });
             setShowModal(false);
-            // Formu temizle
             setFormData({ customerName: '', phoneNumberBody: '', date: '', time: '', note: '' });
             setCountryCode('+90');
         } catch (error) {
@@ -124,18 +145,19 @@ export default function AppointmentsPage() {
     };
 
     const handleDelete = async (id: string) => {
+        if (!targetUid) return;
         if (confirm("Randevuyu silmek istiyor musunuz?")) {
-            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'appointments', id));
+            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'appointments', id));
         }
     };
 
     const handleStatusUpdate = async (id: string, newStatus: string) => {
-        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'appointments', id), {
+        if (!targetUid) return;
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'appointments', id), {
             status: newStatus
         });
     };
 
-    // WHATSAPP ENTEGRASYONU (Alan kodu uyumlu)
     const sendReminder = (apt: any) => {
         if (!apt.customerPhone) {
             alert("Müşteri telefonu kayıtlı değil!");
@@ -146,8 +168,6 @@ export default function AppointmentsPage() {
             .replace('{saat}', apt.time)
             .replace('{tarih}', new Date(apt.date).toLocaleDateString('tr-TR'));
 
-        // Numara temizleme (+90 555 -> 90555)
-        // Artık başında ülke kodu olduğu için sadece boşlukları ve +'yı siliyoruz.
         let phone = apt.customerPhone.replace(/[^0-9]/g, '');
 
         const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
@@ -266,7 +286,7 @@ export default function AppointmentsPage() {
                 )}
             </div>
 
-            {/* YENİ RANDEVU MODALI (GÜNCELLENDİ: ALAN KODU İLE) */}
+            {/* YENİ RANDEVU MODALI */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-200 dark:border-slate-700">
@@ -286,7 +306,7 @@ export default function AppointmentsPage() {
                                 </div>
                             </div>
 
-                            {/* ÜLKE KODU VE TELEFON (GÜNCELLENDİ) */}
+                            {/* ÜLKE KODU VE TELEFON */}
                             <div>
                                 <label className="block text-sm font-medium mb-1">Telefon</label>
                                 <div className="flex gap-2">

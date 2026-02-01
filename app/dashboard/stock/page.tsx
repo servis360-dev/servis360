@@ -36,6 +36,7 @@ export default function StockPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [user, setUser] = useState<any>(null);
+    const [targetUid, setTargetUid] = useState<string | null>(null); // 🔥 Verinin çekileceği asıl ID
 
     // Dinamik Sektör Ayarları (Varsayılan: Teknik Servis)
     const [sectorConfig, setSectorConfig] = useState({
@@ -57,39 +58,63 @@ export default function StockPage() {
     });
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        let unsubInventory: () => void;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
                 setUser(currentUser);
 
-                // 1. Sektör Bilgisini Çek ve Ayarları Yap
                 try {
+                    // 1. KULLANICI PROFİLİNİ VE HEDEF ID'Yİ BELİRLE
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
 
+                    let ownerId = currentUser.uid; // Varsayılan: Kendisi
+
                     if (profileSnap.exists()) {
-                        const sector = profileSnap.data().sectorType || 'technical_service';
+                        const data = profileSnap.data();
+                        // Eğer personel ise (ownerId var ve farklı), patronun ID'sini al
+                        if (data.ownerId && data.ownerId !== currentUser.uid) {
+                            ownerId = data.ownerId;
+                        }
+                    }
+
+                    setTargetUid(ownerId);
+
+                    // 2. PATRONUN PROFİLİNDEN SEKTÖR BİLGİSİNİ ÇEK
+                    // (Personel de patronun sektör ayarını görmeli)
+                    const ownerProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'users', 'profile');
+                    const ownerProfileSnap = await getDoc(ownerProfileRef);
+
+                    if (ownerProfileSnap.exists()) {
+                        const sector = ownerProfileSnap.data().sectorType || 'technical_service';
                         determineSectorConfig(sector);
                     }
+
+                    // 3. STOKLARI DİNLE (Patronun ID'sine göre)
+                    const q = query(
+                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'inventory'),
+                        orderBy('name')
+                    );
+
+                    unsubInventory = onSnapshot(q, (snapshot) => {
+                        setProducts(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+                        setLoading(false);
+                    });
+
                 } catch (error) {
-                    console.error("Profil hatası:", error);
-                }
-
-                // 2. Stokları Dinle
-                const q = query(
-                    collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'inventory'),
-                    orderBy('name')
-                );
-
-                const unsubInventory = onSnapshot(q, (snapshot) => {
-                    setProducts(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+                    console.error("Veri çekme hatası:", error);
                     setLoading(false);
-                });
-                return () => unsubInventory();
+                }
             } else {
                 setLoading(false);
             }
         });
-        return () => unsubscribe();
+
+        return () => {
+            unsubscribeAuth();
+            if (unsubInventory) unsubInventory();
+        };
     }, []);
 
     const determineSectorConfig = (sector: string) => {
@@ -144,15 +169,16 @@ export default function StockPage() {
 
     const handleAddProduct = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user) return;
+        if (!user || !targetUid) return;
 
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'inventory'), {
+        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'inventory'), {
             name: newItem.name,
             category: newItem.category,
             buyPrice: parseFloat(newItem.buyPrice) || 0,
             sellPrice: parseFloat(newItem.sellPrice) || 0,
             quantity: parseInt(newItem.quantity) || 0,
             criticalLevel: parseInt(newItem.criticalLevel) || 5,
+            createdBy: user.uid, // Kaydı yapan personel
             createdAt: serverTimestamp()
         });
 
@@ -161,19 +187,20 @@ export default function StockPage() {
     };
 
     const updateQuantity = async (id: string, currentQty: number, change: number) => {
-        if (!user) return;
+        if (!targetUid) return;
         const newQty = currentQty + change;
         if (newQty < 0) return;
 
-        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'inventory', id), {
-            quantity: newQty
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'inventory', id), {
+            quantity: newQty,
+            lastUpdatedBy: user.uid // Güncelleyen personel
         });
     };
 
     const handleDelete = async (id: string) => {
         if (confirm('Bu kaydı silmek istiyor musunuz?')) {
-            if (!user) return;
-            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'inventory', id));
+            if (!targetUid) return;
+            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'inventory', id));
         }
     };
 

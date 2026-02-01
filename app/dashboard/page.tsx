@@ -4,9 +4,8 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../../lib/firebase';
 import { useRouter } from 'next/navigation';
-import { collection, query, onSnapshot, orderBy, doc, getDoc, addDoc, deleteDoc, serverTimestamp, where } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, doc, getDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import {
-    Wallet,
     TrendingUp,
     TrendingDown,
     Activity,
@@ -22,7 +21,7 @@ import {
     Clock,
     PiggyBank,
     Building2,
-    Megaphone, // Duyuru İkonu
+    Megaphone,
     Send,
     Trash2
 } from 'lucide-react';
@@ -115,11 +114,8 @@ export default function DashboardPage() {
     };
 
     const setupRealtimeListeners = (uid: string, filter: 'week' | 'month', profileData: any) => {
-        // Eğer personel ise verileri patronun (ownerId) hesabından çekmeli, yoksa kendinden.
-        // Ancak finansal veriler genelde yetkiye bağlıdır. Şimdilik "kendi" verileri üzerinden gidiyoruz.
-        // Eğer kurumsal yapı tam oturmuşsa buradaki path `users/${profileData.ownerId}` olmalı.
-        // Basitlik için şu anlık kullanıcının kendi veritabanını baz alıyoruz, çünkü alt hesap mantığı tam kurulu değil.
-        const targetUid = (profileData.role === 'staff' || profileData.role === 'technician' || profileData.role === 'accounting') && profileData.ownerId
+        // Hedef ID (Patron veya Kendisi)
+        const targetUid = (profileData.role === 'staff' || profileData.role === 'technician' || profileData.role === 'sales' || profileData.role === 'accounting') && profileData.ownerId
             ? profileData.ownerId
             : uid;
 
@@ -165,6 +161,7 @@ export default function DashboardPage() {
             setStats(prev => ({ ...prev, periodIncome: periodInc, periodExpense: periodExp, netBalance: totalInc - totalExp }));
             setChartData(Array.from(dailyMap.values()));
 
+            // Son 5 hareket
             const recentTrans = snapshot.docs.reverse().slice(0, 5).map(d => ({
                 id: d.id,
                 type: d.data().type === 'income' ? 'plus' : 'minus',
@@ -201,8 +198,9 @@ export default function DashboardPage() {
     const handlePostAnnouncement = async () => {
         if (!newAnnouncement.trim()) return;
         try {
-            // Eğer personel ise burayı çalıştıramaz, UI gizli olacak.
-            const userPath = `artifacts/servis-360-live/users/${user.uid}`;
+            const targetUid = (userData.role === 'staff' || userData.role === 'technician') && userData.ownerId ? userData.ownerId : user.uid;
+            const userPath = `artifacts/servis-360-live/users/${targetUid}`;
+
             await addDoc(collection(db, userPath, 'announcements'), {
                 text: newAnnouncement,
                 createdAt: serverTimestamp(),
@@ -219,7 +217,8 @@ export default function DashboardPage() {
     const handleDeleteAnnouncement = async (id: string) => {
         if (!confirm("Duyuruyu silmek istiyor musunuz?")) return;
         try {
-            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'announcements', id));
+            const targetUid = (userData.role === 'staff' || userData.role === 'technician') && userData.ownerId ? userData.ownerId : user.uid;
+            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'announcements', id));
         } catch (error) {
             console.error(error);
         }
@@ -228,8 +227,13 @@ export default function DashboardPage() {
     if (!user || !userData) return null;
 
     const isIndividual = userData.accountType === 'individual';
-    // Patron/Yönetici mi? (Duyuru ekleyebilmesi için)
+    // Patron/Yönetici mi? (Duyuru ekleme ve Finans görme yetkisi)
     const isManager = ['corporate', 'esnaf', 'business', 'admin'].includes(userData.role) || ['corporate', 'esnaf', 'business'].includes(userData.accountType);
+
+    // 🔥 FİNANSAL VERİLERİ GİZLEME MANTIĞI
+    // Tekniker, Personel ve Satış rolleri finansal toplamları ve grafikleri göremez.
+    // Muhasebe (accounting) ve Yöneticiler görebilir.
+    const hideFinance = ['technician', 'technical', 'staff', 'sales', 'personnel', 'employee'].includes(userData.role);
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-24">
@@ -245,10 +249,12 @@ export default function DashboardPage() {
                     </p>
                 </div>
 
-                <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700 w-full sm:w-auto">
-                    <button onClick={() => setTimeFilter('week')} className={`flex-1 sm:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all ${timeFilter === 'week' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-white shadow-sm' : 'text-slate-500'}`}>Bu Hafta</button>
-                    <button onClick={() => setTimeFilter('month')} className={`flex-1 sm:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all ${timeFilter === 'month' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-white shadow-sm' : 'text-slate-500'}`}>Son 30 Gün</button>
-                </div>
+                {!hideFinance && (
+                    <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700 w-full sm:w-auto">
+                        <button onClick={() => setTimeFilter('week')} className={`flex-1 sm:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all ${timeFilter === 'week' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-white shadow-sm' : 'text-slate-500'}`}>Bu Hafta</button>
+                        <button onClick={() => setTimeFilter('month')} className={`flex-1 sm:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all ${timeFilter === 'month' ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-white shadow-sm' : 'text-slate-500'}`}>Son 30 Gün</button>
+                    </div>
+                )}
             </div>
 
             {/* DUYURU PANOSU (Sadece Kurumsal/Esnaf ve Personelleri Görür) */}
@@ -305,31 +311,36 @@ export default function DashboardPage() {
                 </div>
             )}
 
-            {/* KARTLAR - GRID */}
-            <div className={`grid grid-cols-1 min-[480px]:grid-cols-2 ${isIndividual ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-4`}>
+            {/* KARTLAR - GRID (Tekniker sadece Aktif İşleri Görür) */}
+            <div className={`grid grid-cols-1 ${hideFinance ? 'md:grid-cols-1' : 'min-[480px]:grid-cols-2 lg:grid-cols-4'} gap-4`}>
 
-                {/* 1. Dönemsel Gelir */}
-                <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><TrendingUp className="w-20 h-20 text-green-600" /></div>
-                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{timeFilter === 'week' ? 'Bu Hafta' : 'Son 30 Gün'} Gelir</p>
-                    <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{stats.periodIncome.toLocaleString()} ₺</h3>
-                </div>
+                {/* 1, 2, 3: FİNANSAL KARTLAR (Gizlenebilir) */}
+                {!hideFinance && (
+                    <>
+                        {/* Dönemsel Gelir */}
+                        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><TrendingUp className="w-20 h-20 text-green-600" /></div>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{timeFilter === 'week' ? 'Bu Hafta' : 'Son 30 Gün'} Gelir</p>
+                            <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{stats.periodIncome.toLocaleString()} ₺</h3>
+                        </div>
 
-                {/* 2. Dönemsel Gider */}
-                <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><TrendingDown className="w-20 h-20 text-red-600" /></div>
-                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{timeFilter === 'week' ? 'Bu Hafta' : 'Son 30 Gün'} Gider</p>
-                    <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{stats.periodExpense.toLocaleString()} ₺</h3>
-                </div>
+                        {/* Dönemsel Gider */}
+                        <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><TrendingDown className="w-20 h-20 text-red-600" /></div>
+                            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{timeFilter === 'week' ? 'Bu Hafta' : 'Son 30 Gün'} Gider</p>
+                            <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{stats.periodExpense.toLocaleString()} ₺</h3>
+                        </div>
 
-                {/* 3. NET KASA */}
-                <div className={`p-5 rounded-2xl shadow-lg relative overflow-hidden group text-white ${stats.netBalance >= 0 ? 'bg-gradient-to-br from-blue-600 to-indigo-700' : 'bg-gradient-to-br from-red-600 to-orange-700'}`}>
-                    <div className="absolute top-0 right-0 p-4 opacity-20"><PiggyBank className="w-20 h-20 text-white" /></div>
-                    <p className="text-white/80 text-[10px] font-bold uppercase tracking-wider">NET KASA (TOPLAM)</p>
-                    <h3 className="text-2xl font-black mt-1">{stats.netBalance.toLocaleString()} ₺</h3>
-                </div>
+                        {/* NET KASA */}
+                        <div className={`p-5 rounded-2xl shadow-lg relative overflow-hidden group text-white ${stats.netBalance >= 0 ? 'bg-gradient-to-br from-blue-600 to-indigo-700' : 'bg-gradient-to-br from-red-600 to-orange-700'}`}>
+                            <div className="absolute top-0 right-0 p-4 opacity-20"><PiggyBank className="w-20 h-20 text-white" /></div>
+                            <p className="text-white/80 text-[10px] font-bold uppercase tracking-wider">NET KASA (TOPLAM)</p>
+                            <h3 className="text-2xl font-black mt-1">{stats.netBalance.toLocaleString()} ₺</h3>
+                        </div>
+                    </>
+                )}
 
-                {/* 4. Aktif İşler (BİREYSELDE GİZLİ) */}
+                {/* 4. Aktif İşler (HERKES GÖRÜR) */}
                 {!isIndividual && (
                     <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between group cursor-pointer hover:border-blue-400 transition-all" onClick={() => router.push(sectorConfig.path)}>
                         <div>
@@ -346,34 +357,39 @@ export default function DashboardPage() {
             </div>
 
             {/* GRAFİK VE AKTİVİTE */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Grafik */}
-                <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <h3 className="text-base font-bold mb-6 flex items-center gap-2 text-slate-900 dark:text-white">
-                        <Calendar className="w-5 h-5 text-blue-500" /> {isIndividual ? 'Harcama Analizi' : 'Finansal Grafik'}
-                    </h3>
-                    <div className="h-[250px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData} barSize={20}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={10} minTickGap={10} />
-                                <YAxis axisLine={false} tickLine={false} fontSize={10} tickFormatter={(v) => `${v}₺`} />
-                                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: '#1e293b', color: '#fff' }} />
-                                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                                <Bar dataKey="Gelir" fill="#16a34a" radius={[4, 4, 0, 0]} name={isIndividual ? "Gelir" : "Ciro"} />
-                                <Bar dataKey="Gider" fill="#ef4444" radius={[4, 4, 0, 0]} name="Gider" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
+            <div className={`grid grid-cols-1 ${hideFinance ? 'lg:grid-cols-1' : 'lg:grid-cols-3'} gap-6`}>
 
-                {/* Son Aktiviteler */}
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full max-h-[400px]">
+                {/* Grafik (FİNANS YETKİSİ YOKSA GİZLE) */}
+                {!hideFinance && (
+                    <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <h3 className="text-base font-bold mb-6 flex items-center gap-2 text-slate-900 dark:text-white">
+                            <Calendar className="w-5 h-5 text-blue-500" /> {isIndividual ? 'Harcama Analizi' : 'Finansal Grafik'}
+                        </h3>
+                        <div className="h-[250px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={chartData} barSize={20}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={10} minTickGap={10} />
+                                    <YAxis axisLine={false} tickLine={false} fontSize={10} tickFormatter={(v) => `${v}₺`} />
+                                    <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: '#1e293b', color: '#fff' }} />
+                                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                                    <Bar dataKey="Gelir" fill="#16a34a" radius={[4, 4, 0, 0]} name={isIndividual ? "Gelir" : "Ciro"} />
+                                    <Bar dataKey="Gider" fill="#ef4444" radius={[4, 4, 0, 0]} name="Gider" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                )}
+
+                {/* Son Aktiviteler (HERKES GÖRÜR) */}
+                <div className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full max-h-[400px] ${hideFinance ? 'lg:col-span-1' : ''}`}>
                     <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 flex justify-between items-center">
                         <h3 className="font-bold text-slate-900 dark:text-white flex gap-2 text-sm">
                             <Activity className="w-5 h-5 text-purple-500" /> Son Hareketler
                         </h3>
-                        <Link href="/dashboard/finance" className="text-[10px] font-bold text-blue-600 hover:underline uppercase tracking-wider">Tümü</Link>
+                        {!hideFinance && (
+                            <Link href="/dashboard/finance" className="text-[10px] font-bold text-blue-600 hover:underline uppercase tracking-wider">Tümü</Link>
+                        )}
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-4">

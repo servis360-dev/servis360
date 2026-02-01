@@ -7,7 +7,7 @@ import {
     onSnapshot,
     addDoc,
     updateDoc,
-    deleteDoc, // Silme işlemi için eklendi
+    deleteDoc,
     doc,
     serverTimestamp,
     orderBy,
@@ -29,7 +29,7 @@ import {
     BookUser,
     UserCog,
     Briefcase,
-    Trash2 // Silme ikonu eklendi
+    Trash2
 } from 'lucide-react';
 
 export default function CustomersPage() {
@@ -37,17 +37,16 @@ export default function CustomersPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [user, setUser] = useState<any>(null);
+    const [targetUid, setTargetUid] = useState<string | null>(null); // 🔥 Verinin çekileceği asıl ID
 
     // Görünüm Modu: 'customer' (Müşteriler) veya 'personnel' (Personel)
     const [viewMode, setViewMode] = useState<'customer' | 'personnel'>('customer');
 
-    // Kullanıcı Tipi (Bireysel mi, Ticari mi?)
+    // Kullanıcı Tipi
     const [accountType, setAccountType] = useState<string>('business');
 
-    // Modallar için State
+    // Modallar
     const [showAddModal, setShowAddModal] = useState(false);
-
-    // Transaction Modal
     const [transactionModal, setTransactionModal] = useState<{ open: boolean, contact: any | null, type: 'debt' | 'payment' }>({
         open: false,
         contact: null,
@@ -60,49 +59,68 @@ export default function CustomersPage() {
     const [description, setDescription] = useState('');
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        let unsubSnapshot: () => void;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
                 setUser(currentUser);
 
-                // 1. Hesap Türünü Öğren
                 try {
+                    // 1. Profil ve Hedef ID Belirleme
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
+
+                    let ownerId = currentUser.uid; // Varsayılan: Kendisi
+                    let accType = 'business';
+
                     if (profileSnap.exists()) {
-                        setAccountType(profileSnap.data().accountType || 'business');
+                        const data = profileSnap.data();
+                        accType = data.accountType || 'business';
+
+                        // Eğer personel ise (ownerId var ve farklı), patronun ID'sini al
+                        if (data.ownerId && data.ownerId !== currentUser.uid) {
+                            ownerId = data.ownerId;
+                        }
                     }
+
+                    setTargetUid(ownerId);
+                    setAccountType(accType);
+
+                    // 2. Müşterileri Dinle (Patronun ID'sine göre)
+                    const q = query(
+                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'customers'),
+                        orderBy('name')
+                    );
+
+                    unsubSnapshot = onSnapshot(q, (snapshot) => {
+                        const data = snapshot.docs.map(d => ({
+                            id: d.id,
+                            type: 'customer', // Varsayılan
+                            ...d.data()
+                        }));
+                        setAllContacts(data);
+                        setLoading(false);
+                    });
+
                 } catch (error) {
-                    console.error("Profil yüklenemedi", error);
-                }
-
-                // 2. Müşterileri ve Personelleri Dinle
-                const q = query(
-                    collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'customers'),
-                    orderBy('name')
-                );
-
-                const unsub = onSnapshot(q, (snapshot) => {
-                    const data = snapshot.docs.map(d => ({
-                        id: d.id,
-                        type: 'customer',
-                        ...d.data()
-                    }));
-                    setAllContacts(data);
+                    console.error("Veri çekme hatası", error);
                     setLoading(false);
-                });
-
-                return () => unsub();
+                }
             }
         });
-        return () => unsubscribe();
+
+        return () => {
+            unsubscribeAuth();
+            if (unsubSnapshot) unsubSnapshot();
+        };
     }, []);
 
-    // Kayıt Silme Fonksiyonu
+    // Kayıt Silme
     const handleDelete = async (id: string, name: string) => {
+        if (!targetUid) return;
         if (confirm(`${name} isimli kaydı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`)) {
             try {
-                if (!user) return;
-                await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers', id));
+                await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'customers', id));
             } catch (error) {
                 console.error("Silme hatası:", error);
                 alert("Silme işlemi başarısız oldu.");
@@ -110,18 +128,20 @@ export default function CustomersPage() {
         }
     };
 
+    // Yeni Müşteri/Personel Ekleme
     const handleAddContact = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user) return;
+        if (!user || !targetUid) return;
 
         const contactType = newContact.type || viewMode;
 
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers'), {
+        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'customers'), {
             name: newContact.name,
             phone: newContact.phone,
             note: newContact.note,
             type: contactType,
             balance: 0,
+            createdBy: user.uid, // Kaydı oluşturan (Personel olabilir)
             createdAt: serverTimestamp()
         });
 
@@ -129,9 +149,10 @@ export default function CustomersPage() {
         setNewContact({ name: '', phone: '', note: '', type: 'customer' });
     };
 
+    // Cari İşlem (Borç/Alacak)
     const handleTransaction = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user || !transactionModal.contact || !amount) return;
+        if (!user || !targetUid || !transactionModal.contact || !amount) return;
 
         const val = parseFloat(amount);
         const currentBalance = transactionModal.contact.balance || 0;
@@ -141,7 +162,8 @@ export default function CustomersPage() {
             ? currentBalance + val
             : currentBalance - val;
 
-        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers', transactionModal.contact.id), {
+        // 1. Müşteri Bakiyesini Güncelle
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'customers', transactionModal.contact.id), {
             balance: newBalance
         });
 
@@ -154,34 +176,39 @@ export default function CustomersPage() {
             }
         }
 
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers', transactionModal.contact.id, 'history'), {
+        // 2. Geçmişe Ekle (Log)
+        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'customers', transactionModal.contact.id, 'history'), {
             type: transactionModal.type,
             amount: val,
             description: historyDesc,
+            processedBy: user.uid, // İşlemi yapan
             date: new Date().toISOString(),
             createdAt: serverTimestamp()
         });
 
+        // 3. Finans Kasasına İşle (Patronun Kasası)
         if (isPersonnel) {
             const expenseType = transactionModal.type === 'debt' ? 'Personel Avans' : 'Personel Maaş/Ödeme';
 
-            await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), {
+            await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance'), {
                 type: 'expense',
                 amount: val,
                 category: 'Personel',
                 description: `${transactionModal.contact.name} - ${description || expenseType}`,
                 date: new Date().toISOString().split('T')[0],
+                processedBy: user.uid,
                 createdAt: serverTimestamp()
             });
 
         } else {
             if (transactionModal.type === 'payment') {
-                await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), {
+                await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance'), {
                     type: 'income',
                     amount: val,
                     category: 'Tahsilat',
                     description: `${transactionModal.contact.name} - Cari Tahsilat`,
                     date: new Date().toISOString().split('T')[0],
+                    processedBy: user.uid,
                     createdAt: serverTimestamp()
                 });
             }
@@ -286,7 +313,7 @@ export default function CustomersPage() {
                             <Trash2 className="w-4 h-4" />
                         </button>
 
-                        {/* Personel Badge (Silme butonuyla çakışmasın diye sola kaydırıldı) */}
+                        {/* Personel Badge */}
                         {c.type === 'personnel' && (
                             <span className="absolute top-4 right-12 px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold uppercase rounded-full">
                                 Personel
