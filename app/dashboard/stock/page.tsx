@@ -11,7 +11,8 @@ import {
     doc,
     serverTimestamp,
     orderBy,
-    getDoc
+    getDoc,
+    where
 } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -27,18 +28,25 @@ import {
     Tag,
     Scissors,
     Car,
-    Briefcase
+    Briefcase,
+    Store
 } from 'lucide-react';
+// 🔥 ŞUBE BAĞLANTISI EKLENDİ
+import { useBranch } from '../../../components/providers/branch-context';
 
 export default function StockPage() {
     const [products, setProducts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState(false);
-    const [user, setUser] = useState<any>(null);
-    const [targetUid, setTargetUid] = useState<string | null>(null); // 🔥 Verinin çekileceği asıl ID
 
-    // Dinamik Sektör Ayarları (Varsayılan: Teknik Servis)
+    // 🔥 Context'ten Şube Bilgisini Alıyoruz
+    const { selectedBranch, branches } = useBranch();
+
+    const [user, setUser] = useState<any>(null);
+    const [targetUid, setTargetUid] = useState<string | null>(null);
+
+    // Dinamik Sektör Ayarları
     const [sectorConfig, setSectorConfig] = useState({
         title: 'Stok & Yedek Parça',
         description: 'Yedek parça ve ürün envanterini yönetin.',
@@ -54,7 +62,8 @@ export default function StockPage() {
         buyPrice: '',
         sellPrice: '',
         quantity: '',
-        criticalLevel: '5'
+        criticalLevel: '5',
+        branchId: '' // 🔥 Hangi Şubenin Stoğu
     });
 
     useEffect(() => {
@@ -65,37 +74,41 @@ export default function StockPage() {
                 setUser(currentUser);
 
                 try {
-                    // 1. KULLANICI PROFİLİNİ VE HEDEF ID'Yİ BELİRLE
+                    // 1. Hedef ID Belirle
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
 
-                    let ownerId = currentUser.uid; // Varsayılan: Kendisi
-
+                    let ownerId = currentUser.uid;
                     if (profileSnap.exists()) {
                         const data = profileSnap.data();
-                        // Eğer personel ise (ownerId var ve farklı), patronun ID'sini al
                         if (data.ownerId && data.ownerId !== currentUser.uid) {
                             ownerId = data.ownerId;
                         }
                     }
-
                     setTargetUid(ownerId);
 
-                    // 2. PATRONUN PROFİLİNDEN SEKTÖR BİLGİSİNİ ÇEK
-                    // (Personel de patronun sektör ayarını görmeli)
+                    // 2. Sektör Bilgisini Çek
                     const ownerProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'users', 'profile');
                     const ownerProfileSnap = await getDoc(ownerProfileRef);
-
                     if (ownerProfileSnap.exists()) {
                         const sector = ownerProfileSnap.data().sectorType || 'technical_service';
                         determineSectorConfig(sector);
                     }
 
-                    // 3. STOKLARI DİNLE (Patronun ID'sine göre)
-                    const q = query(
+                    // 3. Stokları Dinle (Şube Filtresi ile)
+                    let q = query(
                         collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'inventory'),
                         orderBy('name')
                     );
+
+                    // 🔥 EĞER ŞUBE SEÇİLİYSE SADECE O ŞUBENİN STOKLARINI GETİR
+                    if (selectedBranch) {
+                        q = query(
+                            collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'inventory'),
+                            where('branchId', '==', selectedBranch),
+                            orderBy('name')
+                        );
+                    }
 
                     unsubInventory = onSnapshot(q, (snapshot) => {
                         setProducts(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -115,54 +128,24 @@ export default function StockPage() {
             unsubscribeAuth();
             if (unsubInventory) unsubInventory();
         };
-    }, []);
+    }, [selectedBranch]); // 🔥 Şube değişince yeniden çalış
 
     const determineSectorConfig = (sector: string) => {
         switch (sector) {
             case 'beauty_health':
-                setSectorConfig({
-                    title: 'Hizmet & Ürün Menüsü',
-                    description: 'Salon hizmetlerinizi ve satılan ürünleri tanımlayın.',
-                    itemName: 'Hizmet / Ürün Adı',
-                    addButton: 'Hizmet Ekle',
-                    icon: Scissors
-                });
+                setSectorConfig({ title: 'Hizmet & Ürün Menüsü', description: 'Salon hizmetlerinizi ve satılan ürünleri tanımlayın.', itemName: 'Hizmet / Ürün Adı', addButton: 'Hizmet Ekle', icon: Scissors });
                 break;
             case 'retail_wholesale':
-                setSectorConfig({
-                    title: 'Ürün Yönetimi',
-                    description: 'Raflarınızdaki ürünleri ve stok durumunu takip edin.',
-                    itemName: 'Ürün Adı',
-                    addButton: 'Ürün Ekle',
-                    icon: Tag
-                });
+                setSectorConfig({ title: 'Ürün Yönetimi', description: 'Raflarınızdaki ürünleri ve stok durumunu takip edin.', itemName: 'Ürün Adı', addButton: 'Ürün Ekle', icon: Tag });
                 break;
             case 'auto_rental':
-                setSectorConfig({
-                    title: 'Parça & Araç Envanteri',
-                    description: 'Yedek parçaları ve eldeki araçları listeleyin.',
-                    itemName: 'Parça / Araç',
-                    addButton: 'Kayıt Ekle',
-                    icon: Car
-                });
+                setSectorConfig({ title: 'Parça & Araç Envanteri', description: 'Yedek parçaları ve eldeki araçları listeleyin.', itemName: 'Parça / Araç', addButton: 'Kayıt Ekle', icon: Car });
                 break;
             case 'other':
-                setSectorConfig({
-                    title: 'Envanter Yönetimi',
-                    description: 'İşletmenize ait tüm varlıkları takip edin.',
-                    itemName: 'Varlık Adı',
-                    addButton: 'Ekle',
-                    icon: Briefcase
-                });
+                setSectorConfig({ title: 'Envanter Yönetimi', description: 'İşletmenize ait tüm varlıkları takip edin.', itemName: 'Varlık Adı', addButton: 'Ekle', icon: Briefcase });
                 break;
-            default: // technical_service
-                setSectorConfig({
-                    title: 'Stok & Yedek Parça',
-                    description: 'Tamirde kullanılan parçaları ve cihazları yönetin.',
-                    itemName: 'Parça Adı',
-                    addButton: 'Parça Ekle',
-                    icon: Package
-                });
+            default:
+                setSectorConfig({ title: 'Stok & Yedek Parça', description: 'Tamirde kullanılan parçaları ve cihazları yönetin.', itemName: 'Parça Adı', addButton: 'Parça Ekle', icon: Package });
                 break;
         }
     };
@@ -171,6 +154,16 @@ export default function StockPage() {
         e.preventDefault();
         if (!user || !targetUid) return;
 
+        // Şube Belirleme
+        let finalBranchId = newItem.branchId || selectedBranch;
+
+        // Eğer şubeler var ama seçim yapılmadıysa, varsayılan olarak Merkez'i al
+        if (branches.length > 0 && !finalBranchId) {
+            finalBranchId = branches.find(b => b.isHeadquarters)?.id || branches[0]?.id;
+        }
+
+        const branchName = branches.find(b => b.id === finalBranchId)?.name || 'Merkez';
+
         await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'inventory'), {
             name: newItem.name,
             category: newItem.category,
@@ -178,12 +171,14 @@ export default function StockPage() {
             sellPrice: parseFloat(newItem.sellPrice) || 0,
             quantity: parseInt(newItem.quantity) || 0,
             criticalLevel: parseInt(newItem.criticalLevel) || 5,
-            createdBy: user.uid, // Kaydı yapan personel
+            branchId: finalBranchId, // 🔥 Şube ID
+            branchName: branchName, // 🔥 Şube Adı
+            createdBy: user.uid,
             createdAt: serverTimestamp()
         });
 
         setShowModal(false);
-        setNewItem({ name: '', category: '', buyPrice: '', sellPrice: '', quantity: '', criticalLevel: '5' });
+        setNewItem({ name: '', category: '', buyPrice: '', sellPrice: '', quantity: '', criticalLevel: '5', branchId: '' });
     };
 
     const updateQuantity = async (id: string, currentQty: number, change: number) => {
@@ -193,7 +188,7 @@ export default function StockPage() {
 
         await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'inventory', id), {
             quantity: newQty,
-            lastUpdatedBy: user.uid // Güncelleyen personel
+            lastUpdatedBy: user.uid
         });
     };
 
@@ -211,6 +206,12 @@ export default function StockPage() {
 
     const Icon = sectorConfig.icon;
 
+    // Modal açıldığında şube seç
+    const openNewModal = () => {
+        setNewItem(prev => ({ ...prev, branchId: selectedBranch || '' }));
+        setShowModal(true);
+    }
+
     return (
         <div className="space-y-6 pb-20">
             {/* Başlık ve Buton */}
@@ -219,11 +220,15 @@ export default function StockPage() {
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <Icon className="w-8 h-8 text-blue-600" /> {sectorConfig.title}
                     </h1>
-                    <p className="text-slate-500 dark:text-slate-400">{sectorConfig.description}</p>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">
+                        {selectedBranch
+                            ? `${branches.find(b => b.id === selectedBranch)?.name} şubesindeki stoklar.`
+                            : 'Tüm şubelerdeki stoklar.'}
+                    </p>
                 </div>
                 <button
-                    onClick={() => setShowModal(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
+                    onClick={openNewModal}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30 active:scale-95"
                 >
                     <Plus className="w-5 h-5" /> {sectorConfig.addButton}
                 </button>
@@ -267,7 +272,14 @@ export default function StockPage() {
                                 </div>
                             )}
 
-                            <div className="flex items-start gap-4 mb-4">
+                            {/* Şube Badge */}
+                            {branches.length > 0 && !selectedBranch && (
+                                <div className={`absolute top-3 ${p.quantity <= p.criticalLevel ? 'right-20' : 'right-3'} text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1`}>
+                                    <Store className="w-3 h-3" /> {p.branchName || 'Merkez'}
+                                </div>
+                            )}
+
+                            <div className="flex items-start gap-4 mb-4 mt-2">
                                 <div className={`p-3 rounded-lg ${p.quantity <= p.criticalLevel ? 'bg-red-50 dark:bg-red-900/20 text-red-600' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
                                     <Icon className="w-6 h-6" />
                                 </div>
@@ -333,6 +345,27 @@ export default function StockPage() {
                         </div>
 
                         <form onSubmit={handleAddProduct} className="p-6 space-y-4">
+
+                            {/* 🔥 ŞUBE SEÇİMİ */}
+                            {branches.length > 0 && !selectedBranch && (
+                                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
+                                    <label className="block text-xs font-bold mb-1 text-blue-700 dark:text-blue-300 uppercase">Stok Eklenecek Şube</label>
+                                    <div className="relative">
+                                        <Store className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <select
+                                            className="w-full pl-9 p-2 bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 rounded-lg outline-none text-sm appearance-none"
+                                            value={newItem.branchId}
+                                            onChange={e => setNewItem({ ...newItem, branchId: e.target.value })}
+                                        >
+                                            <option value="">Merkez (Varsayılan)</option>
+                                            {branches.map(b => (
+                                                <option key={b.id} value={b.id}>{b.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{sectorConfig.itemName}</label>
                                 <input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 transition-all"

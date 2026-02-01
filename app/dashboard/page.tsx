@@ -4,7 +4,18 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../../lib/firebase';
 import { useRouter } from 'next/navigation';
-import { collection, query, onSnapshot, orderBy, doc, getDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import {
+    collection,
+    query,
+    onSnapshot,
+    orderBy,
+    doc,
+    getDoc,
+    addDoc,
+    deleteDoc,
+    serverTimestamp,
+    where // 🔥 Filtreleme için eklendi
+} from 'firebase/firestore';
 import {
     TrendingUp,
     TrendingDown,
@@ -36,12 +47,17 @@ import {
     Legend
 } from 'recharts';
 import Link from 'next/link';
+// 🔥 ŞUBE BAĞLANTISI EKLENDİ
+import { useBranch } from '../../components/providers/branch-context';
 
 export default function DashboardPage() {
     const [user, setUser] = useState<any>(null);
     const [userData, setUserData] = useState<any>(null); // Profil verisi
     const [loading, setLoading] = useState(true);
     const [timeFilter, setTimeFilter] = useState<'week' | 'month'>('week');
+
+    // 🔥 Şube Bilgisi
+    const { selectedBranch } = useBranch();
 
     // Duyuru Sistemi
     const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -88,8 +104,8 @@ export default function DashboardPage() {
                         configureSector(data.sectorType || 'technical_service');
                     }
 
-                    // Dinleyicileri Başlat
-                    const listeners = setupRealtimeListeners(currentUser.uid, timeFilter, data);
+                    // Dinleyicileri Başlat (Seçili şubeyi de gönderiyoruz)
+                    const listeners = setupRealtimeListeners(currentUser.uid, timeFilter, data, selectedBranch);
                     unsubTrans = listeners.unsubTrans;
                     unsubJobs = listeners.unsubJobs;
                     unsubAnnounce = listeners.unsubAnnounce;
@@ -103,7 +119,7 @@ export default function DashboardPage() {
             if (unsubJobs) unsubJobs();
             if (unsubAnnounce) unsubAnnounce();
         };
-    }, [router, timeFilter]);
+    }, [router, timeFilter, selectedBranch]); // 🔥 selectedBranch değişince yenile
 
     const configureSector = (sector: string) => {
         let config = { title: 'Aktif İşler', unit: 'adet', icon: Briefcase, path: '/dashboard/jobs' };
@@ -113,7 +129,7 @@ export default function DashboardPage() {
         setSectorConfig(config);
     };
 
-    const setupRealtimeListeners = (uid: string, filter: 'week' | 'month', profileData: any) => {
+    const setupRealtimeListeners = (uid: string, filter: 'week' | 'month', profileData: any, branchId: string | null) => {
         // Hedef ID (Patron veya Kendisi)
         const targetUid = (profileData.role === 'staff' || profileData.role === 'technician' || profileData.role === 'sales' || profileData.role === 'accounting') && profileData.ownerId
             ? profileData.ownerId
@@ -121,8 +137,22 @@ export default function DashboardPage() {
 
         const userPath = `artifacts/servis-360-live/users/${targetUid}`;
 
-        // 1. FİNANS DİNLEYİCİSİ
-        const qTrans = query(collection(db, userPath, 'finance'), orderBy('date', 'asc'));
+        // 1. FİNANS DİNLEYİCİSİ (Şube Filtreli)
+        let qTrans;
+        if (branchId) {
+            // Şube seçiliyse sadece o şubenin verilerini getir
+            qTrans = query(
+                collection(db, userPath, 'finance'),
+                where('branchId', '==', branchId),
+                orderBy('date', 'asc')
+            );
+        } else {
+            // Şube seçili değilse (Tüm Şubeler) hepsini getir
+            qTrans = query(
+                collection(db, userPath, 'finance'),
+                orderBy('date', 'asc')
+            );
+        }
 
         const unsubTrans = onSnapshot(qTrans, (snapshot) => {
             let periodInc = 0, periodExp = 0;
@@ -174,15 +204,24 @@ export default function DashboardPage() {
             setLoading(false);
         });
 
-        // 2. İŞ DİNLEYİCİSİ
-        const qJobs = query(collection(db, userPath, 'jobs'));
+        // 2. İŞ DİNLEYİCİSİ (Şube Filtreli)
+        let qJobs;
+        if (branchId) {
+            qJobs = query(
+                collection(db, userPath, 'jobs'),
+                where('branchId', '==', branchId)
+            );
+        } else {
+            qJobs = query(collection(db, userPath, 'jobs'));
+        }
+
         const unsubJobs = onSnapshot(qJobs, (snapshot) => {
             const pending = snapshot.docs.filter(d => ['pending', 'in_progress', 'waiting_parts'].includes(d.data().status)).length;
             const completed = snapshot.docs.filter(d => d.data().status === 'completed').length;
             setStats(prev => ({ ...prev, activeWork: pending, completedWork: completed }));
         });
 
-        // 3. DUYURU DİNLEYİCİSİ (Sadece İşletmeler İçin)
+        // 3. DUYURU DİNLEYİCİSİ (Sadece İşletmeler İçin - Şubeden Bağımsız)
         let unsubAnnounce = () => { };
         if (profileData.accountType !== 'individual') {
             const qAnnounce = query(collection(db, userPath, 'announcements'), orderBy('createdAt', 'desc'));
@@ -227,12 +266,9 @@ export default function DashboardPage() {
     if (!user || !userData) return null;
 
     const isIndividual = userData.accountType === 'individual';
-    // Patron/Yönetici mi? (Duyuru ekleme ve Finans görme yetkisi)
     const isManager = ['corporate', 'esnaf', 'business', 'admin'].includes(userData.role) || ['corporate', 'esnaf', 'business'].includes(userData.accountType);
 
-    // 🔥 FİNANSAL VERİLERİ GİZLEME MANTIĞI
-    // Tekniker, Personel ve Satış rolleri finansal toplamları ve grafikleri göremez.
-    // Muhasebe (accounting) ve Yöneticiler görebilir.
+    // Finans Gizleme Mantığı
     const hideFinance = ['technician', 'technical', 'staff', 'sales', 'personnel', 'employee'].includes(userData.role);
 
     return (
@@ -245,7 +281,8 @@ export default function DashboardPage() {
                         {isIndividual ? userData.fullName : (userData.companyName || 'İşletme Özeti')}
                     </h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                        {isIndividual ? 'Finansal durum ve hesap özeti.' : 'İşletmenizin anlık performans durumu.'}
+                        {isIndividual ? 'Finansal durum ve hesap özeti.' :
+                            selectedBranch ? 'Seçili şube için performans durumu.' : 'İşletmenizin genel anlık performans durumu.'}
                     </p>
                 </div>
 
@@ -257,7 +294,7 @@ export default function DashboardPage() {
                 )}
             </div>
 
-            {/* DUYURU PANOSU (Sadece Kurumsal/Esnaf ve Personelleri Görür) */}
+            {/* DUYURU PANOSU */}
             {!isIndividual && (
                 <div className="bg-gradient-to-r from-blue-900 to-slate-900 rounded-2xl p-6 text-white border border-blue-800 shadow-lg relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-10"><Megaphone className="w-24 h-24" /></div>
@@ -267,7 +304,6 @@ export default function DashboardPage() {
                             <Megaphone className="w-5 h-5 text-yellow-400 animate-pulse" /> Duyuru Panosu
                         </h3>
 
-                        {/* Duyuru Ekleme (Sadece Yönetici) */}
                         {isManager && (
                             <div className="flex gap-2 mb-6">
                                 <input
@@ -285,7 +321,6 @@ export default function DashboardPage() {
                             </div>
                         )}
 
-                        {/* Duyuru Listesi */}
                         <div className="space-y-3 max-h-40 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/20">
                             {announcements.length === 0 ? (
                                 <p className="text-white/50 text-xs italic">Henüz aktif bir duyuru yok.</p>
@@ -311,36 +346,31 @@ export default function DashboardPage() {
                 </div>
             )}
 
-            {/* KARTLAR - GRID (Tekniker sadece Aktif İşleri Görür) */}
+            {/* KARTLAR */}
             <div className={`grid grid-cols-1 ${hideFinance ? 'md:grid-cols-1' : 'min-[480px]:grid-cols-2 lg:grid-cols-4'} gap-4`}>
 
-                {/* 1, 2, 3: FİNANSAL KARTLAR (Gizlenebilir) */}
                 {!hideFinance && (
                     <>
-                        {/* Dönemsel Gelir */}
                         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
                             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><TrendingUp className="w-20 h-20 text-green-600" /></div>
                             <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{timeFilter === 'week' ? 'Bu Hafta' : 'Son 30 Gün'} Gelir</p>
                             <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{stats.periodIncome.toLocaleString()} ₺</h3>
                         </div>
 
-                        {/* Dönemsel Gider */}
                         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
                             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><TrendingDown className="w-20 h-20 text-red-600" /></div>
                             <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{timeFilter === 'week' ? 'Bu Hafta' : 'Son 30 Gün'} Gider</p>
                             <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{stats.periodExpense.toLocaleString()} ₺</h3>
                         </div>
 
-                        {/* NET KASA */}
                         <div className={`p-5 rounded-2xl shadow-lg relative overflow-hidden group text-white ${stats.netBalance >= 0 ? 'bg-gradient-to-br from-blue-600 to-indigo-700' : 'bg-gradient-to-br from-red-600 to-orange-700'}`}>
                             <div className="absolute top-0 right-0 p-4 opacity-20"><PiggyBank className="w-20 h-20 text-white" /></div>
-                            <p className="text-white/80 text-[10px] font-bold uppercase tracking-wider">NET KASA (TOPLAM)</p>
+                            <p className="text-white/80 text-[10px] font-bold uppercase tracking-wider">NET KASA ({selectedBranch ? 'ŞUBE' : 'TOPLAM'})</p>
                             <h3 className="text-2xl font-black mt-1">{stats.netBalance.toLocaleString()} ₺</h3>
                         </div>
                     </>
                 )}
 
-                {/* 4. Aktif İşler (HERKES GÖRÜR) */}
                 {!isIndividual && (
                     <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between group cursor-pointer hover:border-blue-400 transition-all" onClick={() => router.push(sectorConfig.path)}>
                         <div>
@@ -359,7 +389,6 @@ export default function DashboardPage() {
             {/* GRAFİK VE AKTİVİTE */}
             <div className={`grid grid-cols-1 ${hideFinance ? 'lg:grid-cols-1' : 'lg:grid-cols-3'} gap-6`}>
 
-                {/* Grafik (FİNANS YETKİSİ YOKSA GİZLE) */}
                 {!hideFinance && (
                     <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                         <h3 className="text-base font-bold mb-6 flex items-center gap-2 text-slate-900 dark:text-white">
@@ -381,7 +410,6 @@ export default function DashboardPage() {
                     </div>
                 )}
 
-                {/* Son Aktiviteler (HERKES GÖRÜR) */}
                 <div className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full max-h-[400px] ${hideFinance ? 'lg:col-span-1' : ''}`}>
                     <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 flex justify-between items-center">
                         <h3 className="font-bold text-slate-900 dark:text-white flex gap-2 text-sm">
