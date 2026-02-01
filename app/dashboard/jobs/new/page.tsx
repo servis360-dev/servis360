@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth'; // Auth dinleyici eklendi
 import {
     Save,
     User,
@@ -14,13 +15,17 @@ import {
     Plus,
     CheckCircle2,
     ArrowLeft,
-    ScanLine
+    ScanLine,
+    ShieldAlert
 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function NewJobPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
+    const [user, setUser] = useState<any>(null); // Mevcut kullanıcı
+    const [targetUid, setTargetUid] = useState<string | null>(null); // Verinin yazılacağı ID (Patron)
+    const [isLicenseValid, setIsLicenseValid] = useState(true); // Patronun lisansı aktif mi?
 
     // Form Verileri
     const [formData, setFormData] = useState({
@@ -43,6 +48,58 @@ export default function NewJobPage() {
     // Aksesuar Seçenekleri
     const accessoryOptions = ['Şarj Aleti', 'Kılıf', 'Sim Kart', 'Hafıza Kartı', 'Kutu'];
 
+    // 1. KULLANICI VE HEDEF HESAP TESPİTİ
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            if (currentUser) {
+                setUser(currentUser);
+                try {
+                    // Profil bilgisini çek (Personel mi, Patron mu?)
+                    const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
+                    const profileSnap = await getDoc(profileRef);
+
+                    let ownerId = currentUser.uid; // Varsayılan: Kendisi
+
+                    if (profileSnap.exists()) {
+                        const data = profileSnap.data();
+
+                        // Eğer personel ise (ownerId var ve farklı), patronun ID'sini al
+                        if (data.ownerId && data.ownerId !== currentUser.uid) {
+                            ownerId = data.ownerId;
+                        }
+                    }
+
+                    setTargetUid(ownerId);
+
+                    // 2. PATRONUN LİSANS KONTROLÜ
+                    // İşlemler patronun hesabına yapılacağı için onun lisansı kontrol edilmeli
+                    const ownerProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'users', 'profile');
+                    const ownerSnap = await getDoc(ownerProfileRef);
+
+                    if (ownerSnap.exists()) {
+                        const ownerData = ownerSnap.data();
+                        // Admin veya Süper Admin ise lisans sonsuzdur
+                        if (ownerData.role === 'admin' || ownerData.role === 'super_admin') {
+                            setIsLicenseValid(true);
+                        } else if (ownerData.licenseEndsAt) {
+                            const now = new Date();
+                            const endDate = ownerData.licenseEndsAt.toDate();
+                            if (endDate < now) {
+                                setIsLicenseValid(false); // Süre dolmuş
+                            }
+                        }
+                    }
+
+                } catch (err) {
+                    console.error("Kullanıcı doğrulama hatası:", err);
+                }
+            } else {
+                router.push('/login');
+            }
+        });
+        return () => unsubscribe();
+    }, [router]);
+
     const handleCustomerSearch = async (term: string) => {
         setFormData({ ...formData, customerName: term });
         if (term.length < 2) {
@@ -51,13 +108,11 @@ export default function NewJobPage() {
             return;
         }
 
-        const user = auth.currentUser;
-        if (!user) return;
+        if (!targetUid) return; // Hedef hesap belirlenmediyse arama yapma
 
-        // Basit bir arama (Firestore'da 'name' ile başlayanlar)
-        // Not: Gerçek projede Algolia veya ElasticSearch daha iyi olur ama bu iş görür.
+        // Müşteriyi PATRONUN listesinden ara
         const q = query(
-            collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers'),
+            collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'customers'),
             orderBy('name'),
             where('name', '>=', term),
             where('name', '<=', term + '\uf8ff'),
@@ -91,13 +146,19 @@ export default function NewJobPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // 🛑 LİSANS KONTROLÜ
+        if (!isLicenseValid) {
+            alert("⚠️ İŞLEM BAŞARISIZ!\n\nFirmanızın lisans süresi dolmuştur. Yeni kayıt oluşturamazsınız.\nLütfen yöneticinizle iletişime geçin.");
+            return;
+        }
+
+        if (!user || !targetUid) return;
         setLoading(true);
-        const user = auth.currentUser;
-        if (!user) return;
 
         try {
-            // 1. İş Emrini Kaydet
-            const jobRef = await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'jobs'), {
+            // 1. İş Emrini Kaydet (PATRONUN ID'sine)
+            const jobRef = await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs'), {
                 customer: formData.customerName,
                 phone: formData.phone,
                 device: formData.device,
@@ -109,18 +170,18 @@ export default function NewJobPage() {
                 priority: formData.priority,
                 price: formData.estimatedPrice,
 
-                status: 'pending', // pending, in_progress, waiting_parts, completed
-                paymentStatus: 'pending', // pending, paid
+                status: 'pending',
+                paymentStatus: 'pending',
 
+                createdBy: user.uid, // Kaydı oluşturan personel (Log için)
                 createdAt: serverTimestamp()
             });
 
-            // 2. Müşteri Kayıtlı Değilse Otomatik Kaydet (Opsiyonel ama yararlı)
-            // Burada basitlik adına geçiyorum, kullanıcı "Müşteriler" sayfasından ekleyebilir.
+            // 2. Müşteri Kayıtlı Değilse Otomatik Kaydet (Patronun listesine)
+            // (Mevcut mantıkta opsiyonel bırakılmıştı, burası aynen kalabilir veya eklenebilir)
 
-            // İşlem Başarılı
-            // Detay sayfasına yönlendir (Fiş Yazdırmak için)
-            router.push(`/dashboard/jobs/${jobRef.id}`);
+            // İşlem Başarılı -> Yönlendir
+            router.push(`/dashboard/jobs`); // Listeye dön (Detay sayfası henüz hazır değilse listeye dönmek daha güvenli)
 
         } catch (error) {
             console.error(error);
@@ -131,6 +192,17 @@ export default function NewJobPage() {
 
     return (
         <div className="max-w-4xl mx-auto pb-20">
+            {/* LİSANS UYARISI BANNER */}
+            {!isLicenseValid && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-6 flex items-center gap-3 animate-pulse">
+                    <ShieldAlert className="w-6 h-6" />
+                    <div>
+                        <h3 className="font-bold">Hizmet Donduruldu</h3>
+                        <p className="text-sm">İşletmenizin lisans süresi dolduğu için yeni kayıt oluşturamazsınız. Lütfen yönetici ile görüşün.</p>
+                    </div>
+                </div>
+            )}
+
             {/* Başlık */}
             <div className="flex items-center gap-4 mb-6">
                 <Link href="/dashboard/jobs" className="p-2 bg-white dark:bg-slate-800 rounded-lg border hover:bg-slate-50 transition-colors">
@@ -142,7 +214,7 @@ export default function NewJobPage() {
                 </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <form onSubmit={handleSubmit} className={`grid grid-cols-1 md:grid-cols-3 gap-6 ${!isLicenseValid ? 'opacity-50 pointer-events-none' : ''}`}>
 
                 {/* SOL: Müşteri & Cihaz */}
                 <div className="md:col-span-2 space-y-6">
@@ -281,8 +353,8 @@ export default function NewJobPage() {
                                         type="button"
                                         onClick={() => toggleAccessory(acc)}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${formData.accessories.includes(acc)
-                                                ? 'bg-blue-600 text-white border-blue-600'
-                                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-400'
+                                            ? 'bg-blue-600 text-white border-blue-600'
+                                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-400'
                                             }`}
                                     >
                                         {acc}
@@ -318,8 +390,8 @@ export default function NewJobPage() {
 
                     <button
                         type="submit"
-                        disabled={loading}
-                        className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-2xl shadow-xl shadow-green-500/30 flex items-center justify-center gap-2 transform active:scale-95 transition-all"
+                        disabled={loading || !isLicenseValid}
+                        className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-2xl shadow-xl shadow-green-500/30 flex items-center justify-center gap-2 transform active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Kaydediliyor...' : <><Save className="w-5 h-5" /> Kaydı Aç</>}
                     </button>

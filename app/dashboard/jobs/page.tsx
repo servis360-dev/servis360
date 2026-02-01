@@ -17,10 +17,7 @@ import {
     MessageCircle,
     X,
     Smartphone,
-    Clock,
-    Wrench,
-    MoreVertical,
-    Wallet // <-- EKSİK OLAN BU İKON EKLENDİ
+    Wallet
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -37,6 +34,10 @@ export default function JobsPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [user, setUser] = useState<any>(null);
+
+    // 🔥 YENİ: Verilerin çekileceği asıl ID (Patronun ID'si)
+    const [targetUid, setTargetUid] = useState<string | null>(null);
+
     const [whatsappTemplate, setWhatsappTemplate] = useState('Sayın müşterimiz, cihazınızın işlemleri tamamlanmıştır. Ücret: {tutar}');
 
     // Modal State
@@ -48,25 +49,47 @@ export default function JobsPage() {
             if (currentUser) {
                 setUser(currentUser);
 
-                // 1. WhatsApp Şablonunu Çek
                 try {
+                    // 1. Profil Bilgisini Çek (Personel mi, Patron mu?)
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
-                    if (profileSnap.exists() && profileSnap.data().whatsappTemplates?.deviceCompleted) {
-                        setWhatsappTemplate(profileSnap.data().whatsappTemplates.deviceCompleted);
-                    }
-                } catch (err) { console.error("Şablon çekilemedi", err); }
 
-                // 2. İşleri Çek
-                const q = query(
-                    collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'jobs'),
-                    orderBy('createdAt', 'desc')
-                );
-                const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-                    setJobs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    let ownerId = currentUser.uid; // Varsayılan: Kendisi
+
+                    if (profileSnap.exists()) {
+                        const data = profileSnap.data();
+                        // Eğer ownerId varsa ve kendi ID'sinden farklıysa, o personelin patronudur.
+                        if (data.ownerId && data.ownerId !== currentUser.uid) {
+                            ownerId = data.ownerId;
+                        }
+                    }
+
+                    setTargetUid(ownerId);
+
+                    // 2. Patronun Ayarlarından WhatsApp Şablonunu Çek
+                    const ownerProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'users', 'profile');
+                    const ownerProfileSnap = await getDoc(ownerProfileRef);
+                    if (ownerProfileSnap.exists() && ownerProfileSnap.data().whatsappTemplates?.deviceCompleted) {
+                        setWhatsappTemplate(ownerProfileSnap.data().whatsappTemplates.deviceCompleted);
+                    }
+
+                    // 3. İşleri Çek (Patronun ID'sine göre)
+                    const q = query(
+                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'jobs'),
+                        orderBy('createdAt', 'desc')
+                    );
+
+                    const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+                        setJobs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                        setLoading(false);
+                    });
+
+                    return () => unsubscribeSnapshot();
+
+                } catch (err) {
+                    console.error("Veri çekme hatası", err);
                     setLoading(false);
-                });
-                return () => unsubscribeSnapshot();
+                }
             }
         });
         return () => unsubscribeAuth();
@@ -92,27 +115,45 @@ export default function JobsPage() {
     };
 
     const handleStatusChange = async (job: any, newStatus: string) => {
-        if (!user) return;
+        if (!user || !targetUid) return;
+
         if (newStatus === 'completed') {
             if (job.status === 'completed' && job.paymentStatus === 'paid') return;
             setSelectedJobForPayment(job);
             setIsPaymentModalOpen(true);
             return;
         }
-        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'jobs', job.id), { status: newStatus });
+
+        // İşlemi Patronun DB'sine kaydet
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', job.id), { status: newStatus });
     };
 
     const handlePaymentReceived = async (method: string) => {
-        if (!selectedJobForPayment || !user) return;
+        if (!selectedJobForPayment || !user || !targetUid) return;
+
         const batch = writeBatch(db);
-        const jobRef = doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'jobs', selectedJobForPayment.id);
 
-        batch.update(jobRef, { status: 'completed', paymentStatus: 'paid', paymentMethod: method, completedAt: serverTimestamp() });
+        // 1. İşi Güncelle (Patronun DB)
+        const jobRef = doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', selectedJobForPayment.id);
+        batch.update(jobRef, {
+            status: 'completed',
+            paymentStatus: 'paid',
+            paymentMethod: method,
+            completedAt: serverTimestamp(),
+            completedBy: user.uid // İşlemi yapan personel (opsiyonel log)
+        });
 
-        const financeRef = doc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'));
+        // 2. Finans Kaydı Oluştur (Patronun Kasası)
+        const financeRef = doc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance'));
         batch.set(financeRef, {
-            type: 'income', category: 'service', amount: Number(selectedJobForPayment.price || 0),
-            description: `${selectedJobForPayment.customer} - Servis`, date: serverTimestamp(), relatedJobId: selectedJobForPayment.id, paymentMethod: method
+            type: 'income',
+            category: 'service',
+            amount: Number(selectedJobForPayment.price || 0),
+            description: `${selectedJobForPayment.customer} - Servis`,
+            date: serverTimestamp(),
+            relatedJobId: selectedJobForPayment.id,
+            paymentMethod: method,
+            processedBy: user.uid // Parayı alan personel
         });
 
         await batch.commit();
@@ -121,8 +162,8 @@ export default function JobsPage() {
     };
 
     const handlePaymentPending = async () => {
-        if (!selectedJobForPayment || !user) return;
-        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'jobs', selectedJobForPayment.id), {
+        if (!selectedJobForPayment || !user || !targetUid) return;
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', selectedJobForPayment.id), {
             status: 'completed', paymentStatus: 'pending', completedAt: serverTimestamp()
         });
         setIsPaymentModalOpen(false);
@@ -130,18 +171,23 @@ export default function JobsPage() {
     };
 
     const handleUndoPayment = async (job: any) => {
-        if (!user || !confirm("Ödeme iptal edilsin mi?")) return;
-        const q = query(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), where('relatedJobId', '==', job.id));
+        if (!user || !targetUid || !confirm("Ödeme iptal edilsin mi?")) return;
+
+        // Finans kaydını bul ve sil (Patronun DB'sinden)
+        const q = query(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance'), where('relatedJobId', '==', job.id));
         const snaps = await getDocs(q);
+
         const batch = writeBatch(db);
         snaps.forEach(d => batch.delete(d.ref));
-        batch.update(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'jobs', job.id), { paymentStatus: 'pending', paymentMethod: null });
+
+        batch.update(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', job.id), { paymentStatus: 'pending', paymentMethod: null });
         await batch.commit();
     };
 
     const handleDelete = async (id: string) => {
+        if (!user || !targetUid) return;
         if (confirm("Silmek istediğinize emin misiniz?")) {
-            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'jobs', id));
+            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', id));
         }
     };
 
@@ -179,7 +225,7 @@ export default function JobsPage() {
                 </div>
             </div>
 
-            {/* 🔥 MOBİL KART GÖRÜNÜMÜ (MD Altı) */}
+            {/* MOBİL KART GÖRÜNÜMÜ (MD Altı) */}
             <div className="grid grid-cols-1 gap-4 md:hidden">
                 {loading ? <p className="text-center py-10 text-slate-500">Yükleniyor...</p> : filteredJobs.length === 0 ? (
                     <div className="text-center py-10 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
@@ -187,7 +233,6 @@ export default function JobsPage() {
                     </div>
                 ) : filteredJobs.map(job => (
                     <div key={job.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
-                        {/* Sol Kenar Çizgisi (Duruma Göre Renkli) */}
                         <div className={`absolute left-0 top-0 bottom-0 w-1 ${job.status === 'completed' ? 'bg-green-500' : job.status === 'pending' ? 'bg-yellow-500' : 'bg-blue-500'}`}></div>
 
                         <div className="flex justify-between items-start mb-3 pl-2">
@@ -204,7 +249,6 @@ export default function JobsPage() {
                             </div>
                         </div>
 
-                        {/* Durum Seçici (Geniş Buton Gibi) */}
                         <div className="mb-4 pl-2">
                             <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">DURUM</label>
                             <div className="relative">
@@ -219,16 +263,13 @@ export default function JobsPage() {
                                     <option value="completed">Tamamlandı</option>
                                     <option value="cancelled">İptal</option>
                                 </select>
-                                {/* Aşağı ok ikonu */}
                                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Alt Aksiyon Butonları */}
                         <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-700 pl-2">
-                            {/* WhatsApp */}
                             <button
                                 onClick={() => sendWhatsAppMessage(job)}
                                 className="flex-1 flex items-center justify-center gap-2 py-2 bg-green-50 text-green-600 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors"
@@ -236,7 +277,6 @@ export default function JobsPage() {
                                 <MessageCircle className="w-4 h-4" /> WhatsApp
                             </button>
 
-                            {/* Ödeme / İptal */}
                             {job.status === 'completed' && job.paymentStatus === 'paid' ? (
                                 <button onClick={() => handleUndoPayment(job)} className="p-2 bg-red-50 text-red-500 rounded-lg" title="Ödemeyi İptal Et">
                                     <Undo2 className="w-4 h-4" />
@@ -250,7 +290,6 @@ export default function JobsPage() {
                                 </button>
                             )}
 
-                            {/* Sil */}
                             <button onClick={() => handleDelete(job.id)} className="p-2 bg-slate-100 text-slate-400 hover:text-red-500 rounded-lg transition-colors">
                                 <Trash2 className="w-4 h-4" />
                             </button>
@@ -259,7 +298,7 @@ export default function JobsPage() {
                 ))}
             </div>
 
-            {/* 🔥 MASAÜSTÜ TABLO GÖRÜNÜMÜ (MD Üzeri) */}
+            {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ (MD Üzeri) */}
             <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                     <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
