@@ -26,7 +26,7 @@ import { signOut } from 'firebase/auth';
 
 interface SidebarProps {
     userRole?: string;
-    userProfile?: any; // 👈 HATA BURADAYDI: Bu satır eklenerek tip hatası giderildi.
+    userProfile?: any; // Profil detayları
     isOpen: boolean;
     onClose: () => void;
 }
@@ -123,11 +123,12 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                     border-r border-white/10 md:border-slate-200 md:dark:border-slate-800
                     shadow-2xl shadow-black/50 md:shadow-none
                     transform transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
+                    flex flex-col  /* 🔥 EKLENDİ: İçerik taşmasını yönetmek için gerekli */
                     ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
                 `}
             >
                 {/* 1. LOGO ALANI */}
-                <div className="h-20 flex items-center justify-between px-6 border-b border-white/5 md:border-slate-200 md:dark:border-slate-800 relative overflow-hidden">
+                <div className="h-20 flex-shrink-0 flex items-center justify-between px-6 border-b border-white/5 md:border-slate-200 md:dark:border-slate-800 relative overflow-hidden">
                     {/* Arka plan ışık efekti (Sadece mobilde) */}
                     <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-blue-600/20 to-transparent opacity-50 md:hidden pointer-events-none"></div>
 
@@ -149,7 +150,8 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                 </div>
 
                 {/* 2. MENÜ LİSTESİ */}
-                <div className="flex-1 overflow-y-auto py-6 px-4 space-y-8 scrollbar-hide">
+                {/* 🔥 overscroll-contain EKLENDİ: Arka planın kaymasını engeller */}
+                <div className="flex-1 overflow-y-auto py-6 px-4 space-y-8 scrollbar-hide overscroll-contain">
                     {MENU_ITEMS.map((section, index) => {
                         const authorizedItems = section.items.filter(item => item.allowedRoles.includes(normalizedRole));
                         if (authorizedItems.length === 0) return null;
@@ -182,7 +184,7 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                                                     <span>{item.label}</span>
                                                 </div>
 
-                                                {/* Aktif ikonu (Sadece mobilde şık durur) */}
+                                                {/* Aktif ikonu */}
                                                 {isActive && <ChevronRight className="w-4 h-4 text-blue-500 opacity-50" />}
                                             </Link>
                                         );
@@ -194,7 +196,7 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                 </div>
 
                 {/* 3. ALT PROFİL ALANI */}
-                <div className="p-4 border-t border-white/5 md:border-slate-200 md:dark:border-slate-800 bg-[#0B1121]/50 md:bg-transparent backdrop-blur-xl">
+                <div className="flex-shrink-0 p-4 border-t border-white/5 md:border-slate-200 md:dark:border-slate-800 bg-[#0B1121]/50 md:bg-transparent backdrop-blur-xl">
                     <button
                         onClick={handleLogout}
                         className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20"
