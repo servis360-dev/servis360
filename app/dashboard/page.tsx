@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../../lib/firebase';
 import { useRouter } from 'next/navigation';
-import { collection, query, onSnapshot, orderBy, doc, getDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, doc, getDoc, addDoc, deleteDoc, serverTimestamp, where } from 'firebase/firestore';
 import {
     Wallet,
     TrendingUp,
@@ -20,8 +20,11 @@ import {
     ArrowDownRight,
     ArrowUpRight,
     Clock,
-    PiggyBank, // Net Kasa İkonu
-    Building2
+    PiggyBank,
+    Building2,
+    Megaphone, // Duyuru İkonu
+    Send,
+    Trash2
 } from 'lucide-react';
 import {
     BarChart,
@@ -37,16 +40,19 @@ import Link from 'next/link';
 
 export default function DashboardPage() {
     const [user, setUser] = useState<any>(null);
-    const [accountType, setAccountType] = useState('business');
-    const [userName, setUserName] = useState('');
+    const [userData, setUserData] = useState<any>(null); // Profil verisi
     const [loading, setLoading] = useState(true);
     const [timeFilter, setTimeFilter] = useState<'week' | 'month'>('week');
 
+    // Duyuru Sistemi
+    const [announcements, setAnnouncements] = useState<any[]>([]);
+    const [newAnnouncement, setNewAnnouncement] = useState('');
+
     // İstatistikler
     const [stats, setStats] = useState({
-        periodIncome: 0,   // Seçili dönem geliri
-        periodExpense: 0,  // Seçili dönem gideri
-        netBalance: 0,     // TOPLAM NET KASA (Tüm zamanlar)
+        periodIncome: 0,
+        periodExpense: 0,
+        netBalance: 0,
         activeWork: 0,
         completedWork: 0,
     });
@@ -65,6 +71,7 @@ export default function DashboardPage() {
     useEffect(() => {
         let unsubTrans: () => void;
         let unsubJobs: () => void;
+        let unsubAnnounce: () => void;
 
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (!currentUser) {
@@ -76,16 +83,18 @@ export default function DashboardPage() {
 
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    setAccountType(data.accountType || 'business');
-                    setUserName(data.fullName || 'Kullanıcı');
+                    setUserData(data);
+
                     if (data.accountType !== 'individual') {
                         configureSector(data.sectorType || 'technical_service');
                     }
-                }
 
-                const listeners = setupRealtimeListeners(currentUser.uid, timeFilter);
-                unsubTrans = listeners.unsubTrans;
-                unsubJobs = listeners.unsubJobs;
+                    // Dinleyicileri Başlat
+                    const listeners = setupRealtimeListeners(currentUser.uid, timeFilter, data);
+                    unsubTrans = listeners.unsubTrans;
+                    unsubJobs = listeners.unsubJobs;
+                    unsubAnnounce = listeners.unsubAnnounce;
+                }
             }
         });
 
@@ -93,6 +102,7 @@ export default function DashboardPage() {
             unsubscribeAuth();
             if (unsubTrans) unsubTrans();
             if (unsubJobs) unsubJobs();
+            if (unsubAnnounce) unsubAnnounce();
         };
     }, [router, timeFilter]);
 
@@ -104,25 +114,30 @@ export default function DashboardPage() {
         setSectorConfig(config);
     };
 
-    const setupRealtimeListeners = (uid: string, filter: 'week' | 'month') => {
-        const userPath = `artifacts/servis-360-live/users/${uid}`;
+    const setupRealtimeListeners = (uid: string, filter: 'week' | 'month', profileData: any) => {
+        // Eğer personel ise verileri patronun (ownerId) hesabından çekmeli, yoksa kendinden.
+        // Ancak finansal veriler genelde yetkiye bağlıdır. Şimdilik "kendi" verileri üzerinden gidiyoruz.
+        // Eğer kurumsal yapı tam oturmuşsa buradaki path `users/${profileData.ownerId}` olmalı.
+        // Basitlik için şu anlık kullanıcının kendi veritabanını baz alıyoruz, çünkü alt hesap mantığı tam kurulu değil.
+        const targetUid = (profileData.role === 'staff' || profileData.role === 'technician' || profileData.role === 'accounting') && profileData.ownerId
+            ? profileData.ownerId
+            : uid;
+
+        const userPath = `artifacts/servis-360-live/users/${targetUid}`;
 
         // 1. FİNANS DİNLEYİCİSİ
         const qTrans = query(collection(db, userPath, 'finance'), orderBy('date', 'asc'));
 
         const unsubTrans = onSnapshot(qTrans, (snapshot) => {
             let periodInc = 0, periodExp = 0;
-            let totalInc = 0, totalExp = 0; // Tüm zamanlar için
+            let totalInc = 0, totalExp = 0;
 
             const dailyMap = new Map();
             const now = new Date();
-
-            // Tarih Sınırı (Son 7 Gün veya Son 30 Gün)
             const limitDate = new Date();
             const daysToLookBack = filter === 'week' ? 7 : 30;
             limitDate.setDate(now.getDate() - daysToLookBack);
 
-            // Grafik iskeletini oluştur (Boş günler 0 görünsün diye)
             for (let i = daysToLookBack - 1; i >= 0; i--) {
                 const d = new Date();
                 d.setDate(d.getDate() - i);
@@ -135,35 +150,21 @@ export default function DashboardPage() {
                 const itemDate = data.date?.toDate ? data.date.toDate() : new Date(data.date);
                 const val = Number(data.amount) || 0;
 
-                // 1. TOPLAM NET KASA HESABI (Tarih farketmeksizin)
-                if (data.type === 'income') totalInc += val;
-                else totalExp += val;
+                if (data.type === 'income') totalInc += val; else totalExp += val;
 
-                // 2. DÖNEMSEL HESAP (Filtreye göre)
                 if (itemDate >= limitDate) {
-                    if (data.type === 'income') periodInc += val;
-                    else periodExp += val;
-
-                    // Grafiğe ekle
+                    if (data.type === 'income') periodInc += val; else periodExp += val;
                     const dateKey = itemDate.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
                     if (dailyMap.has(dateKey)) {
                         const current = dailyMap.get(dateKey);
-                        if (data.type === 'income') current.Gelir += val;
-                        else current.Gider += val;
+                        if (data.type === 'income') current.Gelir += val; else current.Gider += val;
                     }
                 }
             });
 
-            setStats(prev => ({
-                ...prev,
-                periodIncome: periodInc,
-                periodExpense: periodExp,
-                netBalance: totalInc - totalExp // Net Kasa
-            }));
-
+            setStats(prev => ({ ...prev, periodIncome: periodInc, periodExpense: periodExp, netBalance: totalInc - totalExp }));
             setChartData(Array.from(dailyMap.values()));
 
-            // Son Hareketler
             const recentTrans = snapshot.docs.reverse().slice(0, 5).map(d => ({
                 id: d.id,
                 type: d.data().type === 'income' ? 'plus' : 'minus',
@@ -177,20 +178,58 @@ export default function DashboardPage() {
         });
 
         // 2. İŞ DİNLEYİCİSİ
-        let unsubJobs = () => { };
         const qJobs = query(collection(db, userPath, 'jobs'));
-        unsubJobs = onSnapshot(qJobs, (snapshot) => {
+        const unsubJobs = onSnapshot(qJobs, (snapshot) => {
             const pending = snapshot.docs.filter(d => ['pending', 'in_progress', 'waiting_parts'].includes(d.data().status)).length;
             const completed = snapshot.docs.filter(d => d.data().status === 'completed').length;
             setStats(prev => ({ ...prev, activeWork: pending, completedWork: completed }));
         });
 
-        return { unsubTrans, unsubJobs };
+        // 3. DUYURU DİNLEYİCİSİ (Sadece İşletmeler İçin)
+        let unsubAnnounce = () => { };
+        if (profileData.accountType !== 'individual') {
+            const qAnnounce = query(collection(db, userPath, 'announcements'), orderBy('createdAt', 'desc'));
+            unsubAnnounce = onSnapshot(qAnnounce, (snapshot) => {
+                setAnnouncements(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+            });
+        }
+
+        return { unsubTrans, unsubJobs, unsubAnnounce };
     };
 
-    if (!user) return null;
+    // Duyuru Ekleme (Sadece Patronlar)
+    const handlePostAnnouncement = async () => {
+        if (!newAnnouncement.trim()) return;
+        try {
+            // Eğer personel ise burayı çalıştıramaz, UI gizli olacak.
+            const userPath = `artifacts/servis-360-live/users/${user.uid}`;
+            await addDoc(collection(db, userPath, 'announcements'), {
+                text: newAnnouncement,
+                createdAt: serverTimestamp(),
+                author: userData.fullName || 'Yönetici'
+            });
+            setNewAnnouncement('');
+        } catch (error) {
+            console.error("Duyuru eklenemedi:", error);
+            alert("Yetkiniz yok veya bir hata oluştu.");
+        }
+    };
 
-    const isIndividual = accountType === 'individual';
+    // Duyuru Silme
+    const handleDeleteAnnouncement = async (id: string) => {
+        if (!confirm("Duyuruyu silmek istiyor musunuz?")) return;
+        try {
+            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'announcements', id));
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    if (!user || !userData) return null;
+
+    const isIndividual = userData.accountType === 'individual';
+    // Patron/Yönetici mi? (Duyuru ekleyebilmesi için)
+    const isManager = ['corporate', 'esnaf', 'business', 'admin'].includes(userData.role) || ['corporate', 'esnaf', 'business'].includes(userData.accountType);
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-24">
@@ -199,10 +238,10 @@ export default function DashboardPage() {
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         {isIndividual ? '👋 Merhaba,' : <Building2 className="text-blue-600 w-6 h-6" />}
-                        {isIndividual ? userName : (userName || 'İşletme Özeti')}
+                        {isIndividual ? userData.fullName : (userData.companyName || 'İşletme Özeti')}
                     </h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                        {isIndividual ? 'Finansal durumun ve servis taleplerin.' : 'İşletmenizin anlık performans durumu.'}
+                        {isIndividual ? 'Finansal durum ve hesap özeti.' : 'İşletmenizin anlık performans durumu.'}
                     </p>
                 </div>
 
@@ -212,15 +251,68 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* KARTLAR - MOBİL UYUMLU GRID (1 kolon -> 2 kolon -> 4 kolon) */}
-            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* DUYURU PANOSU (Sadece Kurumsal/Esnaf ve Personelleri Görür) */}
+            {!isIndividual && (
+                <div className="bg-gradient-to-r from-blue-900 to-slate-900 rounded-2xl p-6 text-white border border-blue-800 shadow-lg relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-10"><Megaphone className="w-24 h-24" /></div>
+
+                    <div className="relative z-10">
+                        <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
+                            <Megaphone className="w-5 h-5 text-yellow-400 animate-pulse" /> Duyuru Panosu
+                        </h3>
+
+                        {/* Duyuru Ekleme (Sadece Yönetici) */}
+                        {isManager && (
+                            <div className="flex gap-2 mb-6">
+                                <input
+                                    value={newAnnouncement}
+                                    onChange={(e) => setNewAnnouncement(e.target.value)}
+                                    placeholder="Ekip için bir duyuru yaz..."
+                                    className="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:bg-white/20 transition-all"
+                                />
+                                <button
+                                    onClick={handlePostAnnouncement}
+                                    className="bg-blue-600 hover:bg-blue-500 text-white p-2.5 rounded-xl transition-colors"
+                                >
+                                    <Send className="w-5 h-5" />
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Duyuru Listesi */}
+                        <div className="space-y-3 max-h-40 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/20">
+                            {announcements.length === 0 ? (
+                                <p className="text-white/50 text-xs italic">Henüz aktif bir duyuru yok.</p>
+                            ) : (
+                                announcements.map((ann) => (
+                                    <div key={ann.id} className="bg-white/10 p-3 rounded-xl border border-white/5 flex justify-between items-start group">
+                                        <div>
+                                            <p className="text-sm font-medium">{ann.text}</p>
+                                            <p className="text-[10px] text-white/40 mt-1">
+                                                {ann.author} • {ann.createdAt?.toDate ? ann.createdAt.toDate().toLocaleDateString('tr-TR') : 'Bugün'}
+                                            </p>
+                                        </div>
+                                        {isManager && (
+                                            <button onClick={() => handleDeleteAnnouncement(ann.id)} className="text-white/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* KARTLAR - GRID */}
+            <div className={`grid grid-cols-1 min-[480px]:grid-cols-2 ${isIndividual ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-4`}>
 
                 {/* 1. Dönemsel Gelir */}
                 <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><TrendingUp className="w-20 h-20 text-green-600" /></div>
                     <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{timeFilter === 'week' ? 'Bu Hafta' : 'Son 30 Gün'} Gelir</p>
                     <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{stats.periodIncome.toLocaleString()} ₺</h3>
-                    <p className="text-[10px] text-green-600 font-bold mt-2 flex items-center gap-1"><ArrowRight className="w-3 h-3" /> Ciro</p>
                 </div>
 
                 {/* 2. Dönemsel Gider */}
@@ -228,30 +320,17 @@ export default function DashboardPage() {
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform"><TrendingDown className="w-20 h-20 text-red-600" /></div>
                     <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{timeFilter === 'week' ? 'Bu Hafta' : 'Son 30 Gün'} Gider</p>
                     <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">{stats.periodExpense.toLocaleString()} ₺</h3>
-                    <p className="text-[10px] text-red-500 font-bold mt-2 flex items-center gap-1"><ArrowRight className="w-3 h-3" /> Harcama</p>
                 </div>
 
-                {/* 3. NET KASA (TOPLAM) */}
+                {/* 3. NET KASA */}
                 <div className={`p-5 rounded-2xl shadow-lg relative overflow-hidden group text-white ${stats.netBalance >= 0 ? 'bg-gradient-to-br from-blue-600 to-indigo-700' : 'bg-gradient-to-br from-red-600 to-orange-700'}`}>
                     <div className="absolute top-0 right-0 p-4 opacity-20"><PiggyBank className="w-20 h-20 text-white" /></div>
                     <p className="text-white/80 text-[10px] font-bold uppercase tracking-wider">NET KASA (TOPLAM)</p>
                     <h3 className="text-2xl font-black mt-1">{stats.netBalance.toLocaleString()} ₺</h3>
-                    <p className="text-[10px] text-white/90 font-bold mt-2 opacity-80">
-                        {stats.netBalance >= 0 ? "Güvendesiniz 👍" : "Açık Var! ⚠️"}
-                    </p>
                 </div>
 
-                {/* 4. Aktif İşler / Bireysel Durum */}
-                {isIndividual ? (
-                    <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:border-blue-400 transition-all" onClick={() => router.push('/dashboard/jobs')}>
-                        <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Servis Durumu</p>
-                        <div className="flex items-baseline gap-2 mt-1">
-                            <h3 className="text-2xl font-black text-slate-900 dark:text-white">{stats.activeWork}</h3>
-                            <span className="text-xs text-slate-500">cihaz serviste</span>
-                        </div>
-                        <p className="text-[10px] text-blue-600 font-bold mt-2 flex items-center gap-1">Detaylar <ArrowRight className="w-3 h-3" /></p>
-                    </div>
-                ) : (
+                {/* 4. Aktif İşler (BİREYSELDE GİZLİ) */}
+                {!isIndividual && (
                     <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between group cursor-pointer hover:border-blue-400 transition-all" onClick={() => router.push(sectorConfig.path)}>
                         <div>
                             <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{sectorConfig.title}</p>
@@ -268,8 +347,7 @@ export default function DashboardPage() {
 
             {/* GRAFİK VE AKTİVİTE */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                {/* Sol: Grafik */}
+                {/* Grafik */}
                 <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                     <h3 className="text-base font-bold mb-6 flex items-center gap-2 text-slate-900 dark:text-white">
                         <Calendar className="w-5 h-5 text-blue-500" /> {isIndividual ? 'Harcama Analizi' : 'Finansal Grafik'}
@@ -289,7 +367,7 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                {/* Sağ: Son Aktiviteler */}
+                {/* Son Aktiviteler */}
                 <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full max-h-[400px]">
                     <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 flex justify-between items-center">
                         <h3 className="font-bold text-slate-900 dark:text-white flex gap-2 text-sm">

@@ -253,47 +253,65 @@ export default function AdminPage() {
         if (!confirm(`${viewUser.fullName} kullanıcısına 1 Ek Şube Hakkı tanımlanacak.\nÜcret: ${price} TL\nYeni Limit: ${newLimit}\nOnaylıyor musunuz?`)) return;
 
         try {
-            // 1. Profili Güncelle
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), {
-                customBranchLimit: newLimit
-            });
-
-            // 2. Directory'i Güncelle (Opsiyonel ama senkron olması iyi)
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), {
-                customBranchLimit: newLimit
-            });
-
-            // 3. Tahsilat İşlemi (0 ay süre uzatma, sadece para girişi)
-            await processTransaction(
-                viewUser.id,
-                viewUser.fullName,
-                price,
-                0,
-                'Ek Şube Hakkı Satın Alımı (+1)',
-                'BRANCH_UPGRADE'
-            );
-
-            // Yerel state'i güncelle
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customBranchLimit: newLimit });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customBranchLimit: newLimit });
+            await processTransaction(viewUser.id, viewUser.fullName, price, 0, 'Ek Şube Hakkı Satın Alımı (+1)', 'BRANCH_UPGRADE');
             setUserProfileData({ ...userProfileData, customBranchLimit: newLimit });
             alert("İşlem Başarılı! Şube hakkı artırıldı.");
-
         } catch (err) {
             console.error(err);
             alert("Hata oluştu.");
         }
     };
 
-    // Manuel Limit Güncelleme
+    // Manuel Şube Limit Güncelleme
     const handleUpdateBranchLimit = async (val: number) => {
         if (!confirm(`Şube limiti manuel olarak ${val} yapılacak. Emin misiniz?`)) return;
         try {
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), {
-                customBranchLimit: Number(val)
-            });
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), {
-                customBranchLimit: Number(val)
-            });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customBranchLimit: Number(val) });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customBranchLimit: Number(val) });
             setUserProfileData({ ...userProfileData, customBranchLimit: Number(val) });
+            alert("Limit güncellendi.");
+        } catch (err) {
+            console.error(err);
+            alert("Hata oluştu.");
+        }
+    };
+
+    // --- YENİ: PERSONEL LİMİTİ YÖNETİMİ ---
+    const handleBuyStaffLimit = async () => {
+        if (!viewUser || !userProfileData) return;
+        const price = 800; // Ek personel ücreti
+
+        // Mevcut limiti belirle (Esnaf için 5, Kurumsal için teorik 999)
+        const isEsnaf = ['esnaf', 'business', 'tradesman'].includes(viewUser.accountType);
+        const defaultLimit = isEsnaf ? 5 : 999;
+
+        const currentCustom = userProfileData.customStaffLimit || 0;
+        const currentEffective = currentCustom > 0 ? currentCustom : defaultLimit;
+
+        const newLimit = currentEffective + 1;
+
+        if (!confirm(`${viewUser.fullName} kullanıcısına 1 Ek Personel Hakkı tanımlanacak.\nÜcret: ${price} TL\nYeni Limit: ${newLimit}\nOnaylıyor musunuz?`)) return;
+
+        try {
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customStaffLimit: newLimit });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customStaffLimit: newLimit });
+            await processTransaction(viewUser.id, viewUser.fullName, price, 0, 'Ek Personel Hakkı Satın Alımı (+1)', 'STAFF_UPGRADE');
+            setUserProfileData({ ...userProfileData, customStaffLimit: newLimit });
+            alert("İşlem Başarılı! Personel limiti artırıldı.");
+        } catch (err) {
+            console.error(err);
+            alert("Hata oluştu.");
+        }
+    };
+
+    const handleUpdateStaffLimit = async (val: number) => {
+        if (!confirm(`Personel limiti manuel olarak ${val} yapılacak. Emin misiniz?`)) return;
+        try {
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customStaffLimit: Number(val) });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customStaffLimit: Number(val) });
+            setUserProfileData({ ...userProfileData, customStaffLimit: Number(val) });
             alert("Limit güncellendi.");
         } catch (err) {
             console.error(err);
@@ -677,7 +695,7 @@ export default function AdminPage() {
                                         </div>
                                     </div>
 
-                                    {/* YENİ ŞUBE YÖNETİMİ PANELİ */}
+                                    {/* ŞUBE YÖNETİMİ PANELİ */}
                                     {isBusiness(viewUser.accountType) && userProfileData && (
                                         <div className="bg-black/40 p-4 rounded border border-slate-800 animate-pulse-slow">
                                             <p className="text-[10px] text-purple-500 uppercase font-bold mb-2 flex items-center gap-2">
@@ -709,6 +727,47 @@ export default function AdminPage() {
                                                             className="w-16 bg-slate-900 text-white text-xs p-1 rounded border border-slate-700 text-center"
                                                             onChange={(e) => {
                                                                 if (e.target.value) handleUpdateBranchLimit(Number(e.target.value));
+                                                            }}
+                                                        />
+                                                        <span className="text-[10px] text-slate-600 self-center">← Değiştir</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* YENİ PERSONEL YÖNETİMİ PANELİ */}
+                                    {isBusiness(viewUser.accountType) && userProfileData && (
+                                        <div className="bg-black/40 p-4 rounded border border-slate-800 animate-pulse-slow mt-4">
+                                            <p className="text-[10px] text-blue-500 uppercase font-bold mb-2 flex items-center gap-2">
+                                                <Users className="w-3 h-3" /> PERSONEL YÖNETİMİ
+                                            </p>
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded">
+                                                    <span className="text-xs text-slate-400">Personel Limiti</span>
+                                                    <span className="text-white font-bold text-lg">
+                                                        {userProfileData.customStaffLimit || (['corporate', 'company'].includes(viewUser.accountType) ? 'Sınırsız' : 5)}
+                                                    </span>
+                                                </div>
+
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={handleBuyStaffLimit}
+                                                        className="flex-1 bg-green-600 hover:bg-green-700 text-white p-2 rounded text-xs font-bold flex items-center justify-center gap-1"
+                                                    >
+                                                        <Plus className="w-3 h-3" /> Ek Hak Sat (800₺)
+                                                    </button>
+                                                </div>
+
+                                                <div className="pt-2 border-t border-slate-800">
+                                                    <p className="text-[10px] text-slate-500 mb-1">Manuel Limit Ayarla</p>
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="number"
+                                                            placeholder="Limit"
+                                                            className="w-16 bg-slate-900 text-white text-xs p-1 rounded border border-slate-700 text-center"
+                                                            onChange={(e) => {
+                                                                if (e.target.value) handleUpdateStaffLimit(Number(e.target.value));
                                                             }}
                                                         />
                                                         <span className="text-[10px] text-slate-600 self-center">← Değiştir</span>

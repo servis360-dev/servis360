@@ -57,6 +57,7 @@ export default function RegisterPage() {
         let staffData: any = null;
 
         try {
+            // Davetiyeleri kontrol et
             const inviteRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', email);
             const inviteSnap = await getDoc(inviteRef);
             if (inviteSnap.exists()) {
@@ -75,48 +76,56 @@ export default function RegisterPage() {
         setError('');
 
         try {
+            // 1. Davetiye Kontrolü
             const { clientIp, isStaff, staffData } = await checkInvitationAndGetIP(formData.email);
 
-            // 1. Firebase Auth Oluştur
+            // 2. Firebase Auth Oluştur
             const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
             const user = userCredential.user;
 
             await updateProfile(user, { displayName: formData.fullName });
 
-            // 2. Rol ve Şirket Belirleme
+            // 3. Rol ve Şirket Belirleme (Kritik Adım)
             let finalRole = 'owner';
-            let finalCompanyId = user.uid;
+            let finalCompanyId = user.uid; // Patron ise kendi ID'si şirket ID'sidir
+            let finalOwnerId = user.uid;   // Varsayılan olarak kendisi
             let finalCompanyName = formData.companyName;
             let finalAccountType = formData.accountType;
             let finalSector = formData.sectorType;
 
+            // EĞER DAVETLİ BİR PERSONEL İSE:
             if (isStaff) {
-                finalRole = staffData.assignedRole;
-                finalCompanyId = staffData.targetCompanyId;
+                finalRole = staffData.assignedRole;         // Patronun verdiği rol (tekniker, satis vb.)
+                finalCompanyId = staffData.targetCompanyId; // Patronun ID'si
+                finalOwnerId = staffData.targetCompanyId;   // Verilerin çekileceği asıl ID
                 finalCompanyName = staffData.targetCompanyName;
                 finalSector = staffData.targetSector;
-                finalAccountType = 'corporate';
+                finalAccountType = 'corporate';             // Personel kurumsal statüdedir
             } else if (finalAccountType === 'individual') {
                 finalCompanyName = 'Bireysel Hesap';
             }
 
-            // 3. Firestore Kayıt (Profile)
+            // 4. Firestore Profil Kaydı
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'), {
                 uid: user.uid,
                 email: user.email,
                 fullName: formData.fullName,
                 phone: formData.phone,
+
+                // Şirket Bağlantıları
                 companyId: finalCompanyId,
+                ownerId: finalOwnerId, // 🔥 Dashboard bu ID'ye bakarak verileri çekecek
                 companyName: finalCompanyName,
+
                 accountType: finalAccountType,
                 sectorType: finalSector,
                 role: finalRole,
                 status: 'active',
                 createdAt: serverTimestamp(),
-                licenseEndsAt: null
+                licenseEndsAt: null // Personelin lisansı patrona bağlıdır
             });
 
-            // 4. Public Directory
+            // 5. Public Directory (Admin Paneli İçin)
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid), {
                 id: user.uid,
                 uid: user.uid,
@@ -132,7 +141,7 @@ export default function RegisterPage() {
                 createdAt: serverTimestamp()
             });
 
-            // 5. Personel Listesini Güncelle (Eğer davetliyse)
+            // 6. Personel Listesini Güncelle (Eğer davetliyse, 'invited' -> 'active')
             if (isStaff) {
                 try {
                     await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', finalCompanyId, 'staff', formData.email), {
@@ -140,6 +149,9 @@ export default function RegisterPage() {
                         uid: user.uid,
                         joinedAt: serverTimestamp()
                     });
+
+                    // Davetiye dosyasını temizle (İsteğe bağlı, güvenlik için kalabilir veya silinebilir)
+                    // await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', formData.email));
                 } catch (e) { console.error("Personel güncelleme hatası", e); }
             }
 
@@ -168,7 +180,6 @@ export default function RegisterPage() {
             const profileSnap = await getDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'));
 
             if (profileSnap.exists()) {
-                // Profili varsa direkt girsin
                 router.push('/dashboard');
                 return;
             }
@@ -177,14 +188,18 @@ export default function RegisterPage() {
             const { clientIp, isStaff, staffData } = await checkInvitationAndGetIP(user.email || '');
 
             if (isStaff) {
-                // Davetliyse (Personelse) profili otomatik oluştur ve içeri al
+                // EĞER PERSONEL İSE: Profili otomatik oluştur ve içeri al
                 await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'), {
                     uid: user.uid,
                     email: user.email,
                     fullName: user.displayName || 'İsimsiz Personel',
-                    phone: '', // Google'dan gelmez, sonradan isteriz
+                    phone: '', // Google'dan gelmez, panelde sorarız
+
+                    // Şirket Bağlantıları
                     companyId: staffData.targetCompanyId,
+                    ownerId: staffData.targetCompanyId, // 🔥 Patronun ID'si
                     companyName: staffData.targetCompanyName,
+
                     accountType: 'corporate',
                     sectorType: staffData.targetSector,
                     role: staffData.assignedRole,
@@ -216,8 +231,7 @@ export default function RegisterPage() {
 
                 router.push('/dashboard');
             } else {
-                // Davetli DEĞİL ve Yeni Kullanıcı -> ONBOARDING'e gönder
-                // Çünkü Google ile telefon, hesap türü vs. seçmedi.
+                // Davetli DEĞİL ve Yeni Kullanıcı -> Onboarding'e gönder
                 router.push('/onboarding');
             }
 

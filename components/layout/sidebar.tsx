@@ -26,7 +26,7 @@ import { signOut } from 'firebase/auth';
 
 interface SidebarProps {
     userRole?: string;
-    userProfile?: any; // Profil detayları
+    userProfile?: any;
     isOpen: boolean;
     onClose: () => void;
 }
@@ -38,17 +38,24 @@ const getNormalizedRole = (role?: string): string => {
     if (!role) return 'individual';
 
     const r = role.toLowerCase();
+    // 1. ÜST YÖNETİM
     if (r === 'super_admin' || r === 'developer') return 'super_admin';
-    if (r === 'corporate') return 'corporate';
+    if (r === 'corporate') return 'corporate'; // Kurumsal Patron
+
+    // 2. ESNAF / KOBİ
     if (['esnaf', 'admin', 'business', 'tradesman', 'boss', 'owner'].includes(r)) return 'esnaf';
+
+    // 3. PERSONEL ROLLERİ
     if (['accounting', 'muhasebe', 'finans', 'on_muhasebe'].includes(r)) return 'accounting';
     if (['technician', 'teknik', 'usta', 'ustam', 'field_agent'].includes(r)) return 'technician';
-    if (['staff', 'personnel', 'employee', 'worker', 'sekreter', 'danisma'].includes(r)) return 'staff';
+    if (['staff', 'personnel', 'employee', 'worker', 'sekreter', 'danisma'].includes(r)) return 'staff'; // Genel ofis personeli
+
+    // 4. BİREYSEL MÜŞTERİ
     return 'individual';
 };
 
 // ---------------------------------------------------------------------------
-// 📋 MENÜ YAPILANDIRMASI
+// 📋 MENÜ YAPILANDIRMASI (YETKİ MATRİSİ)
 // ---------------------------------------------------------------------------
 const MENU_ITEMS = [
     {
@@ -60,12 +67,14 @@ const MENU_ITEMS = [
     {
         title: 'Genel Bakış',
         items: [
+            // Herkes özet panelini görür (İçeriği dashboard/page.tsx'te filtrelenecek)
             { label: 'Özet Paneli', href: '/dashboard', icon: LayoutDashboard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'staff', 'individual'] },
         ]
     },
     {
         title: 'Hizmet İşlemleri',
         items: [
+            // Sadece Bireysel Müşteriler için talep ekranları
             { label: 'Yeni Talep Oluştur', href: '/dashboard/jobs/new', icon: PlusCircle, allowedRoles: ['individual'] },
             { label: 'Servis Geçmişim', href: '/dashboard/jobs', icon: History, allowedRoles: ['individual'] },
         ]
@@ -73,10 +82,14 @@ const MENU_ITEMS = [
     {
         title: 'Operasyon',
         items: [
+            // Muhasebe teknik işleri görmez. Bireysel göremez.
             { label: 'İş Takibi', href: '/dashboard/jobs', icon: Briefcase, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician'] },
             { label: 'Randevu Takvimi', href: '/dashboard/appointments', icon: CalendarDays, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician'] },
+            // Müşteri listesi: Tekniker hariç herkes görebilir mi? Genelde tekniker de müşteri arar. Şimdilik hepsi görüyor (Bireysel hariç).
             { label: 'Müşteri Listesi', href: '/dashboard/customers', icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'accounting', 'technician'] },
+            // Stok: Muhasebe ve Bireysel göremez.
             { label: 'Stok Takibi', href: '/dashboard/stock', icon: Package, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'technician', 'staff'] },
+            // Şube ve Personel: Sadece Patronlar.
             { label: 'Şubeler', href: '/dashboard/branches', icon: Store, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
             { label: 'Personel Yönetimi', href: '/dashboard/staff', icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
         ]
@@ -84,8 +97,10 @@ const MENU_ITEMS = [
     {
         title: 'Finansal Durum',
         items: [
+            // Tekniker ve Ofis personeli kasayı görmez.
             { label: 'Gelir / Gider', href: '/dashboard/finance', icon: Wallet, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'individual'] },
             { label: 'Teklifler', href: '/dashboard/proposals', icon: FileText, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting'] },
+            // Abonelik: Personel görmez.
             { label: 'Abonelik Paketleri', href: '/dashboard/subscription', icon: CreditCard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'individual'] },
         ]
     },
@@ -123,13 +138,12 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                     border-r border-white/10 md:border-slate-200 md:dark:border-slate-800
                     shadow-2xl shadow-black/50 md:shadow-none
                     transform transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
-                    flex flex-col  /* 🔥 EKLENDİ: İçerik taşmasını yönetmek için gerekli */
+                    flex flex-col
                     ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
                 `}
             >
                 {/* 1. LOGO ALANI */}
                 <div className="h-20 flex-shrink-0 flex items-center justify-between px-6 border-b border-white/5 md:border-slate-200 md:dark:border-slate-800 relative overflow-hidden">
-                    {/* Arka plan ışık efekti (Sadece mobilde) */}
                     <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-blue-600/20 to-transparent opacity-50 md:hidden pointer-events-none"></div>
 
                     <div className="flex items-center gap-3 relative z-10">
@@ -150,7 +164,6 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                 </div>
 
                 {/* 2. MENÜ LİSTESİ */}
-                {/* 🔥 overscroll-contain EKLENDİ: Arka planın kaymasını engeller */}
                 <div className="flex-1 overflow-y-auto py-6 px-4 space-y-8 scrollbar-hide overscroll-contain">
                     {MENU_ITEMS.map((section, index) => {
                         const authorizedItems = section.items.filter(item => item.allowedRoles.includes(normalizedRole));
@@ -184,7 +197,6 @@ export function Sidebar({ userRole, isOpen, onClose }: SidebarProps) {
                                                     <span>{item.label}</span>
                                                 </div>
 
-                                                {/* Aktif ikonu */}
                                                 {isActive && <ChevronRight className="w-4 h-4 text-blue-500 opacity-50" />}
                                             </Link>
                                         );
