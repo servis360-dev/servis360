@@ -36,7 +36,6 @@ interface SidebarProps {
 // ---------------------------------------------------------------------------
 const getNormalizedRole = (role?: string, accountType?: string): string => {
     // 🛑 KRİTİK KONTROL: Eğer hesap türü BİREYSEL ise, rolü ne olursa olsun (owner vb.) yetkisini 'individual' yap.
-    // Bu satır, bireysel kullanıcıların yanlışlıkla esnaf menüsü görmesini engeller.
     if (accountType === 'individual') return 'individual';
 
     if (!role) return 'individual';
@@ -52,7 +51,8 @@ const getNormalizedRole = (role?: string, accountType?: string): string => {
 
     // 3. PERSONEL ROLLERİ
     if (['accounting', 'muhasebe', 'finans', 'on_muhasebe'].includes(r)) return 'accounting';
-    if (['technician', 'teknik', 'usta', 'ustam', 'field_agent'].includes(r)) return 'technician';
+    if (['technician', 'technical', 'teknik', 'usta', 'ustam', 'field_agent'].includes(r)) return 'technician'; // "technical" eklendi
+    if (['sales', 'satis', 'kasa', 'tezgahtar'].includes(r)) return 'sales'; // 🔥 SATIŞ ROLÜ EKLENDİ
     if (['staff', 'personnel', 'employee', 'worker', 'sekreter', 'danisma'].includes(r)) return 'staff';
 
     // 4. VARSAYILAN
@@ -72,7 +72,8 @@ const MENU_ITEMS = [
     {
         title: 'Genel Bakış',
         items: [
-            { label: 'Özet Paneli', href: '/dashboard', icon: LayoutDashboard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'staff', 'individual'] },
+            // Satış, Muhasebe ve Tekniker de özeti görmeli
+            { label: 'Özet Paneli', href: '/dashboard', icon: LayoutDashboard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'sales', 'staff', 'individual'] },
         ]
     },
     {
@@ -86,10 +87,12 @@ const MENU_ITEMS = [
     {
         title: 'Operasyon',
         items: [
-            { label: 'İş Takibi', href: '/dashboard/jobs', icon: Briefcase, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician'] },
-            { label: 'Randevu Takvimi', href: '/dashboard/appointments', icon: CalendarDays, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician'] },
-            { label: 'Müşteri Listesi', href: '/dashboard/customers', icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'accounting', 'technician'] },
-            { label: 'Stok Takibi', href: '/dashboard/stock', icon: Package, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'technician', 'staff'] },
+            // Satış personeli de işleri ve müşterileri görmeli
+            { label: 'İş Takibi', href: '/dashboard/jobs', icon: Briefcase, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician', 'sales'] },
+            { label: 'Randevu Takvimi', href: '/dashboard/appointments', icon: CalendarDays, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician', 'sales'] },
+            { label: 'Müşteri Listesi', href: '/dashboard/customers', icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'accounting', 'technician', 'sales'] },
+            { label: 'Stok Takibi', href: '/dashboard/stock', icon: Package, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'technician', 'sales', 'staff'] },
+            // Şubeler ve Personel Yönetimi sadece Patronlara özel
             { label: 'Şubeler', href: '/dashboard/branches', icon: Store, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
             { label: 'Personel Yönetimi', href: '/dashboard/staff', icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
         ]
@@ -97,15 +100,17 @@ const MENU_ITEMS = [
     {
         title: 'Finansal Durum',
         items: [
-            { label: 'Gelir / Gider', href: '/dashboard/finance', icon: Wallet, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'individual'] },
-            { label: 'Teklifler', href: '/dashboard/proposals', icon: FileText, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting'] },
+            // Satış personeli kasayı ve teklifleri görebilir
+            { label: 'Gelir / Gider', href: '/dashboard/finance', icon: Wallet, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'sales', 'individual'] },
+            { label: 'Teklifler', href: '/dashboard/proposals', icon: FileText, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'sales'] },
+            // Abonelik sadece patron ve bireysel için
             { label: 'Abonelik Paketleri', href: '/dashboard/subscription', icon: CreditCard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'individual'] },
         ]
     },
     {
         title: 'Sistem',
         items: [
-            { label: 'Ayarlar', href: '/dashboard/settings', icon: Settings, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'staff', 'individual'] },
+            { label: 'Ayarlar', href: '/dashboard/settings', icon: Settings, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'sales', 'staff', 'individual'] },
         ]
     }
 ];
@@ -114,7 +119,6 @@ export function Sidebar({ userRole, userProfile, isOpen, onClose }: SidebarProps
     const pathname = usePathname();
 
     // 🔥 DÜZELTME: Sadece role değil, accountType'a da bakarak yetki belirliyoruz.
-    // userProfile.accountType undefined gelirse sorun çıkmaması için optional chaining (?) kullanıldı.
     const normalizedRole = getNormalizedRole(userRole, userProfile?.accountType);
 
     const handleLogout = async () => {
@@ -217,16 +221,20 @@ export function Sidebar({ userRole, userProfile, isOpen, onClose }: SidebarProps
                             inline-block text-[10px] uppercase font-black tracking-[0.2em] px-3 py-1 rounded-full border shadow-lg
                             ${normalizedRole === 'super_admin' ? 'border-red-500/30 text-red-400 bg-red-500/10 shadow-red-900/20' :
                                 ['corporate', 'esnaf'].includes(normalizedRole) ? 'border-purple-500/30 text-purple-400 bg-purple-500/10 shadow-purple-900/20' :
-                                    ['technician', 'staff', 'accounting'].includes(normalizedRole) ? 'border-yellow-500/30 text-yellow-400 bg-yellow-500/10 shadow-yellow-900/20' :
-                                        'border-blue-500/30 text-blue-400 bg-blue-500/10 shadow-blue-900/20'}
+                                    ['technician', 'technical'].includes(normalizedRole) ? 'border-yellow-500/30 text-yellow-400 bg-yellow-500/10 shadow-yellow-900/20' :
+                                        ['sales'].includes(normalizedRole) ? 'border-green-500/30 text-green-400 bg-green-500/10 shadow-green-900/20' :
+                                            ['accounting'].includes(normalizedRole) ? 'border-indigo-500/30 text-indigo-400 bg-indigo-500/10 shadow-indigo-900/20' :
+                                                ['staff'].includes(normalizedRole) ? 'border-orange-500/30 text-orange-400 bg-orange-500/10 shadow-orange-900/20' :
+                                                    'border-blue-500/30 text-blue-400 bg-blue-500/10 shadow-blue-900/20'}
                         `}>
                             {normalizedRole === 'super_admin' ? 'YAZILIMCI' :
                                 normalizedRole === 'corporate' ? 'KURUMSAL' :
                                     normalizedRole === 'esnaf' ? 'İŞLETME' :
                                         normalizedRole === 'accounting' ? 'MUHASEBE' :
-                                            normalizedRole === 'technician' ? 'TEKNİSYEN' :
-                                                normalizedRole === 'staff' ? 'PERSONEL' :
-                                                    'BİREYSEL'}
+                                            (normalizedRole === 'technician' || normalizedRole === 'technical') ? 'TEKNİSYEN' :
+                                                normalizedRole === 'sales' ? 'SATIŞ / KASA' :
+                                                    normalizedRole === 'staff' ? 'PERSONEL' :
+                                                        'BİREYSEL'}
                         </span>
                     </div>
                 </div>

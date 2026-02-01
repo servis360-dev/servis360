@@ -51,8 +51,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             const now = new Date();
             const licenseDate = profile.licenseEndsAt ? profile.licenseEndsAt.toDate() : null;
 
-            // Personel mi?
-            const isStaff = ['personel', 'technician', 'accounting', 'staff'].includes(profile.role);
+            // 🔥 GÜNCEL PERSONEL LİSTESİ (Tüm olası rolleri ekledik)
+            const staffRoles = [
+                'staff', 'personnel', 'employee', // Genel
+                'technical', 'technician', 'teknik', // Teknik Servis
+                'sales', 'satis', // Satış
+                'accountant', 'accounting', 'muhasebe' // Muhasebe
+            ];
+            const isStaff = staffRoles.includes(profile.role);
 
             // İşletme Sahibi mi?
             const isBusinessOwner = ['admin', 'corporate', 'esnaf', 'business'].includes(profile.role) ||
@@ -63,7 +69,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             // Telefon numarası boşsa veya sadece boşluksa eksik kabul et
             const isPhoneMissing = !profile.phone || profile.phone.trim() === '';
 
-            // İşletme sahipleri için Firma Adı da zorunlu
+            // İşletme sahipleri için Firma Adı da zorunlu (Personel hariç)
             const isCompanyMissing = isBusinessOwner && !isStaff && (!profile.companyName || profile.companyName.trim() === '');
 
             const isProfileIncomplete = isPhoneMissing || isCompanyMissing;
@@ -79,6 +85,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             // 2. LİSANS KONTROLÜ
             // ----------------------------------------------------
             // Eğer personel veya admin DEĞİLSE lisans süresini kontrol et
+            // Personel (isStaff) ise lisans kontrolünü atla (Patronun lisansına bağlıdır, o kontrolü işlem yaparken yapıyoruz)
             if (!isStaff && profile.role !== 'admin' && profile.role !== 'super_admin') {
                 const isLicenseExpired = !licenseDate || licenseDate < now;
 
@@ -95,9 +102,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     // --- RENDER MANTIĞI İÇİN DEĞİŞKENLER ---
 
-    const isStaff = ['personel', 'technician', 'accounting', 'staff'].includes(profile?.role);
+    const staffRoles = [
+        'staff', 'personnel', 'employee',
+        'technical', 'technician', 'teknik',
+        'sales', 'satis',
+        'accountant', 'accounting', 'muhasebe'
+    ];
+    const isStaff = staffRoles.includes(profile?.role);
 
     // Lisans geçerli mi? 
+    // Personel ise her zaman geçerli say (ekran kilidini açar, işlem kısıtı içeride yapılır)
     const isLicenseValid = isStaff ||
         profile?.role === 'super_admin' ||
         profile?.role === 'admin' ||
