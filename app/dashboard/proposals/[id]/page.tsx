@@ -10,7 +10,10 @@ import {
     Phone,
     Building2,
     Download,
-    Loader2
+    Loader2,
+    Mail,
+    MapPin,
+    Calendar
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -21,8 +24,10 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
     const [proposal, setProposal] = useState<any>(null);
     const [companyInfo, setCompanyInfo] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [downloading, setDownloading] = useState(false); // PDF indirme durumu
-    const invoiceRef = useRef<HTMLDivElement>(null); // PDF'e çevrilecek alanı seçmek için
+    const [downloading, setDownloading] = useState(false);
+
+    // PDF referansı
+    const invoiceRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
 
     useEffect(() => {
@@ -62,7 +67,6 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
         }, 300);
     };
 
-    // PDF İNDİRME FONKSİYONU
     const handleDownloadPDF = async () => {
         if (!invoiceRef.current) return;
         setDownloading(true);
@@ -70,39 +74,28 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
         try {
             const element = invoiceRef.current;
 
-            // 1. Ekran görüntüsü al (Yüksek Kalite için scale: 2)
+            // Yüksek DPI ayarlarıyla canvas oluştur
             const canvas = await html2canvas(element, {
-                scale: 2,
-                useCORS: true, // Logoların düzgün çıkması için
+                scale: 2, // Retina kalitesi
+                useCORS: true,
                 logging: false,
-                backgroundColor: '#ffffff'
+                backgroundColor: '#ffffff',
+                windowWidth: 794, // A4 genişliği (96 DPI'da piksel)
+                width: 794,
+                height: 1123, // A4 yüksekliği
+                scrollY: -window.scrollY // Scroll kaymasını önle
             });
 
-            // 2. Görüntüyü veriye çevir
             const imgData = canvas.toDataURL('image/png');
-
-            // 3. PDF Boyutlarını Hesapla (A4)
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
 
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
-
-            // Resmi A4 genişliğine sığdır, yüksekliği orantılı ayarla
-            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-            const imgX = (pdfWidth - imgWidth * ratio) / 2;
-            const imgY = 0; // En tepeden başlasın
-
-            // 4. PDF'e ekle ve kaydet
-            // 3. parametre genişlik, 4. parametre yükseklik (oranı koruyarak)
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, (imgHeight * pdfWidth) / imgWidth);
-
-            // Dosya ismi: Teklif-NO.pdf
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
             pdf.save(`Teklif-${proposal.proposalNo || 'Belge'}.pdf`);
 
         } catch (error) {
-            console.error("PDF oluşturma hatası:", error);
+            console.error("PDF hatası:", error);
             alert("PDF oluşturulurken bir hata oluştu.");
         } finally {
             setDownloading(false);
@@ -123,33 +116,35 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
         : `Fiyatlarımıza %${proposal.taxRate} KDV dahildir.`;
 
     return (
-        <div className="min-h-screen bg-slate-100 dark:bg-slate-900 p-4 md:p-8 print:p-0 print:m-0 print:bg-white print:overflow-visible">
+        <div className="min-h-screen bg-slate-100 dark:bg-slate-900 p-4 md:p-8 flex flex-col items-center gap-6 print:p-0 print:bg-white print:block">
 
-            {/* YAZDIRMA CSS (Değişmedi) */}
+            {/* Print CSS */}
             <style type="text/css" media="print">
                 {`
-                    @page { size: A4; margin: 0mm; }
-                    body { background-color: white; zoom: 0.75; -webkit-print-color-adjust: exact !important; }
+                    @page { size: A4; margin: 0; }
+                    body { background-color: white; }
                     nav, header, aside, .sidebar, .no-print { display: none !important; }
-                    .print-container { width: 100% !important; max-width: none !important; box-shadow: none !important; border: none !important; margin: 0 !important; padding: 20px !important; min-height: auto !important; }
+                    .print-area { 
+                        transform: none !important; 
+                        box-shadow: none !important;
+                        margin: 0 !important;
+                        page-break-after: always;
+                    }
                 `}
             </style>
 
             {/* Üst Bar (Butonlar) */}
-            <div className="max-w-[210mm] mx-auto mb-6 flex flex-col sm:flex-row justify-between items-center gap-4 no-print">
+            <div className="w-full max-w-[210mm] flex flex-col sm:flex-row justify-between items-center gap-4 no-print">
                 <Link href="/dashboard/proposals" className="flex items-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors">
                     <ArrowLeft className="w-4 h-4 mr-2" /> Listeye Dön
                 </Link>
                 <div className="flex gap-3">
-                    {/* YAZDIR BUTONU */}
                     <button
                         onClick={handlePrint}
                         className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
                     >
                         <Printer className="w-4 h-4" /> Yazdır
                     </button>
-
-                    {/* PDF İNDİR BUTONU */}
                     <button
                         onClick={handleDownloadPDF}
                         disabled={downloading}
@@ -164,143 +159,165 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
                 </div>
             </div>
 
-            {/* A4 Kağıt Formatı - PDF Referansı (ref={invoiceRef}) Buraya Eklendi */}
-            <div
-                ref={invoiceRef}
-                className="print-container max-w-[210mm] mx-auto bg-white text-slate-900 shadow-2xl rounded-xl overflow-hidden flex flex-col relative min-h-[297mm]"
-            >
+            {/* 🔥 A4 KAĞIT ALANI (SABİT BOYUT)
+                Bu alan hem ekranda hem de PDF çıktısında birebir aynı görünecek.
+                Genişlik: 210mm, Yükseklik: 297mm (A4 Standardı)
+            */}
+            <div className="overflow-auto w-full flex justify-center no-print-scroll">
+                <div
+                    ref={invoiceRef}
+                    className="print-area bg-white text-slate-900 shadow-2xl flex flex-col relative"
+                    style={{
+                        width: '210mm',
+                        minHeight: '297mm', // Yüksekliği sabitledik
+                        height: '297mm',    // PDF kesilmemesi için height fix
+                        padding: '0',
+                        boxSizing: 'border-box'
+                    }}
+                >
+                    {/* ÜST BAŞLIK (HEADER) - Kurumsal Lacivert Şerit */}
+                    <div className="bg-[#1e293b] text-white p-8 h-48 flex justify-between items-start relative overflow-hidden">
+                        {/* Arka Plan Deseni */}
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
 
-                {/* 1. HEADER */}
-                <div className="p-10 pb-6 flex justify-between items-start border-b border-slate-100 print:p-4 print:pb-4">
-
-                    {/* SOL: LOGO & ADRES */}
-                    <div className="w-1/2 pr-4">
-                        {companyInfo?.logoUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                                src={companyInfo.logoUrl}
-                                alt="Firma Logosu"
-                                className="h-24 w-auto object-contain mb-4 max-w-[200px] print:h-20"
-                                style={{ display: 'block' }}
-                                crossOrigin="anonymous" // CORS hatasını önlemek için önemli
-                            />
-                        ) : (
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-14 h-14 bg-slate-900 text-white flex items-center justify-center rounded-lg print:bg-slate-900 print:text-white">
-                                    <Building2 className="w-8 h-8" />
+                        {/* Sol: Logo ve Firma Adı */}
+                        <div className="z-10 flex flex-col justify-center h-full">
+                            {companyInfo?.logoUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    src={companyInfo.logoUrl}
+                                    alt="Logo"
+                                    className="h-16 w-auto object-contain mb-3 brightness-0 invert" // Logoyu beyaz yap
+                                    style={{ objectPosition: 'left' }}
+                                    crossOrigin="anonymous"
+                                />
+                            ) : (
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-10 h-10 bg-white/20 flex items-center justify-center rounded-lg backdrop-blur-sm">
+                                        <Building2 className="w-6 h-6 text-white" />
+                                    </div>
+                                    <h1 className="text-xl font-bold uppercase tracking-wider">{companyInfo?.companyName || 'FİRMA ADI'}</h1>
                                 </div>
-                                <h1 className="text-xl font-bold text-slate-900 uppercase">
-                                    {companyInfo?.companyName || 'FİRMA ADI'}
-                                </h1>
+                            )}
+                            <div className="text-xs text-slate-300 space-y-1 font-light max-w-[300px]">
+                                <p>{companyInfo?.address}</p>
+                                <div className="flex gap-4 mt-2">
+                                    {companyInfo?.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {companyInfo.phone}</span>}
+                                    {companyInfo?.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {companyInfo.email}</span>}
+                                </div>
                             </div>
-                        )}
+                        </div>
 
-                        <div className="text-xs text-slate-500 space-y-1 mt-2 print:text-slate-800">
-                            <p className="font-bold text-slate-800 uppercase">{companyInfo?.companyName}</p>
-                            {companyInfo?.address && <p className="max-w-[250px] opacity-80">{companyInfo.address}</p>}
-                            <div className="mt-2 pt-2 border-t border-slate-100 w-fit">
-                                {companyInfo?.phone && <p>Tel: {companyInfo.phone}</p>}
-                                {companyInfo?.email && <p>E-posta: {companyInfo.email}</p>}
+                        {/* Sağ: Büyük TEKLİF Yazısı ve Tarih */}
+                        <div className="z-10 text-right h-full flex flex-col justify-between">
+                            <h2 className="text-5xl font-black tracking-widest text-white/10 absolute right-4 top-4">TEKLİF</h2>
+                            <div className="mt-auto">
+                                <div className="bg-white/10 backdrop-blur-md p-3 rounded-lg border border-white/20 text-center min-w-[140px]">
+                                    <p className="text-[10px] uppercase tracking-widest text-slate-300 mb-1">TEKLİF NO</p>
+                                    <p className="text-xl font-bold font-mono">{proposal.proposalNo}</p>
+                                </div>
+                                <div className="mt-2 text-xs text-slate-300 flex flex-col items-end gap-1">
+                                    <span>Tarih: <b>{formatDate(proposal.createdAt)}</b></span>
+                                    <span>Geçerlilik: <b>{formatDate(proposal.validUntil)}</b></span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* SAĞ: TEKLİF NO */}
-                    <div className="w-1/2 text-right">
-                        <h2 className="text-4xl font-black text-slate-100 uppercase tracking-widest leading-none mb-4 print:text-slate-300">TEKLİF</h2>
-
-                        <div className="inline-block text-left bg-slate-50 p-4 rounded-lg border border-slate-100 min-w-[180px] print:bg-white print:border print:border-slate-300 print:p-2">
-                            <div className="mb-2 pb-2 border-b border-slate-200">
-                                <p className="text-[10px] uppercase font-bold text-slate-400">Teklif No</p>
-                                <p className="font-mono font-bold text-lg text-blue-600 print:text-black">{proposal.proposalNo}</p>
-                            </div>
-                            <div className="space-y-1">
-                                <div className="flex justify-between gap-4">
-                                    <span className="text-xs text-slate-500">Tarih:</span>
-                                    <span className="text-xs font-bold text-slate-700">{formatDate(proposal.createdAt)}</span>
-                                </div>
-                                <div className="flex justify-between gap-4">
-                                    <span className="text-xs text-slate-500">Geçerlilik:</span>
-                                    <span className="text-xs font-bold text-slate-700">{formatDate(proposal.validUntil)}</span>
-                                </div>
-                            </div>
+                    {/* MÜŞTERİ BİLGİLERİ */}
+                    <div className="px-10 py-8 grid grid-cols-2 gap-8">
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-100 pb-1">SAYIN</p>
+                            <h3 className="text-lg font-bold text-slate-900">{proposal.customerName}</h3>
+                            {proposal.customerPhone && (
+                                <p className="text-sm text-slate-500 mt-1 flex items-center gap-2">
+                                    <Phone className="w-4 h-4 text-slate-400" /> {proposal.customerPhone}
+                                </p>
+                            )}
+                            {proposal.customerEmail && (
+                                <p className="text-sm text-slate-500 flex items-center gap-2">
+                                    <Mail className="w-4 h-4 text-slate-400" /> {proposal.customerEmail}
+                                </p>
+                            )}
+                        </div>
+                        <div className="text-right">
+                            {/* Buraya istenirse müşteri adresi vs. eklenebilir */}
                         </div>
                     </div>
-                </div>
 
-                {/* 2. MÜŞTERİ */}
-                <div className="px-10 py-4 bg-slate-50/50 border-b border-slate-100 print:bg-transparent print:px-4 print:py-2 print:border-slate-200">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">SAYIN</p>
-                    <h3 className="text-lg font-bold text-slate-900">{proposal.customerName}</h3>
-                    {proposal.customerPhone && (
-                        <p className="text-xs text-slate-600 mt-0.5 flex items-center gap-2">
-                            <Phone className="w-3 h-3 text-slate-400" /> {proposal.customerPhone}
-                        </p>
-                    )}
-                </div>
-
-                {/* 3. TABLO */}
-                <div className="px-10 py-6 flex-1 print:px-4 print:py-2">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="border-b-2 border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                <th className="py-2 px-2 w-10">#</th>
-                                <th className="py-2 px-2">Açıklama</th>
-                                <th className="py-2 px-2 text-center w-20">Adet</th>
-                                <th className="py-2 px-2 text-right w-28">Birim</th>
-                                <th className="py-2 px-2 text-right w-28">Tutar</th>
-                            </tr>
-                        </thead>
-                        <tbody className="text-sm text-slate-700">
-                            {proposal.items.map((item: any, index: number) => (
-                                <tr key={index} className="border-b border-slate-50 last:border-0 print:border-slate-200">
-                                    <td className="py-3 px-2 font-medium text-slate-400">{index + 1}</td>
-                                    <td className="py-3 px-2 font-bold text-slate-800">{item.description}</td>
-                                    <td className="py-3 px-2 text-center">{item.quantity}</td>
-                                    <td className="py-3 px-2 text-right">{Number(item.unitPrice).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</td>
-                                    <td className="py-3 px-2 text-right font-bold">{(item.quantity * item.unitPrice).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</td>
+                    {/* TABLO */}
+                    <div className="px-10 flex-1">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-slate-50 border-y border-slate-200">
+                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-16 text-center">NO</th>
+                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">HİZMET / ÜRÜN AÇIKLAMASI</th>
+                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center w-24">ADET</th>
+                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right w-32">BİRİM FİYAT</th>
+                                    <th className="py-3 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right w-32">TUTAR</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody className="text-sm text-slate-700">
+                                {proposal.items.map((item: any, index: number) => (
+                                    <tr key={index} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                                        <td className="py-4 px-4 text-center font-medium text-slate-400">{index + 1}</td>
+                                        <td className="py-4 px-4 font-bold text-slate-800">{item.description}</td>
+                                        <td className="py-4 px-4 text-center">{item.quantity}</td>
+                                        <td className="py-4 px-4 text-right tabular-nums">{Number(item.unitPrice).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</td>
+                                        <td className="py-4 px-4 text-right font-bold tabular-nums text-slate-900">{(item.quantity * item.unitPrice).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</td>
+                                    </tr>
+                                ))}
+                                {/* Boş satırlar ekleyerek tabloyu doldurabiliriz (Opsiyonel estetik için) */}
+                            </tbody>
+                        </table>
+                    </div>
 
-                {/* 4. TOPLAM & FOOTER */}
-                <div className="p-10 bg-slate-50 flex flex-col gap-6 border-t border-slate-200 mt-auto print:bg-transparent print:p-4 print:gap-4 print:mt-0">
+                    {/* ALT BİLGİ (TOPLAM & NOTLAR) */}
+                    <div className="px-10 pb-10 pt-6 mt-auto">
+                        <div className="flex justify-end mb-6">
+                            <div className="w-72 bg-slate-50 rounded-xl p-4 border border-slate-100">
+                                <div className="flex justify-between text-sm text-slate-600 mb-2">
+                                    <span>Ara Toplam</span>
+                                    <span className="font-medium">{proposal.subtotal?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+                                </div>
+                                <div className="flex justify-between text-sm text-slate-600 mb-3 border-b border-slate-200 pb-2">
+                                    <span>KDV (%{proposal.taxRate})</span>
+                                    <span className="font-medium">{proposal.taxAmount?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-base font-bold text-slate-900 uppercase">GENEL TOPLAM</span>
+                                    <span className="text-2xl font-black text-blue-900">{proposal.total?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+                                </div>
+                            </div>
+                        </div>
 
-                    <div className="flex justify-end">
-                        <div className="w-64 space-y-2">
-                            <div className="flex justify-between text-xs text-slate-600">
-                                <span>Ara Toplam</span>
-                                <span className="font-medium">{proposal.subtotal?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+                        <div className="grid grid-cols-2 gap-8 border-t border-slate-200 pt-6">
+                            <div className="text-xs text-slate-500 space-y-2">
+                                <h4 className="font-bold text-slate-800 uppercase text-[10px] tracking-widest">ÖDEME & KOŞULLAR</h4>
+                                <ul className="list-disc list-inside space-y-1 marker:text-blue-500">
+                                    <li>Teklifimiz <b>{formatDate(proposal.validUntil)}</b> tarihine kadar geçerlidir.</li>
+                                    <li>{kdvNote}</li>
+                                    {companyInfo?.bankAccount && (
+                                        <li className="font-medium bg-blue-50 text-blue-800 inline-block px-2 py-1 rounded mt-1">
+                                            IBAN: {companyInfo.bankAccount}
+                                        </li>
+                                    )}
+                                </ul>
                             </div>
-                            <div className="flex justify-between text-xs text-slate-600">
-                                <span>KDV (%{proposal.taxRate})</span>
-                                <span className="font-medium">{proposal.taxAmount?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
-                            </div>
-                            <div className="h-px bg-slate-300 my-2"></div>
-                            <div className="flex justify-between items-end">
-                                <span className="text-sm font-bold text-slate-900 uppercase">GENEL TOPLAM</span>
-                                <span className="text-xl font-black text-blue-600 print:text-black">{proposal.total?.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+                            <div className="flex flex-col items-end justify-end text-center">
+                                <div className="mb-8">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">ONAYLAYAN</p>
+                                    <p className="font-bold text-slate-900">{companyInfo?.companyName || 'Yetkili İmza'}</p>
+                                </div>
+                                <div className="h-px bg-slate-300 w-40"></div>
+                                <p className="text-[9px] text-slate-400 mt-1 uppercase">KAŞE / İMZA</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-8 items-end">
-                        <div className="text-[10px] text-slate-500 space-y-1">
-                            <h4 className="font-bold text-slate-400 uppercase mb-1">NOTLAR</h4>
-                            <p>Geçerlilik: <span className="font-bold">{formatDate(proposal.validUntil)}</span></p>
-                            <p>{kdvNote}</p>
-                            {companyInfo?.bankAccount && <p>IBAN: {companyInfo.bankAccount}</p>}
-                        </div>
-
-                        <div className="text-center">
-                            <div className="h-12 border-b border-slate-300 w-32 mx-auto mb-1"></div>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase">Kaşe / İmza</p>
-                        </div>
-                    </div>
+                    {/* SAYFA ALT ŞERİDİ */}
+                    <div className="h-3 bg-[#1e293b] w-full mt-auto"></div>
                 </div>
-
             </div>
         </div>
     );
