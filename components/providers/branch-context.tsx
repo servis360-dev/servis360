@@ -1,4 +1,4 @@
-'use client';
+ï»¿'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
@@ -7,10 +7,10 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 interface BranchContextType {
     branches: any[];
-    selectedBranch: string | null; // null = Tüm Þubeler
+    selectedBranch: string | null; // null = TÃ¼m Åžubeler
     setBranch: (branchId: string | null) => void;
     loading: boolean;
-    isHeadquarters: boolean; // Seçili þube merkez mi?
+    isHeadquarters: boolean; // SeÃ§ili ÅŸube merkez mi?
 }
 
 const BranchContext = createContext<BranchContextType>({
@@ -30,18 +30,18 @@ export const BranchProvider = ({ children }: { children: React.ReactNode }) => {
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
             if (currentUser) {
-                // Þubeleri Dinle
+                // Åžubeleri Dinle
                 const q = query(
                     collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'branches'),
-                    orderBy('createdAt', 'asc') // Ýlk açýlan þube en baþta gelsin
+                    orderBy('createdAt', 'asc') // Ä°lk aÃ§Ä±lan ÅŸube en baÅŸta gelsin
                 );
 
                 const unsub = onSnapshot(q, (snapshot) => {
                     const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     setBranches(data);
 
-                    // Þube listesi yüklendiðinde, eðer daha önce seçim yapýlmadýysa varsayýlaný ayarla
-                    // Ýstersen burada localStorage'dan son seçimi okuyabilirsin.
+                    // Åžube listesi yÃ¼klendiÄŸinde, eÄŸer daha Ã¶nce seÃ§im yapÄ±lmadÄ±ysa varsayÄ±lanÄ± ayarla
+                    // Ä°stersen burada localStorage'dan son seÃ§imi okuyabilirsin.
 
                     setLoading(false);
                 });
@@ -59,7 +59,7 @@ export const BranchProvider = ({ children }: { children: React.ReactNode }) => {
             const branch = branches.find(b => b.id === branchId);
             setIsHeadquarters(branch?.isHeadquarters || false);
         } else {
-            setIsHeadquarters(false); // "Tüm Þubeler" modunda merkez özelliði aranmaz
+            setIsHeadquarters(false); // "TÃ¼m Åžubeler" modunda merkez Ã¶zelliÄŸi aranmaz
         }
     };
 
