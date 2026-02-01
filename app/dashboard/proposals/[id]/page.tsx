@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -8,16 +8,21 @@ import {
     Printer,
     ArrowLeft,
     Phone,
-    Mail,
     Building2,
+    Download,
+    Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 export default function ProposalViewPage({ params }: { params: { id: string } }) {
     const [proposal, setProposal] = useState<any>(null);
     const [companyInfo, setCompanyInfo] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [downloading, setDownloading] = useState(false); // PDF indirme durumu
+    const invoiceRef = useRef<HTMLDivElement>(null); // PDF'e çevrilecek alanı seçmek için
     const router = useRouter();
 
     useEffect(() => {
@@ -57,6 +62,53 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
         }, 300);
     };
 
+    // PDF İNDİRME FONKSİYONU
+    const handleDownloadPDF = async () => {
+        if (!invoiceRef.current) return;
+        setDownloading(true);
+
+        try {
+            const element = invoiceRef.current;
+
+            // 1. Ekran görüntüsü al (Yüksek Kalite için scale: 2)
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                useCORS: true, // Logoların düzgün çıkması için
+                logging: false,
+                backgroundColor: '#ffffff'
+            });
+
+            // 2. Görüntüyü veriye çevir
+            const imgData = canvas.toDataURL('image/png');
+
+            // 3. PDF Boyutlarını Hesapla (A4)
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+
+            // Resmi A4 genişliğine sığdır, yüksekliği orantılı ayarla
+            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+            const imgX = (pdfWidth - imgWidth * ratio) / 2;
+            const imgY = 0; // En tepeden başlasın
+
+            // 4. PDF'e ekle ve kaydet
+            // 3. parametre genişlik, 4. parametre yükseklik (oranı koruyarak)
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, (imgHeight * pdfWidth) / imgWidth);
+
+            // Dosya ismi: Teklif-NO.pdf
+            pdf.save(`Teklif-${proposal.proposalNo || 'Belge'}.pdf`);
+
+        } catch (error) {
+            console.error("PDF oluşturma hatası:", error);
+            alert("PDF oluşturulurken bir hata oluştu.");
+        } finally {
+            setDownloading(false);
+        }
+    };
+
     const formatDate = (dateVal: any) => {
         if (!dateVal) return new Date().toLocaleDateString('tr-TR');
         if (dateVal.toDate) return dateVal.toDate().toLocaleDateString('tr-TR');
@@ -73,65 +125,64 @@ export default function ProposalViewPage({ params }: { params: { id: string } })
     return (
         <div className="min-h-screen bg-slate-100 dark:bg-slate-900 p-4 md:p-8 print:p-0 print:m-0 print:bg-white print:overflow-visible">
 
-            {/* 🔥 KESİN ÇÖZÜM: CSS ZOOM & SIFIRLAMA */}
+            {/* YAZDIRMA CSS (Değişmedi) */}
             <style type="text/css" media="print">
                 {`
-                    @page { 
-                        size: A4; 
-                        margin: 0mm; 
-                    }
-                    body { 
-                        background-color: white; 
-                        /* Sayfayı %75'e küçültür, böylece her şey sığar */
-                        zoom: 0.75; 
-                        -webkit-print-color-adjust: exact !important; 
-                    }
-                    /* Gereksiz her şeyi gizle */
+                    @page { size: A4; margin: 0mm; }
+                    body { background-color: white; zoom: 0.75; -webkit-print-color-adjust: exact !important; }
                     nav, header, aside, .sidebar, .no-print { display: none !important; }
-                    
-                    /* Yazdırma konteyneri ayarları */
-                    .print-container { 
-                        width: 100% !important;
-                        max-width: none !important;
-                        box-shadow: none !important; 
-                        border: none !important;
-                        margin: 0 !important;
-                        padding: 20px !important; /* Kenarlardan biraz boşluk */
-                        min-height: auto !important; /* Zorla yükseklik vermeyi bırak */
-                    }
+                    .print-container { width: 100% !important; max-width: none !important; box-shadow: none !important; border: none !important; margin: 0 !important; padding: 20px !important; min-height: auto !important; }
                 `}
             </style>
 
-            {/* Üst Bar (Baskıda Gizlenir) */}
-            <div className="max-w-[210mm] mx-auto mb-6 flex justify-between items-center no-print">
+            {/* Üst Bar (Butonlar) */}
+            <div className="max-w-[210mm] mx-auto mb-6 flex flex-col sm:flex-row justify-between items-center gap-4 no-print">
                 <Link href="/dashboard/proposals" className="flex items-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors">
                     <ArrowLeft className="w-4 h-4 mr-2" /> Listeye Dön
                 </Link>
                 <div className="flex gap-3">
+                    {/* YAZDIR BUTONU */}
                     <button
                         onClick={handlePrint}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"
+                        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
                     >
                         <Printer className="w-4 h-4" /> Yazdır
+                    </button>
+
+                    {/* PDF İNDİR BUTONU */}
+                    <button
+                        onClick={handleDownloadPDF}
+                        disabled={downloading}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                        {downloading ? (
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Hazırlanıyor...</>
+                        ) : (
+                            <><Download className="w-4 h-4" /> PDF İndir</>
+                        )}
                     </button>
                 </div>
             </div>
 
-            {/* A4 Kağıt Formatı */}
-            <div className="print-container max-w-[210mm] mx-auto bg-white text-slate-900 shadow-2xl rounded-xl overflow-hidden flex flex-col relative min-h-[297mm]">
+            {/* A4 Kağıt Formatı - PDF Referansı (ref={invoiceRef}) Buraya Eklendi */}
+            <div
+                ref={invoiceRef}
+                className="print-container max-w-[210mm] mx-auto bg-white text-slate-900 shadow-2xl rounded-xl overflow-hidden flex flex-col relative min-h-[297mm]"
+            >
 
                 {/* 1. HEADER */}
                 <div className="p-10 pb-6 flex justify-between items-start border-b border-slate-100 print:p-4 print:pb-4">
 
                     {/* SOL: LOGO & ADRES */}
                     <div className="w-1/2 pr-4">
-                        {/* Logo - Force Display */}
                         {companyInfo?.logoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
                             <img
                                 src={companyInfo.logoUrl}
                                 alt="Firma Logosu"
                                 className="h-24 w-auto object-contain mb-4 max-w-[200px] print:h-20"
                                 style={{ display: 'block' }}
+                                crossOrigin="anonymous" // CORS hatasını önlemek için önemli
                             />
                         ) : (
                             <div className="flex items-center gap-3 mb-4">
