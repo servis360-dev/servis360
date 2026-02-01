@@ -146,7 +146,12 @@ export default function SettingsPage() {
 
             // Genel dizindeki kaydı da güncelle
             // (Personel ise sadece adı güncellensin, şirket adı değişmesin)
-            const directoryUpdate: any = { fullName: profile.fullName };
+            // 🔥 DÜZELTME: Telefon numarası artık buraya da yazılıyor.
+            const directoryUpdate: any = {
+                fullName: profile.fullName,
+                phone: profile.phone
+            };
+
             if (!isStaff) {
                 directoryUpdate.companyName = profile.companyName;
                 // Logo zaten ayrı yükleniyor

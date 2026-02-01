@@ -45,38 +45,40 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         setIsMobileMenuOpen(false);
     }, [pathname]);
 
-    // YÖNLENDİRME VE GÜVENLİK MANTIĞI
+    // 🔒 YÖNLENDİRME VE GÜVENLİK MANTIĞI
     useEffect(() => {
         if (!loading && profile) {
             const now = new Date();
             const licenseDate = profile.licenseEndsAt ? profile.licenseEndsAt.toDate() : null;
 
-            // Personel mi? (Personel ise abonelik ekranı çıkmaz, şirket lisansını kullanır)
-            // Not: Veritabanında personel rolleri 'personel', 'technician', 'accounting' vb. olarak tutuluyorsa buraya eklenmeli.
+            // Personel mi?
             const isStaff = ['personel', 'technician', 'accounting', 'staff'].includes(profile.role);
 
-            // İşletme Sahibi mi? (Esnaf veya Kurumsal ana hesap)
+            // İşletme Sahibi mi?
             const isBusinessOwner = ['admin', 'corporate', 'esnaf', 'business'].includes(profile.role) ||
                 ['esnaf', 'corporate', 'business'].includes(profile.accountType);
 
-            // 1. ZORUNLU BİLGİ KONTROLÜ (Google Login Koruması)
-            // - Herkes Telefon girmek zorunda.
-            // - İşletme sahipleri Firma Adı girmek zorunda.
-            // - Personel ise firma adı girmesine gerek yok (zaten bir firmaya bağlı), sadece telefon yeterli.
-            const isPhoneMissing = !profile.phone;
-            const isCompanyMissing = isBusinessOwner && !isStaff && !profile.companyName;
+            // 1. ZORUNLU BİLGİ KONTROLÜ (TELEFON & FİRMA ADI)
+            // ----------------------------------------------------
+            // Telefon numarası boşsa veya sadece boşluksa eksik kabul et
+            const isPhoneMissing = !profile.phone || profile.phone.trim() === '';
+
+            // İşletme sahipleri için Firma Adı da zorunlu
+            const isCompanyMissing = isBusinessOwner && !isStaff && (!profile.companyName || profile.companyName.trim() === '');
 
             const isProfileIncomplete = isPhoneMissing || isCompanyMissing;
 
-            // Eğer bilgi eksikse ve şu an Ayarlar sayfasında değilse -> Ayarlar'a at!
-            if (isProfileIncomplete && pathname !== '/dashboard/settings') {
-                router.push('/dashboard/settings');
-                return;
+            // EĞER BİLGİ EKSİKSE -> AYARLAR SAYFASINA KİLİTLE
+            if (isProfileIncomplete) {
+                if (pathname !== '/dashboard/settings') {
+                    router.push('/dashboard/settings');
+                }
+                return; // Başka kontrol yapma, buradan çık.
             }
 
-            // 2. Lisans Kontrolü
-            // Eğer profil tamsa, ayarlar sayfasında değilse:
-            // - Personel DEĞİLSE ve Admin DEĞİLSE -> Lisans tarihini kontrol et.
+            // 2. LİSANS KONTROLÜ
+            // ----------------------------------------------------
+            // Eğer personel veya admin DEĞİLSE lisans süresini kontrol et
             if (!isStaff && profile.role !== 'admin' && profile.role !== 'super_admin') {
                 const isLicenseExpired = !licenseDate || licenseDate < now;
 
@@ -96,8 +98,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const isStaff = ['personel', 'technician', 'accounting', 'staff'].includes(profile?.role);
 
     // Lisans geçerli mi? 
-    // Personel, Admin ve Super Admin için her zaman TRUE.
-    // Diğerleri için tarih kontrolü.
     const isLicenseValid = isStaff ||
         profile?.role === 'super_admin' ||
         profile?.role === 'admin' ||
@@ -107,49 +107,47 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const isBusinessOwner = ['admin', 'corporate', 'esnaf', 'business'].includes(profile?.role) ||
         ['esnaf', 'corporate', 'business'].includes(profile?.accountType);
 
-    const isIncomplete = !profile?.phone || (isBusinessOwner && !isStaff && !profile?.companyName);
+    const isPhoneMissing = !profile?.phone || profile?.phone.trim() === '';
+    const isCompanyMissing = isBusinessOwner && !isStaff && (!profile?.companyName || profile?.companyName.trim() === '');
+    const isIncomplete = isPhoneMissing || isCompanyMissing;
 
     return (
         <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-            {/* Sidebar her zaman gösterilir, içerik kilitli olsa bile ayarlara erişim için gereklidir */}
-            {(isLicenseValid || isIncomplete) && (
-                <Sidebar
-                    userRole={profile?.role}
-                    userProfile={profile} // Tüm profili gönderiyoruz ki AccountType'a göre menü değişebilsin
-                    isOpen={isMobileMenuOpen}
-                    onClose={() => setIsMobileMenuOpen(false)}
-                />
-            )}
+            {/* Sidebar her zaman gösterilir (Çıkış yapabilmesi için) */}
+            <Sidebar
+                userRole={profile?.role}
+                userProfile={profile}
+                isOpen={isMobileMenuOpen}
+                onClose={() => setIsMobileMenuOpen(false)}
+            />
 
-            <div className={`flex-1 flex flex-col transition-all duration-300 ${(isLicenseValid || isIncomplete) ? 'ml-0 md:ml-64' : 'w-full'}`}>
-                {(isLicenseValid || isIncomplete) && (
-                    <Header
-                        user={profile}
-                        onMenuClick={() => setIsMobileMenuOpen(true)}
-                    />
-                )}
+            <div className={`flex-1 flex flex-col transition-all duration-300 ml-0 md:ml-64`}>
+                <Header
+                    user={profile}
+                    onMenuClick={() => setIsMobileMenuOpen(true)}
+                />
 
                 <main className="flex-1 p-4 md:p-6 overflow-y-auto">
-                    {/* ZORUNLU PROFİL UYARISI */}
+                    {/* ZORUNLU PROFİL UYARISI (Sadece Settings sayfasında görünür) */}
                     {isIncomplete && pathname === '/dashboard/settings' && (
-                        <div className="bg-yellow-900/20 border border-yellow-600/50 p-4 rounded-lg mb-6 flex items-start gap-3 animate-pulse">
-                            <AlertTriangle className="w-6 h-6 text-yellow-500 flex-shrink-0 mt-1" />
+                        <div className="bg-red-900/10 border border-red-600/50 p-4 rounded-xl mb-6 flex items-start gap-3 animate-pulse">
+                            <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-500 flex-shrink-0 mt-1" />
                             <div>
-                                <h3 className="font-bold text-yellow-500">Profil Bilgilerinizi Tamamlayın</h3>
-                                <p className="text-sm text-yellow-200/80">
-                                    Sistemi kullanabilmek için lütfen
-                                    <strong> Telefon Numaranızı</strong>
-                                    {isBusinessOwner && !isStaff ? ' ve Firma Adınızı' : ''}
-                                    girip kaydedin.
+                                <h3 className="font-bold text-red-600 dark:text-red-500">Giriş Yapılamıyor!</h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                                    Sistemi kullanmaya başlamak için aşağıdaki bilgileri eksiksiz doldurmalısınız:
+                                    <ul className="list-disc list-inside mt-2 font-bold text-slate-800 dark:text-white">
+                                        {isPhoneMissing && <li>Telefon Numarası</li>}
+                                        {isCompanyMissing && <li>Firma Adı</li>}
+                                    </ul>
                                 </p>
                             </div>
                         </div>
                     )}
 
-                    {/* LİSANS UYARISI EKRANI */}
-                    {/* Lisans geçersizse, profil tam olsa bile, abonelik sayfası değilse -> Kilitle */}
+                    {/* EKRAN KİLİDİ (LİSANS) */}
                     {!isLicenseValid && !isIncomplete && pathname !== '/dashboard/subscription' ? (
-                        <div className="flex flex-col items-center justify-center h-full text-center space-y-4 animate-in fade-in zoom-in duration-500 min-h-[80vh]">
+                        <div className="flex flex-col items-center justify-center h-full text-center space-y-4 animate-in fade-in zoom-in duration-500 min-h-[70vh]">
                             <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center border-4 border-red-50 dark:border-red-900/50 mb-4">
                                 <LockKeyhole className="w-12 h-12 text-red-600 dark:text-red-500" />
                             </div>
@@ -165,7 +163,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             </div>
                         </div>
                     ) : (
-                        children
+                        // Eğer profil eksikse ve settings sayfasında DEĞİLSE (Redirect çalışana kadar) içeriği gizle
+                        (isIncomplete && pathname !== '/dashboard/settings')
+                            ? <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>
+                            : children
                     )}
                 </main>
             </div>
