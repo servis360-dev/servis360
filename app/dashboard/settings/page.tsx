@@ -4,7 +4,8 @@ import { useEffect, useState, useRef } from 'react';
 import {
     doc,
     updateDoc,
-    onSnapshot
+    onSnapshot,
+    getDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, getStorage } from 'firebase/storage';
 import { auth, db } from '../../../lib/firebase';
@@ -18,7 +19,9 @@ import {
     MessageCircle,
     CalendarClock,
     Image as ImageIcon,
-    Lock
+    Lock,
+    Link as LinkIcon,
+    RefreshCw
 } from 'lucide-react';
 
 // Storage servisini güvenli şekilde alalım
@@ -60,9 +63,15 @@ export default function SettingsPage() {
                 const data = doc.data();
                 setUserData(data);
 
-                // Personel Kontrolü
-                // Eğer rol 'staff', 'technician' veya 'accounting' ise personeldir.
-                const userIsStaff = ['staff', 'technician', 'accounting'].includes(data.role);
+                // 🔥 PERSONEL KONTROLÜ (Genişletilmiş Liste)
+                // Satış, Muhasebe ve Tekniker rolleri de dahil edildi.
+                const staffRoles = [
+                    'staff', 'personnel', 'employee',
+                    'technician', 'technical', 'teknik',
+                    'sales', 'satis', 'kasa',
+                    'accounting', 'muhasebe'
+                ];
+                const userIsStaff = staffRoles.includes(data.role);
                 setIsStaff(userIsStaff);
 
                 setProfile({
@@ -134,6 +143,7 @@ export default function SettingsPage() {
             };
 
             // Eğer YÖNETİCİ ise şirket bilgilerini de güncelle
+            // 🔥 PERSONEL BURADAN ŞİRKET ADINI DEĞİŞTİREMEZ
             if (!isStaff) {
                 updateData.companyName = profile.companyName;
                 updateData.sector = profile.sector;
@@ -145,8 +155,6 @@ export default function SettingsPage() {
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'), updateData);
 
             // Genel dizindeki kaydı da güncelle
-            // (Personel ise sadece adı güncellensin, şirket adı değişmesin)
-            // 🔥 DÜZELTME: Telefon numarası artık buraya da yazılıyor.
             const directoryUpdate: any = {
                 fullName: profile.fullName,
                 phone: profile.phone
@@ -154,7 +162,6 @@ export default function SettingsPage() {
 
             if (!isStaff) {
                 directoryUpdate.companyName = profile.companyName;
-                // Logo zaten ayrı yükleniyor
             }
 
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid), directoryUpdate);
@@ -163,6 +170,49 @@ export default function SettingsPage() {
         } catch (error) {
             console.error(error);
             alert('Bir hata oluştu.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // 🔥 YENİ ÖZELLİK: Manuel Davetiye Kontrolü
+    const checkPendingInvite = async () => {
+        const user = auth.currentUser;
+        if (!user || !user.email) return;
+
+        setLoading(true);
+        try {
+            // Kullanıcının e-postasına tanımlı davetiye var mı?
+            const inviteRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', user.email);
+            const inviteSnap = await getDoc(inviteRef);
+
+            if (inviteSnap.exists()) {
+                const data = inviteSnap.data();
+
+                // Profili Patronla Eşle
+                await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'users', 'profile'), {
+                    ownerId: data.targetCompanyId,
+                    companyName: data.targetCompanyName,
+                    role: data.assignedRole,
+                    sector: data.targetSector,
+                    accountType: 'corporate'
+                });
+
+                // Public Dizini Güncelle
+                await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid), {
+                    companyName: data.targetCompanyName,
+                    role: data.assignedRole,
+                    accountType: 'corporate'
+                });
+
+                alert(`✅ Başarılı! Hesabınız "${data.targetCompanyName}" firmasına bağlandı. Sayfa yenileniyor...`);
+                window.location.reload();
+            } else {
+                alert("⚠️ E-posta adresinize ( " + user.email + " ) tanımlı aktif bir davetiye bulunamadı.");
+            }
+        } catch (error) {
+            console.error("Davet hatası:", error);
+            alert("Kontrol sırasında hata oluştu.");
         } finally {
             setLoading(false);
         }
@@ -293,16 +343,43 @@ export default function SettingsPage() {
                         </h3>
 
                         <div className="space-y-4">
+                            {/* 🔥 BAĞLANTI KONTROL BUTONU (Sadece Personel İçin) */}
+                            {isStaff && (
+                                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-full">
+                                            <LinkIcon className="w-5 h-5 text-blue-600 dark:text-blue-300" />
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-slate-900 dark:text-white text-sm">Şirket Bağlantısı</h4>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                {profile.companyName ? `"${profile.companyName}" firmasına bağlısınız.` : 'Henüz bir firmaya bağlı değilsiniz.'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={checkPendingInvite}
+                                        disabled={loading}
+                                        className="text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                                    >
+                                        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                        Bağlantıyı Kontrol Et
+                                    </button>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                        Firma Adı {isStaff && <span className="text-xs text-red-400">(Değiştirilemez)</span>}
+                                        Firma Adı {isStaff && <span className="text-xs text-red-500 font-bold ml-1">(Değiştirilemez)</span>}
                                     </label>
                                     <input
                                         disabled={isStaff}
-                                        className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                        className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-slate-100 dark:disabled:bg-slate-800"
                                         value={profile.companyName}
                                         onChange={e => setProfile({ ...profile, companyName: e.target.value })}
+                                        title={isStaff ? "Firma adını sadece şirket yöneticisi değiştirebilir." : ""}
                                     />
                                 </div>
                                 <div>
@@ -310,7 +387,6 @@ export default function SettingsPage() {
                                         <Smartphone className="w-4 h-4" /> İletişim Telefonu
                                     </label>
                                     <input
-                                        // Telefonu herkes değiştirebilir (Personel kendi telefonunu günceller)
                                         className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 transition-all"
                                         value={profile.phone}
                                         onChange={e => setProfile({ ...profile, phone: e.target.value })}
@@ -327,7 +403,7 @@ export default function SettingsPage() {
                                 </label>
                                 <select
                                     disabled={isStaff}
-                                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none disabled:opacity-60"
+                                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                                     value={profile.appointmentDuration}
                                     onChange={e => setProfile({ ...profile, appointmentDuration: e.target.value })}
                                 >
@@ -342,12 +418,12 @@ export default function SettingsPage() {
 
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                    Açık Adres {isStaff && <span className="text-xs text-red-400">(Şirket Merkezi)</span>}
+                                    Açık Adres {isStaff && <span className="text-xs text-red-500 font-bold ml-1">(Şirket Merkezi)</span>}
                                 </label>
                                 <textarea
                                     disabled={isStaff}
                                     rows={3}
-                                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 transition-all disabled:opacity-60"
+                                    className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                                     value={profile.address}
                                     onChange={e => setProfile({ ...profile, address: e.target.value })}
                                 />
