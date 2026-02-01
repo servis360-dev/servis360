@@ -10,6 +10,9 @@ import { Sidebar } from '../../components/layout/sidebar';
 import { Header } from '../../components/layout/header';
 import { Loader2, LockKeyhole, CreditCard, AlertTriangle } from 'lucide-react';
 
+// 🔥 YENİ: Şube Yönetim Sistemi (Context) Eklendi
+import { BranchProvider } from '../../components/providers/branch-context';
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<any>(null);
     const [profile, setProfile] = useState<any>(null);
@@ -65,13 +68,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 ['esnaf', 'corporate', 'business'].includes(profile.accountType);
 
             // 1. ZORUNLU BİLGİ KONTROLÜ (TELEFON & FİRMA ADI)
-            // ----------------------------------------------------
-            // Telefon numarası boşsa veya sadece boşluksa eksik kabul et
             const isPhoneMissing = !profile.phone || profile.phone.trim() === '';
-
-            // İşletme sahipleri için Firma Adı da zorunlu (Personel hariç)
             const isCompanyMissing = isBusinessOwner && !isStaff && (!profile.companyName || profile.companyName.trim() === '');
-
             const isProfileIncomplete = isPhoneMissing || isCompanyMissing;
 
             // EĞER BİLGİ EKSİKSE -> AYARLAR SAYFASINA KİLİTLE
@@ -79,16 +77,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 if (pathname !== '/dashboard/settings') {
                     router.push('/dashboard/settings');
                 }
-                return; // Başka kontrol yapma, buradan çık.
+                return;
             }
 
             // 2. LİSANS KONTROLÜ
-            // ----------------------------------------------------
-            // Eğer personel veya admin DEĞİLSE lisans süresini kontrol et
-            // Personel (isStaff) ise lisans kontrolünü atla (Patronun lisansına bağlıdır, o kontrolü işlem yaparken yapıyoruz)
             if (!isStaff && profile.role !== 'admin' && profile.role !== 'super_admin') {
                 const isLicenseExpired = !licenseDate || licenseDate < now;
-
                 if (isLicenseExpired && pathname !== '/dashboard/subscription' && pathname !== '/dashboard/settings') {
                     router.push('/dashboard/subscription');
                 }
@@ -101,7 +95,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
 
     // --- RENDER MANTIĞI İÇİN DEĞİŞKENLER ---
-
     const staffRoles = [
         'staff', 'personnel', 'employee',
         'technical', 'technician', 'teknik',
@@ -110,14 +103,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     ];
     const isStaff = staffRoles.includes(profile?.role);
 
-    // Lisans geçerli mi? 
-    // Personel ise her zaman geçerli say (ekran kilidini açar, işlem kısıtı içeride yapılır)
     const isLicenseValid = isStaff ||
         profile?.role === 'super_admin' ||
         profile?.role === 'admin' ||
         (profile?.licenseEndsAt && profile.licenseEndsAt.toDate() > new Date());
 
-    // Profil eksik mi?
     const isBusinessOwner = ['admin', 'corporate', 'esnaf', 'business'].includes(profile?.role) ||
         ['esnaf', 'corporate', 'business'].includes(profile?.accountType);
 
@@ -126,64 +116,67 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const isIncomplete = isPhoneMissing || isCompanyMissing;
 
     return (
-        <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-            {/* Sidebar her zaman gösterilir (Çıkış yapabilmesi için) */}
-            <Sidebar
-                userRole={profile?.role}
-                userProfile={profile}
-                isOpen={isMobileMenuOpen}
-                onClose={() => setIsMobileMenuOpen(false)}
-            />
-
-            <div className={`flex-1 flex flex-col transition-all duration-300 ml-0 md:ml-64`}>
-                <Header
-                    user={profile}
-                    onMenuClick={() => setIsMobileMenuOpen(true)}
+        // 🔥 BURASI KRİTİK: TÜM UYGULAMAYI ŞUBE CONTEXT'İ İLE SARMALIYORUZ
+        <BranchProvider>
+            <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
+                {/* Sidebar her zaman gösterilir */}
+                <Sidebar
+                    userRole={profile?.role}
+                    userProfile={profile}
+                    isOpen={isMobileMenuOpen}
+                    onClose={() => setIsMobileMenuOpen(false)}
                 />
 
-                <main className="flex-1 p-4 md:p-6 overflow-y-auto">
-                    {/* ZORUNLU PROFİL UYARISI (Sadece Settings sayfasında görünür) */}
-                    {isIncomplete && pathname === '/dashboard/settings' && (
-                        <div className="bg-red-900/10 border border-red-600/50 p-4 rounded-xl mb-6 flex items-start gap-3 animate-pulse">
-                            <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-500 flex-shrink-0 mt-1" />
-                            <div>
-                                <h3 className="font-bold text-red-600 dark:text-red-500">Giriş Yapılamıyor!</h3>
-                                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
-                                    Sistemi kullanmaya başlamak için aşağıdaki bilgileri eksiksiz doldurmalısınız:
-                                    <ul className="list-disc list-inside mt-2 font-bold text-slate-800 dark:text-white">
-                                        {isPhoneMissing && <li>Telefon Numarası</li>}
-                                        {isCompanyMissing && <li>Firma Adı</li>}
-                                    </ul>
-                                </p>
-                            </div>
-                        </div>
-                    )}
+                <div className={`flex-1 flex flex-col transition-all duration-300 ml-0 md:ml-64`}>
+                    <Header
+                        user={profile}
+                        onMenuClick={() => setIsMobileMenuOpen(true)}
+                    />
 
-                    {/* EKRAN KİLİDİ (LİSANS) */}
-                    {!isLicenseValid && !isIncomplete && pathname !== '/dashboard/subscription' ? (
-                        <div className="flex flex-col items-center justify-center h-full text-center space-y-4 animate-in fade-in zoom-in duration-500 min-h-[70vh]">
-                            <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center border-4 border-red-50 dark:border-red-900/50 mb-4">
-                                <LockKeyhole className="w-12 h-12 text-red-600 dark:text-red-500" />
+                    <main className="flex-1 p-4 md:p-6 overflow-y-auto">
+                        {/* ZORUNLU PROFİL UYARISI */}
+                        {isIncomplete && pathname === '/dashboard/settings' && (
+                            <div className="bg-red-900/10 border border-red-600/50 p-4 rounded-xl mb-6 flex items-start gap-3 animate-pulse">
+                                <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-500 flex-shrink-0 mt-1" />
+                                <div>
+                                    <h3 className="font-bold text-red-600 dark:text-red-500">Giriş Yapılamıyor!</h3>
+                                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                                        Sistemi kullanmaya başlamak için aşağıdaki bilgileri eksiksiz doldurmalısınız:
+                                        <ul className="list-disc list-inside mt-2 font-bold text-slate-800 dark:text-white">
+                                            {isPhoneMissing && <li>Telefon Numarası</li>}
+                                            {isCompanyMissing && <li>Firma Adı</li>}
+                                        </ul>
+                                    </p>
+                                </div>
                             </div>
-                            <h2 className="text-4xl font-black text-slate-800 dark:text-white">Abonelik Gerekli</h2>
-                            <p className="text-lg text-slate-500 dark:text-slate-400 max-w-lg">
-                                Verilerinize erişmek ve sistemi kullanmaya devam etmek için lütfen abonelik paketinizi seçin.
-                            </p>
-                            <div className="pt-4">
-                                <button onClick={() => router.push('/dashboard/subscription')} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-xl shadow-blue-600/30 text-lg flex items-center gap-2 mx-auto">
-                                    <CreditCard className="w-5 h-5" />
-                                    Paketleri İncele
-                                </button>
+                        )}
+
+                        {/* EKRAN KİLİDİ (LİSANS) */}
+                        {!isLicenseValid && !isIncomplete && pathname !== '/dashboard/subscription' ? (
+                            <div className="flex flex-col items-center justify-center h-full text-center space-y-4 animate-in fade-in zoom-in duration-500 min-h-[70vh]">
+                                <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center border-4 border-red-50 dark:border-red-900/50 mb-4">
+                                    <LockKeyhole className="w-12 h-12 text-red-600 dark:text-red-500" />
+                                </div>
+                                <h2 className="text-4xl font-black text-slate-800 dark:text-white">Abonelik Gerekli</h2>
+                                <p className="text-lg text-slate-500 dark:text-slate-400 max-w-lg">
+                                    Verilerinize erişmek ve sistemi kullanmaya devam etmek için lütfen abonelik paketinizi seçin.
+                                </p>
+                                <div className="pt-4">
+                                    <button onClick={() => router.push('/dashboard/subscription')} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-xl shadow-blue-600/30 text-lg flex items-center gap-2 mx-auto">
+                                        <CreditCard className="w-5 h-5" />
+                                        Paketleri İncele
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    ) : (
-                        // Eğer profil eksikse ve settings sayfasında DEĞİLSE (Redirect çalışana kadar) içeriği gizle
-                        (isIncomplete && pathname !== '/dashboard/settings')
-                            ? <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>
-                            : children
-                    )}
-                </main>
+                        ) : (
+                            // Eğer profil eksikse ve settings sayfasında DEĞİLSE içeriği gizle
+                            (isIncomplete && pathname !== '/dashboard/settings')
+                                ? <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>
+                                : children
+                        )}
+                    </main>
+                </div>
             </div>
-        </div>
+        </BranchProvider>
     );
 }
