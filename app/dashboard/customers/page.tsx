@@ -7,6 +7,7 @@ import {
     onSnapshot,
     addDoc,
     updateDoc,
+    deleteDoc, // Silme işlemi için eklendi
     doc,
     serverTimestamp,
     orderBy,
@@ -26,12 +27,13 @@ import {
     Save,
     Contact,
     BookUser,
-    UserCog, // Personel ikonu
-    Briefcase
+    UserCog,
+    Briefcase,
+    Trash2 // Silme ikonu eklendi
 } from 'lucide-react';
 
 export default function CustomersPage() {
-    const [allContacts, setAllContacts] = useState<any[]>([]); // Tümü
+    const [allContacts, setAllContacts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [user, setUser] = useState<any>(null);
@@ -44,11 +46,12 @@ export default function CustomersPage() {
 
     // Modallar için State
     const [showAddModal, setShowAddModal] = useState(false);
+
     // Transaction Modal
     const [transactionModal, setTransactionModal] = useState<{ open: boolean, contact: any | null, type: 'debt' | 'payment' }>({
         open: false,
         contact: null,
-        type: 'debt' // debt: Borçlandır/Avans, payment: Tahsilat/Ödeme
+        type: 'debt'
     });
 
     // Form Verileri
@@ -72,7 +75,7 @@ export default function CustomersPage() {
                     console.error("Profil yüklenemedi", error);
                 }
 
-                // 2. Müşterileri ve Personelleri Dinle (Hepsi 'customers' koleksiyonunda, type field ile ayrılır)
+                // 2. Müşterileri ve Personelleri Dinle
                 const q = query(
                     collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'customers'),
                     orderBy('name')
@@ -81,7 +84,7 @@ export default function CustomersPage() {
                 const unsub = onSnapshot(q, (snapshot) => {
                     const data = snapshot.docs.map(d => ({
                         id: d.id,
-                        type: 'customer', // Varsayılan değer (eski kayıtlar için)
+                        type: 'customer',
                         ...d.data()
                     }));
                     setAllContacts(data);
@@ -94,12 +97,23 @@ export default function CustomersPage() {
         return () => unsubscribe();
     }, []);
 
-    // Yeni Kişi Ekle (Müşteri veya Personel)
+    // Kayıt Silme Fonksiyonu
+    const handleDelete = async (id: string, name: string) => {
+        if (confirm(`${name} isimli kaydı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`)) {
+            try {
+                if (!user) return;
+                await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers', id));
+            } catch (error) {
+                console.error("Silme hatası:", error);
+                alert("Silme işlemi başarısız oldu.");
+            }
+        }
+    };
+
     const handleAddContact = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user) return;
 
-        // Formdaki seçime göre type belirlenir, ancak modal açılırken viewMode neyse onu default yapabiliriz
         const contactType = newContact.type || viewMode;
 
         await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers'), {
@@ -115,7 +129,6 @@ export default function CustomersPage() {
         setNewContact({ name: '', phone: '', note: '', type: 'customer' });
     };
 
-    // Para İşlemi (Borç/Alacak/Maaş)
     const handleTransaction = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user || !transactionModal.contact || !amount) return;
@@ -124,22 +137,14 @@ export default function CustomersPage() {
         const currentBalance = transactionModal.contact.balance || 0;
         const isPersonnel = transactionModal.contact.type === 'personnel';
 
-        // MANTIK:
-        // Müşteri: 'debt' (Borç Ekle -> Bakiye Artar), 'payment' (Tahsilat -> Bakiye Azalır)
-        // Personel: 'debt' (Avans Ver -> Bakiye Artar), 'payment' (Maaş Öde -> Bakiye Düşer veya sadece ödenir)
-
-        // Basit Bakiye Mantığı:
-        // Herkes için: 'debt' (+), 'payment' (-)
         const newBalance = transactionModal.type === 'debt'
             ? currentBalance + val
             : currentBalance - val;
 
-        // 1. Bakiyeyi Güncelle
         await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'customers', transactionModal.contact.id), {
             balance: newBalance
         });
 
-        // 2. Kişi Geçmişine Ekle
         let historyDesc = description;
         if (!description) {
             if (isPersonnel) {
@@ -157,23 +162,11 @@ export default function CustomersPage() {
             createdAt: serverTimestamp()
         });
 
-        // 3. FİNANS (KASA) ENTEGRASYONU
-        // ---------------------------------------------------------
-        // MÜŞTERİ: 'payment' (Tahsilat) -> GELİR (Income)
-        // PERSONEL: 'payment' (Maaş) VEYA 'debt' (Avans) -> GİDER (Expense)
-        // ---------------------------------------------------------
-
         if (isPersonnel) {
-            // PERSONEL İŞLEMİ -> KASADAN PARA ÇIKAR (Expense)
-            // Hem avans verirken hem maaş öderken para çıkar.
-            // Ancak sadece "Ödeme yapıldığı" anı kasaya işlemek daha doğru olabilir.
-            // Buradaki mantık: İşletme sahibi "İşlem Gir" dediğinde kasadan para çıkıyorsa ekleriz.
-
-            // Eğer "Ödeme (payment)" veya "Avans (debt)" seçildiyse ve bu kasadan nakit çıkışıysa:
             const expenseType = transactionModal.type === 'debt' ? 'Personel Avans' : 'Personel Maaş/Ödeme';
 
             await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), {
-                type: 'expense', // Personel ödemesi daima giderdir
+                type: 'expense',
                 amount: val,
                 category: 'Personel',
                 description: `${transactionModal.contact.name} - ${description || expenseType}`,
@@ -182,9 +175,6 @@ export default function CustomersPage() {
             });
 
         } else {
-            // MÜŞTERİ İŞLEMİ
-            // Sadece Tahsilat (payment) yapıldığında Kasa Geliri (Income) olur.
-            // Borç eklemek (Veresiye yazmak) kasaya para sokmaz.
             if (transactionModal.type === 'payment') {
                 await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'finance'), {
                     type: 'income',
@@ -202,7 +192,6 @@ export default function CustomersPage() {
         setDescription('');
     };
 
-    // Akıllı WhatsApp Mesajı
     const sendWhatsapp = (phone: string, name: string, balance: number, type: string) => {
         let msg = '';
         if (type === 'personnel') {
@@ -220,7 +209,6 @@ export default function CustomersPage() {
         window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
     };
 
-    // Filtreleme (İsim Arama + Tip Filtresi)
     const filteredContacts = allContacts.filter(c => {
         const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) || c.phone.includes(searchTerm);
         const matchesType = (c.type || 'customer') === viewMode;
@@ -241,7 +229,6 @@ export default function CustomersPage() {
                     </p>
                 </div>
 
-                {/* TAB BUTONLARI */}
                 <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                     <button
                         onClick={() => setViewMode('customer')}
@@ -259,7 +246,7 @@ export default function CustomersPage() {
 
                 <button
                     onClick={() => {
-                        setNewContact({ ...newContact, type: viewMode }); // Modu otomatik seç
+                        setNewContact({ ...newContact, type: viewMode });
                         setShowAddModal(true);
                     }}
                     className={`flex items-center gap-2 px-4 py-2 text-white rounded-xl font-bold transition-colors shadow-lg ${viewMode === 'personnel' ? 'bg-orange-600 hover:bg-orange-700 shadow-orange-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'}`}
@@ -290,9 +277,18 @@ export default function CustomersPage() {
                 ) : filteredContacts.map(c => (
                     <div key={c.id} className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all relative group">
 
-                        {/* Personel Badge */}
+                        {/* SİLME BUTONU (Sağ Üst) */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleDelete(c.id, c.name); }}
+                            className="absolute top-3 right-3 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors z-10"
+                            title="Sil"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+
+                        {/* Personel Badge (Silme butonuyla çakışmasın diye sola kaydırıldı) */}
                         {c.type === 'personnel' && (
-                            <span className="absolute top-3 right-3 px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold uppercase rounded-full">
+                            <span className="absolute top-4 right-12 px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold uppercase rounded-full">
                                 Personel
                             </span>
                         )}
@@ -312,7 +308,7 @@ export default function CustomersPage() {
 
                             {/* Bakiye Göstergesi */}
                             {accountType !== 'individual' && (
-                                <div className="text-right pt-6">
+                                <div className="text-right pt-6 pr-1">
                                     <p className="text-xs text-slate-400 mb-1">
                                         {c.type === 'personnel' ? 'Avans/Bakiye' : 'Bakiye'}
                                     </p>
@@ -323,14 +319,12 @@ export default function CustomersPage() {
                             )}
                         </div>
 
-                        {/* Not Alanı */}
                         {c.note && (
                             <p className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-900 p-2 rounded mb-4 italic line-clamp-2">
                                 "{c.note}"
                             </p>
                         )}
 
-                        {/* Aksiyon Butonları */}
                         {accountType !== 'individual' ? (
                             <div className="grid grid-cols-2 gap-2 mt-2">
                                 <button
@@ -373,7 +367,6 @@ export default function CustomersPage() {
                             <button onClick={() => setShowAddModal(false)}><X className="text-slate-400 hover:text-slate-600" /></button>
                         </div>
                         <form onSubmit={handleAddContact} className="space-y-4">
-                            {/* Tip Seçimi */}
                             <div className="grid grid-cols-2 gap-2 mb-4">
                                 <button
                                     type="button"
@@ -458,12 +451,6 @@ export default function CustomersPage() {
                                 <Save className="w-5 h-5" /> İşlemi Onayla
                             </button>
                         </form>
-
-                        {transactionModal.contact.type === 'personnel' && (
-                            <p className="text-xs text-center text-slate-400 mt-4">
-                                * Bu işlem otomatik olarak Kasa {transactionModal.type === 'debt' || transactionModal.type === 'payment' ? 'Giderlerine' : ''} eklenecektir.
-                            </p>
-                        )}
                     </div>
                 </div>
             )}

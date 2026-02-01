@@ -147,8 +147,8 @@ const MENU_ITEMS = [
                 label: 'Şubeler',
                 href: '/dashboard/branches',
                 icon: Store,
-                // Sadece Kurumsal Firmalar ve Süper Admin
-                allowedRoles: ['super_admin', 'corporate']
+                // Kurumsal ve Esnaf görebilir (Esnaf limiti 1, Kurumsal limiti 5)
+                allowedRoles: ['super_admin', 'corporate', 'esnaf']
             },
             {
                 label: 'Personel Yönetimi',
