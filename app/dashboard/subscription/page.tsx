@@ -1,11 +1,10 @@
 ﻿'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { doc, onSnapshot, addDoc, collection, serverTimestamp, getDoc, getDocs, query } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import { doc, onSnapshot, addDoc, collection, serverTimestamp, getDoc, getDocs } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import {
     ShieldCheck,
-    AlertTriangle,
     Zap,
     Upload,
     Loader2,
@@ -14,10 +13,8 @@ import {
     User,
     Crown,
     Check,
-    ArrowRight,
-    Copy,
     Building,
-    MessageCircle,
+    MessageCircle, // WhatsApp İkonu
     Users,
     LayoutGrid,
     PlusCircle
@@ -40,8 +37,8 @@ export default function SubscriptionPage() {
         monthly: 0,
         sixMonth: 0,
         yearly: 0,
-        addonBranch: 2500, // Ek Şube Fiyatı (Varsayılan)
-        addonStaff: 1000   // Ek Personel Paketi Fiyatı (Varsayılan)
+        addonBranch: 2500, // Varsayılan (Admin paneli henüz değer girmediyse)
+        addonStaff: 1000   // Varsayılan
     });
 
     // Banka Bilgileri
@@ -51,7 +48,7 @@ export default function SubscriptionPage() {
         iban: 'TR00...'
     });
 
-    // Destek Hattı
+    // Destek Hattı (Admin Panelinden Gelen)
     const [supportPhone, setSupportPhone] = useState('905555555555');
 
     useEffect(() => {
@@ -92,7 +89,7 @@ export default function SubscriptionPage() {
         }
     };
 
-    // 3. SİSTEM AYARLARINI ÇEK
+    // 3. SİSTEM AYARLARINI ÇEK (Fiyatlar, Banka, WhatsApp)
     const fetchSystemSettings = async (rawAccountType: string) => {
         try {
             let pricingKey = 'individual';
@@ -103,7 +100,13 @@ export default function SubscriptionPage() {
             if (snap.exists()) {
                 const data = snap.data();
 
+                // Banka Bilgileri
                 if (data.bank) setBankInfo(data.bank);
+
+                // 🔥 WhatsApp Numarası (Admin Panelinden)
+                if (data.contact?.whatsapp) {
+                    setSupportPhone(data.contact.whatsapp);
+                }
 
                 // Ana Paket Fiyatları
                 let currentPrices = data.pricing?.individual || { monthly: 0, sixMonth: 0, yearly: 0 };
@@ -111,16 +114,14 @@ export default function SubscriptionPage() {
                     currentPrices = data.pricing[pricingKey];
                 }
 
-                // Ek Paket Fiyatları
-                const addonPrices = data.pricing?.addons || { branch: 2500, staff: 1000 };
+                // 🔥 Ek Paket Fiyatları (Add-ons)
+                const addonPrices = data.pricing?.addons || {};
 
                 setPrices({
                     ...currentPrices,
-                    addonBranch: addonPrices.branch,
-                    addonStaff: addonPrices.staff
+                    addonBranch: Number(addonPrices.branch) || 2500, // DB'de yoksa varsayılan
+                    addonStaff: Number(addonPrices.staff) || 1000   // DB'de yoksa varsayılan
                 });
-
-                if (data.contact?.whatsapp) setSupportPhone(data.contact.whatsapp);
             }
         } catch (e) { console.error("Ayarlar çekilemedi:", e); }
     };
@@ -172,7 +173,6 @@ export default function SubscriptionPage() {
         if (confirm(`${amount} TL tutarındaki "${planName}" satın alımını onaylıyor musunuz?`)) {
             setSubmitting(true);
             try {
-                // Talep Oluştur
                 await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'payment_requests'), {
                     userId: auth.currentUser.uid,
                     userName: userData.fullName || 'İsimsiz',
@@ -180,7 +180,7 @@ export default function SubscriptionPage() {
                     companyName: userData.companyName || 'Bireysel',
                     amount: amount,
                     planName: planName,
-                    requestType: type, // subscription veya addon
+                    requestType: type,
                     refCode: refCode,
                     status: 'pending',
                     createdAt: serverTimestamp()
@@ -197,6 +197,7 @@ export default function SubscriptionPage() {
         }
     };
 
+    // 🔥 Admin Panelinden gelen numarayı açan fonksiyon
     const openWhatsApp = () => {
         const cleanNumber = supportPhone.replace(/[^0-9]/g, '');
         window.open(`https://wa.me/${cleanNumber}?text=Merhaba, paketler ve limit artırımı hakkında bilgi almak istiyorum.`, '_blank');
@@ -211,12 +212,14 @@ export default function SubscriptionPage() {
     const daysLeft = getDaysLeft();
     const { branchLimit, staffLimit } = getLimits();
 
-    // Yüzdelik Doluluk Hesapla
     const branchPercent = Math.min((usage.branchCount / branchLimit) * 100, 100);
     const staffPercent = Math.min((usage.staffCount / staffLimit) * 100, 100);
 
     const isCorporate = ['corporate', 'company'].includes(userData?.accountType);
     const isBusiness = ['esnaf', 'business', 'tradesman'].includes(userData?.accountType);
+
+    // 🔥 Bireysel Hesap Kontrolü
+    const isIndividual = !isCorporate && !isBusiness && userData?.accountType === 'individual';
 
     let typeLabel = "Bireysel";
     let typeIcon = <User className="w-4 h-4 text-blue-400" />;
@@ -236,7 +239,7 @@ export default function SubscriptionPage() {
             <div className="absolute top-[-20%] left-[-10%] w-[800px] h-[800px] bg-blue-600/20 rounded-full blur-[120px] mix-blend-screen animate-pulse pointer-events-none"></div>
             <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[100px] mix-blend-screen pointer-events-none"></div>
 
-            {/* WHATSAPP DESTEK */}
+            {/* 🔥 DİNAMİK WHATSAPP DESTEK BUTONU */}
             <button onClick={openWhatsApp} className="fixed bottom-6 left-6 z-50 flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-3 rounded-full shadow-lg shadow-green-600/30 transition-all hover:scale-105 active:scale-95 group">
                 <MessageCircle className="w-6 h-6 fill-current" />
                 <span className="font-bold text-sm hidden group-hover:inline-block transition-all duration-300">Canlı Destek</span>
@@ -281,7 +284,6 @@ export default function SubscriptionPage() {
                             <span className="text-3xl font-black text-white">{usage.branchCount}</span>
                             <span className="text-sm text-slate-500">/ {branchLimit} Adet</span>
                         </div>
-                        {/* Progress Bar */}
                         <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                             <div className={`h-full transition-all duration-500 ${branchPercent >= 100 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${branchPercent}%` }}></div>
                         </div>
@@ -298,7 +300,6 @@ export default function SubscriptionPage() {
                             <span className="text-3xl font-black text-white">{usage.staffCount}</span>
                             <span className="text-sm text-slate-500">/ {staffLimit > 900 ? '∞' : staffLimit} Kişi</span>
                         </div>
-                        {/* Progress Bar */}
                         <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                             <div className={`h-full transition-all duration-500 ${staffPercent >= 100 ? 'bg-red-500' : 'bg-orange-500'}`} style={{ width: `${staffPercent}%` }}></div>
                         </div>
@@ -309,59 +310,65 @@ export default function SubscriptionPage() {
                 </div>
 
                 {/* --- EK ÖZELLİK SATIN ALMA (ADD-ONS) --- */}
-                <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                    <PlusCircle className="w-5 h-5 text-blue-500" /> Limit Yükseltme & Ek Özellikler
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-16">
+                {/* 🔥 BİREYSEL KULLANICILAR İÇİN BU BÖLÜM GİZLENDİ */}
+                {!isIndividual && (
+                    <>
+                        <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                            <PlusCircle className="w-5 h-5 text-blue-500" /> Limit Yükseltme & Ek Özellikler
+                        </h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-16">
 
-                    {/* EK ŞUBE KARTI */}
-                    <div className="bg-slate-900/80 border border-slate-700 p-6 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6 hover:border-blue-500/50 transition-all group">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
-                                <Store className="w-6 h-6" />
+                            {/* EK ŞUBE KARTI */}
+                            <div className="bg-slate-900/80 border border-slate-700 p-6 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6 hover:border-blue-500/50 transition-all group">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                                        <Store className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-white text-lg">Ek Şube Hakkı (+1)</h3>
+                                        <p className="text-xs text-slate-400">Mevcut paketinize 1 adet şube hakkı ekler.</p>
+                                    </div>
+                                </div>
+                                <div className="text-center sm:text-right">
+                                    {/* 🔥 Dinamik Fiyat */}
+                                    <p className="text-2xl font-bold text-white">{prices.addonBranch} ₺</p>
+                                    <button
+                                        onClick={() => handlePaymentRequest(prices.addonBranch, 'Ek Şube Hakkı (+1)', 'addon')}
+                                        disabled={!selectedFile || submitting}
+                                        className="mt-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Satın Al
+                                    </button>
+                                </div>
                             </div>
-                            <div>
-                                <h3 className="font-bold text-white text-lg">Ek Şube Hakkı (+1)</h3>
-                                <p className="text-xs text-slate-400">Mevcut paketinize 1 adet şube hakkı ekler.</p>
-                            </div>
-                        </div>
-                        <div className="text-center sm:text-right">
-                            <p className="text-2xl font-bold text-white">{prices.addonBranch} ₺</p>
-                            <button
-                                onClick={() => handlePaymentRequest(prices.addonBranch, 'Ek Şube Hakkı (+1)', 'addon')}
-                                disabled={!selectedFile || submitting}
-                                className="mt-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Satın Al
-                            </button>
-                        </div>
-                    </div>
 
-                    {/* EK PERSONEL KARTI */}
-                    <div className="bg-slate-900/80 border border-slate-700 p-6 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6 hover:border-orange-500/50 transition-all group">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-400 group-hover:scale-110 transition-transform">
-                                <Users className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <h3 className="font-bold text-white text-lg">Ek Personel Paketi (+5)</h3>
-                                <p className="text-xs text-slate-400">Mevcut paketinize 5 adet personel hakkı ekler.</p>
+                            {/* EK PERSONEL KARTI */}
+                            <div className="bg-slate-900/80 border border-slate-700 p-6 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6 hover:border-orange-500/50 transition-all group">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-400 group-hover:scale-110 transition-transform">
+                                        <Users className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-white text-lg">Ek Personel Paketi (+5)</h3>
+                                        <p className="text-xs text-slate-400">Mevcut paketinize 5 adet personel hakkı ekler.</p>
+                                    </div>
+                                </div>
+                                <div className="text-center sm:text-right">
+                                    {/* 🔥 Dinamik Fiyat */}
+                                    <p className="text-2xl font-bold text-white">{prices.addonStaff} ₺</p>
+                                    <button
+                                        onClick={() => handlePaymentRequest(prices.addonStaff, 'Ek Personel Paketi (+5)', 'addon')}
+                                        disabled={!selectedFile || submitting}
+                                        className="mt-2 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Satın Al
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                        <div className="text-center sm:text-right">
-                            <p className="text-2xl font-bold text-white">{prices.addonStaff} ₺</p>
-                            <button
-                                onClick={() => handlePaymentRequest(prices.addonStaff, 'Ek Personel Paketi (+5)', 'addon')}
-                                disabled={!selectedFile || submitting}
-                                className="mt-2 bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                Satın Al
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="h-px bg-slate-800 w-full mb-12"></div>
+                        <div className="h-px bg-slate-800 w-full mb-12"></div>
+                    </>
+                )}
 
                 {/* --- PAKET YENİLEME ALANI --- */}
                 <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">

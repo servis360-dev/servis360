@@ -27,7 +27,7 @@ import {
     CreditCard, Phone, BellRing, RefreshCw, Wallet,
     BadgeCheck, X, TrendingUp, Building2, Store, User,
     Mail, Calendar, Eye, Copy, CheckCircle2, ChevronRight, ChevronDown, UserPlus,
-    AlertTriangle, MoreVertical, Plus, Briefcase
+    AlertTriangle, MoreVertical, Plus, Briefcase, MessageCircle
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -54,13 +54,16 @@ export default function AdminPage() {
     const [viewUser, setViewUser] = useState<any>(null); // Detay Modalı için
     const [userProfileData, setUserProfileData] = useState<any>(null); // Detaydaki kullanıcının canlı profili
 
-    // --- GELİŞMİŞ AYARLAR (Fiyatlar & Banka) ---
+    // --- GELİŞMİŞ AYARLAR (Fiyatlar & Banka & İletişim) ---
     const [settings, setSettings] = useState({
         bank: {
             bankName: '',
             iban: '',
             accountHolder: '',
             branchCode: ''
+        },
+        contact: {
+            whatsapp: '' // 🔥 Yeni İletişim Alanı
         },
         pricing: {
             individual: { monthly: 0, sixMonth: 0, yearly: 0 },
@@ -78,7 +81,6 @@ export default function AdminPage() {
     ];
 
     // --- YARDIMCI: Gerçek İşletme Sahibi Kontrolü ---
-    // (Personeller de 'corporate' tipinde olabilir ama onlar işletme sahibi değildir)
     const isBusinessOwner = (u: any) => {
         if (!u) return false;
         const isCompanyType = ['corporate', 'business', 'esnaf', 'tradesman', 'company'].includes(u.accountType);
@@ -101,6 +103,7 @@ export default function AdminPage() {
                     const data = docSnap.data();
                     setSettings(prev => ({
                         bank: { ...prev.bank, ...data.bank },
+                        contact: { ...prev.contact, ...data.contact }, // 🔥 İletişim verisini çek
                         pricing: {
                             individual: { ...prev.pricing.individual, ...data.pricing?.individual },
                             business: { ...prev.pricing.business, ...data.pricing?.business },
@@ -225,7 +228,7 @@ export default function AdminPage() {
                 cleanSettings,
                 { merge: true }
             );
-            alert("✅ Ayarlar güncellendi!");
+            alert("✅ Ayarlar (Banka, İletişim ve Fiyatlar) güncellendi!");
         } catch (error: any) {
             console.error("Kaydetme hatası:", error);
             alert(`Hata: ${error.message}`);
@@ -255,12 +258,10 @@ export default function AdminPage() {
         await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
     };
 
-    // Şube Hakkı Satın Alma / Artırma İşlemi
     const handleBuyBranch = async () => {
         if (!viewUser || !userProfileData) return;
-        const price = 800; // Ek şube ücreti
+        const price = 800;
 
-        // Mevcut limiti belirle (Özel limit varsa o, yoksa varsayılan)
         const defaultLimit = (['corporate', 'company'].includes(viewUser.accountType) || viewUser.role === 'corporate') ? 5 : 1;
         const currentCustom = userProfileData.customBranchLimit || 0;
         const currentEffective = currentCustom > 0 ? currentCustom : defaultLimit;
@@ -281,7 +282,6 @@ export default function AdminPage() {
         }
     };
 
-    // Manuel Şube Limit Güncelleme
     const handleUpdateBranchLimit = async (val: number) => {
         if (!confirm(`Şube limiti manuel olarak ${val} yapılacak. Emin misiniz?`)) return;
         try {
@@ -295,12 +295,10 @@ export default function AdminPage() {
         }
     };
 
-    // --- YENİ: PERSONEL LİMİTİ YÖNETİMİ ---
     const handleBuyStaffLimit = async () => {
         if (!viewUser || !userProfileData) return;
-        const price = 800; // Ek personel ücreti
+        const price = 800;
 
-        // Mevcut limiti belirle (Esnaf için 5, Kurumsal için teorik 999)
         const isEsnaf = ['esnaf', 'business', 'tradesman'].includes(viewUser.accountType);
         const defaultLimit = isEsnaf ? 5 : 999;
 
@@ -374,7 +372,6 @@ export default function AdminPage() {
         u.email?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // 🔥 GÖRSEL YARDIMCI: ROZE ALIMI
     const getUserBadge = (u: any) => {
         if (staffRoles.includes(u.role)) {
             return <span className="text-slate-300 bg-slate-800 px-2 py-1 rounded font-bold flex items-center gap-1"><Briefcase className="w-3 h-3" /> Personel</span>;
@@ -391,13 +388,12 @@ export default function AdminPage() {
         <RoleGuard allowedRoles={['super_admin']}>
             <div className="space-y-6 bg-slate-950 min-h-screen p-4 md:p-6 text-slate-300 font-mono text-sm relative pb-32">
 
-                {/* HEADER (MOBİL UYUMLU) */}
+                {/* HEADER */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-slate-800 pb-4 gap-4">
                     <div>
                         <h1 className="text-2xl font-black text-white flex items-center gap-2"><ShieldAlert className="text-red-600" /> ADMIN_PANEL_V2</h1>
                         <p className="text-xs text-slate-500">SİSTEM YÖNETİCİSİ</p>
                     </div>
-                    {/* STATS KARTLARI (MOBİLDE GRID, MASAÜSTÜNDE FLEX) */}
                     <div className="grid grid-cols-2 md:flex gap-4 md:gap-6 w-full md:w-auto text-left md:text-right">
                         <div className="bg-slate-900 md:bg-transparent p-3 md:p-0 rounded border md:border-none border-slate-800">
                             <span className="text-[10px] text-slate-500 block">AKTİF/PASİF</span>
@@ -412,7 +408,6 @@ export default function AdminPage() {
                     </div>
                 </div>
 
-                {/* HATA MESAJLARI */}
                 {permissionError && (
                     <div className="bg-red-900/10 border border-red-800 p-4 rounded-lg mb-6">
                         <div className="flex items-center gap-3 mb-2">
@@ -423,15 +418,33 @@ export default function AdminPage() {
                     </div>
                 )}
 
-                {/* 1. BANKA VE FİYATLANDIRMA (MOBİL İÇİN GRID DÜZENLEMESİ) */}
+                {/* AYARLAR GRİDİ */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    {/* BANKA BİLGİLERİ */}
-                    <div className="lg:col-span-4 bg-slate-900 border border-slate-800 p-4 rounded-sm">
-                        <h3 className="text-white font-bold mb-4 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500" /> BANKA</h3>
-                        <div className="space-y-3">
-                            <input value={settings.bank.bankName || ''} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, bankName: e.target.value } })} placeholder="Banka Adı" className="w-full bg-black border border-slate-700 p-3 text-white text-xs rounded-sm" />
-                            <input value={settings.bank.accountHolder || ''} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, accountHolder: e.target.value } })} placeholder="Alıcı Adı Soyadı" className="w-full bg-black border border-slate-700 p-3 text-white text-xs rounded-sm" />
-                            <input value={settings.bank.iban || ''} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, iban: e.target.value } })} placeholder="TRXX..." className="w-full bg-black border border-slate-700 p-3 text-white text-xs rounded-sm font-mono text-yellow-500" />
+                    {/* SOL KOLON: BANKA VE İLETİŞİM */}
+                    <div className="lg:col-span-4 space-y-6">
+                        {/* BANKA */}
+                        <div className="bg-slate-900 border border-slate-800 p-4 rounded-sm">
+                            <h3 className="text-white font-bold mb-4 flex items-center gap-2"><CreditCard className="w-4 h-4 text-blue-500" /> BANKA</h3>
+                            <div className="space-y-3">
+                                <input value={settings.bank.bankName || ''} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, bankName: e.target.value } })} placeholder="Banka Adı" className="w-full bg-black border border-slate-700 p-3 text-white text-xs rounded-sm" />
+                                <input value={settings.bank.accountHolder || ''} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, accountHolder: e.target.value } })} placeholder="Alıcı Adı Soyadı" className="w-full bg-black border border-slate-700 p-3 text-white text-xs rounded-sm" />
+                                <input value={settings.bank.iban || ''} onChange={e => setSettings({ ...settings, bank: { ...settings.bank, iban: e.target.value } })} placeholder="TRXX..." className="w-full bg-black border border-slate-700 p-3 text-white text-xs rounded-sm font-mono text-yellow-500" />
+                            </div>
+                        </div>
+
+                        {/* 🔥 İLETİŞİM (WHATSAPP) */}
+                        <div className="bg-slate-900 border border-slate-800 p-4 rounded-sm">
+                            <h3 className="text-white font-bold mb-4 flex items-center gap-2"><MessageCircle className="w-4 h-4 text-green-500" /> İLETİŞİM</h3>
+                            <div className="space-y-3">
+                                <label className="text-xs text-slate-500 font-bold block">WhatsApp Destek Hattı (905...)</label>
+                                <input
+                                    value={settings.contact?.whatsapp || ''}
+                                    onChange={e => setSettings({ ...settings, contact: { ...settings.contact, whatsapp: e.target.value } })}
+                                    placeholder="905551234567"
+                                    className="w-full bg-black border border-slate-700 p-3 text-white text-xs rounded-sm font-mono text-green-500"
+                                />
+                                <p className="text-[10px] text-slate-600">Bu numara Ana Sayfa'da müşterilerin sizinle iletişim kurması için kullanılacaktır.</p>
+                            </div>
                         </div>
                     </div>
 
@@ -501,7 +514,7 @@ export default function AdminPage() {
                         <div className="p-8 text-center text-slate-500">Kullanıcı bulunamadı.</div>
                     )}
 
-                    {/* 🔥 MOBİL KART GÖRÜNÜMÜ */}
+                    {/* MOBİL KART GÖRÜNÜMÜ */}
                     <div className="md:hidden space-y-4 p-4">
                         {filteredUsers.map(u => (
                             <div key={u.id} className="bg-black border border-slate-800 rounded-lg p-4 shadow-sm relative overflow-hidden">
@@ -581,7 +594,7 @@ export default function AdminPage() {
                         ))}
                     </div>
 
-                    {/* 🔥 MASAÜSTÜ TABLO GÖRÜNÜMÜ */}
+                    {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ */}
                     <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-left text-xs text-slate-400">
                             <thead className="text-slate-500 bg-slate-950 uppercase border-b border-slate-800">

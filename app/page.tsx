@@ -1,12 +1,13 @@
 ﻿'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase'; // Firebase bağlantısı
 import {
     CheckCircle2,
     ArrowRight,
     Zap,
-    ShieldCheck,
     BarChart3,
     Smartphone,
     Globe,
@@ -16,11 +17,35 @@ import {
     Wrench,
     Scissors,
     Car,
-    ShoppingBag
+    ShoppingBag,
+    MessageCircle // WhatsApp İkonu
 } from 'lucide-react';
 
 export default function Home() {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [whatsappNumber, setWhatsappNumber] = useState('905555555555'); // Varsayılan numara
+
+    // 🔥 SİSTEM AYARLARINDAN WHATSAPP NUMARASINI ÇEK
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config');
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.contact?.whatsapp) {
+                        // Numarayı temizle (boşlukları sil)
+                        const cleanNumber = data.contact.whatsapp.replace(/[^0-9]/g, '');
+                        setWhatsappNumber(cleanNumber);
+                    }
+                }
+            } catch (error) {
+                console.error("İletişim bilgisi çekilemedi", error);
+            }
+        };
+
+        fetchSettings();
+    }, []);
 
     const features = [
         {
@@ -69,10 +94,28 @@ export default function Home() {
     ];
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30">
+        <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30 relative">
+
+            {/* 🔥 WHATSAPP DESTEK BUTONU (SABİT) */}
+            <a
+                href={`https://wa.me/${whatsappNumber}?text=Merhaba, Servis360 hakkında bilgi almak istiyorum.`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="fixed bottom-6 right-6 z-50 group flex items-center justify-center p-4 bg-green-600 hover:bg-green-500 text-white rounded-full shadow-lg shadow-green-600/30 transition-all hover:scale-110 hover:-translate-y-1 animate-in fade-in zoom-in duration-500"
+            >
+                <MessageCircle className="w-8 h-8 fill-current" />
+                <span className="absolute right-full mr-4 bg-white text-slate-900 px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-xl hidden md:block">
+                    Canlı Destek
+                </span>
+                {/* Ping Animasyonu */}
+                <span className="absolute top-0 right-0 -mt-1 -mr-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500 border-2 border-slate-950"></span>
+                </span>
+            </a>
 
             {/* --- NAVBAR --- */}
-            <nav className="fixed top-0 left-0 w-full z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
+            <nav className="fixed top-0 left-0 w-full z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
                 <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
