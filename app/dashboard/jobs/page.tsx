@@ -34,7 +34,10 @@ import {
     Undo2,
     CheckCircle2,
     Filter,
-    ArrowLeft
+    ArrowLeft,
+    MoreVertical,
+    Calendar,
+    MapPin
 } from 'lucide-react';
 // 🔥 Context'ten Şube Bilgisi
 import { useBranch } from '../../../components/providers/branch-context';
@@ -226,8 +229,9 @@ export default function JobsPage() {
 
     return (
         <div className="space-y-4 pb-24 md:pb-20">
-            {/* MOBİL BAŞLIK VE EKLE BUTONU */}
-            <div className="flex justify-between items-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-950 py-2 md:static md:py-0">
+            {/* --- HEADER --- */}
+            {/* Mobilde yapışkan (sticky) başlık, masaüstünde normal */}
+            <div className="flex justify-between items-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-950 py-2 md:static md:py-0 transition-all">
                 <div>
                     <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <Briefcase className="w-6 h-6 text-blue-600" /> İş Takibi
@@ -236,29 +240,32 @@ export default function JobsPage() {
                         {selectedBranch ? `${branches.find(b => b.id === selectedBranch)?.name}` : 'Tüm Şubeler'}
                     </p>
                 </div>
-                <button onClick={openNewJobModal} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all active:scale-95 text-sm">
-                    <Plus className="w-5 h-5" /> <span className="hidden sm:inline">Yeni İş</span>
+                <button
+                    onClick={openNewJobModal}
+                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all active:scale-95 text-sm"
+                >
+                    <Plus className="w-5 h-5" /> <span className="hidden sm:inline">Yeni İş</span><span className="sm:hidden">Ekle</span>
                 </button>
             </div>
 
-            {/* ARAMA VE FİLTRE (SCROLLABLE) */}
+            {/* --- ARAMA VE FİLTRE --- */}
             <div className="space-y-3">
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
-                        className="w-full pl-9 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 text-sm shadow-sm"
+                        className="w-full pl-9 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 text-sm shadow-sm transition-all"
                         placeholder="Müşteri, cihaz veya no ara..."
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                     />
                 </div>
-                {/* Mobilde Yatay Kaydırılabilir Filtre */}
+                {/* Mobilde Yatay Kaydırılabilir Filtreler */}
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-2 px-2 md:mx-0 md:px-0">
                     {['all', 'pending', 'in_progress', 'waiting_parts', 'completed', 'delivered'].map(st => (
                         <button
                             key={st}
                             onClick={() => setStatusFilter(st)}
-                            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap border transition-all shadow-sm flex-shrink-0 ${statusFilter === st ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}
+                            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap border transition-all shadow-sm flex-shrink-0 active:scale-95 ${statusFilter === st ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}
                         >
                             {st === 'all' ? 'Tümü' : statusConfig[st]?.label || st}
                         </button>
@@ -266,8 +273,9 @@ export default function JobsPage() {
                 </div>
             </div>
 
-            {/* LİSTE / KART GÖRÜNÜMÜ */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {/* --- İÇERİK --- */}
+            {/* 1. MOBİL / TABLET KART GÖRÜNÜMÜ (md altı için) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:hidden">
                 {loading ? <p className="col-span-full text-center py-10 text-slate-500">Yükleniyor...</p> :
                     filteredJobs.length === 0 ? (
                         <div className="col-span-full text-center py-16 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
@@ -275,7 +283,7 @@ export default function JobsPage() {
                             <p className="text-slate-500 text-sm">Kayıt bulunamadı.</p>
                         </div>
                     ) : filteredJobs.map(job => (
-                        <div key={job.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative group">
+                        <div key={job.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative group active:border-blue-300 transition-colors">
                             {/* Kart Başlığı */}
                             <div className="flex justify-between items-start mb-2">
                                 <div>
@@ -292,16 +300,19 @@ export default function JobsPage() {
                             </div>
 
                             {/* Arıza Açıklaması */}
-                            <div className="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg mb-3 border border-slate-100 dark:border-slate-800">
-                                <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2">{job.problem}</p>
+                            <div className="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg mb-3 border border-slate-100 dark:border-slate-800 min-h-[60px]">
+                                <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-3">{job.problem}</p>
                             </div>
 
                             {/* Aksiyonlar Alt Bar */}
                             <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700">
                                 <div className="flex items-center gap-2 flex-1">
-                                    <select value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`w-full max-w-[110px] pl-2 pr-1 py-1.5 rounded-lg text-[10px] font-bold border appearance-none cursor-pointer outline-none truncate ${statusConfig[job.status]?.color}`}>
-                                        <option value="pending">Bekliyor</option><option value="in_progress">İşlemde</option><option value="waiting_parts">Parça Bekl.</option><option value="completed">Tamamlandı</option><option value="delivered">Teslim</option><option value="cancelled">İptal</option>
-                                    </select>
+                                    {/* Mobil Dostu Dropdown */}
+                                    <div className="relative">
+                                        <select value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`w-full max-w-[110px] pl-2 pr-1 py-1.5 rounded-lg text-[10px] font-bold border appearance-none cursor-pointer outline-none truncate ${statusConfig[job.status]?.color}`}>
+                                            <option value="pending">Bekliyor</option><option value="in_progress">İşlemde</option><option value="waiting_parts">Parça Bekl.</option><option value="completed">Tamamlandı</option><option value="delivered">Teslim</option><option value="cancelled">İptal</option>
+                                        </select>
+                                    </div>
                                     <span className="text-sm font-bold text-slate-900 dark:text-white whitespace-nowrap">{job.price ? `${job.price} ₺` : ''}</span>
                                 </div>
 
@@ -318,7 +329,7 @@ export default function JobsPage() {
                     ))}
             </div>
 
-            {/* MASAÜSTÜ TABLO (Mobilde Gizli) */}
+            {/* 2. MASAÜSTÜ TABLO GÖRÜNÜMÜ (md ve üstü için) */}
             <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm mt-6">
                 <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                     <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
@@ -332,14 +343,21 @@ export default function JobsPage() {
                                     <div className="text-xs text-slate-500">{job.device} | {job.phone}</div>
                                 </td>
                                 <td className="p-4">
-                                    <span className={`px-2 py-1 rounded text-xs font-bold ${statusConfig[job.status]?.color}`}>{statusConfig[job.status]?.label}</span>
+                                    <select value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`pl-3 pr-8 py-1.5 rounded-lg text-xs font-bold border appearance-none cursor-pointer outline-none ${statusConfig[job.status]?.color}`}>
+                                        <option value="pending">Bekliyor</option><option value="in_progress">İşlemde</option><option value="waiting_parts">Parça Bekliyor</option><option value="completed">Tamamlandı</option><option value="cancelled">İptal</option>
+                                    </select>
                                 </td>
                                 <td className="p-4">
                                     {job.paymentStatus === 'paid' ? <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ödendi</span> : <span className="text-slate-400">Bekliyor</span>}
                                 </td>
                                 <td className="p-4 font-bold">{job.price} ₺</td>
-                                <td className="p-4 text-right">
-                                    <button onClick={() => handleDelete(job.id)} className="text-slate-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                                <td className="p-4 text-right flex justify-end gap-2">
+                                    <button onClick={() => sendWhatsAppMessage(job)} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg"><MessageCircle className="w-4 h-4" /></button>
+                                    {job.status === 'completed' && job.paymentStatus === 'paid' ?
+                                        <button onClick={() => handleUndoPayment(job)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Undo2 className="w-4 h-4" /></button> :
+                                        <button onClick={() => { setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg"><CreditCard className="w-4 h-4" /></button>
+                                    }
+                                    <button onClick={() => handleDelete(job.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                                 </td>
                             </tr>
                         ))}
@@ -347,7 +365,9 @@ export default function JobsPage() {
                 </table>
             </div>
 
-            {/* YENİ İŞ EKLEME MODALI (TAM EKRAN MOBILE) */}
+            {/* --- MODALLAR (TAM EKRAN MOBILE) --- */}
+
+            {/* YENİ İŞ EKLEME MODALI */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-900 w-full h-full sm:h-auto sm:max-w-lg sm:rounded-2xl p-0 sm:p-0 shadow-2xl flex flex-col sm:block animate-in slide-in-from-bottom-10 sm:zoom-in-95">
