@@ -11,7 +11,8 @@ import {
     doc,
     serverTimestamp,
     orderBy,
-    getDoc
+    getDoc,
+    where
 } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -29,15 +30,21 @@ import {
     BookUser,
     UserCog,
     Briefcase,
-    Trash2
+    Trash2,
+    Store
 } from 'lucide-react';
+// 🔥 ŞUBE BAĞLANTISI
+import { useBranch } from '../../../components/providers/branch-context';
 
 export default function CustomersPage() {
     const [allContacts, setAllContacts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [user, setUser] = useState<any>(null);
-    const [targetUid, setTargetUid] = useState<string | null>(null); // 🔥 Verinin çekileceği asıl ID
+    const [targetUid, setTargetUid] = useState<string | null>(null);
+
+    // 🔥 Context'ten Şube Bilgisi
+    const { selectedBranch, branches } = useBranch();
 
     // Görünüm Modu: 'customer' (Müşteriler) veya 'personnel' (Personel)
     const [viewMode, setViewMode] = useState<'customer' | 'personnel'>('customer');
@@ -54,7 +61,13 @@ export default function CustomersPage() {
     });
 
     // Form Verileri
-    const [newContact, setNewContact] = useState({ name: '', phone: '', note: '', type: 'customer' });
+    const [newContact, setNewContact] = useState({
+        name: '',
+        phone: '',
+        note: '',
+        type: 'customer',
+        branchId: '' // 🔥 Kayıtlı Olduğu Şube
+    });
     const [amount, setAmount] = useState('');
     const [description, setDescription] = useState('');
 
@@ -70,14 +83,13 @@ export default function CustomersPage() {
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
 
-                    let ownerId = currentUser.uid; // Varsayılan: Kendisi
+                    let ownerId = currentUser.uid;
                     let accType = 'business';
 
                     if (profileSnap.exists()) {
                         const data = profileSnap.data();
                         accType = data.accountType || 'business';
 
-                        // Eğer personel ise (ownerId var ve farklı), patronun ID'sini al
                         if (data.ownerId && data.ownerId !== currentUser.uid) {
                             ownerId = data.ownerId;
                         }
@@ -86,16 +98,25 @@ export default function CustomersPage() {
                     setTargetUid(ownerId);
                     setAccountType(accType);
 
-                    // 2. Müşterileri Dinle (Patronun ID'sine göre)
-                    const q = query(
+                    // 2. Müşterileri Dinle (Şube Filtresi ile)
+                    let q = query(
                         collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'customers'),
                         orderBy('name')
                     );
 
+                    // 🔥 EĞER ŞUBE SEÇİLİYSE FİLTRELE
+                    if (selectedBranch) {
+                        q = query(
+                            collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'customers'),
+                            where('branchId', '==', selectedBranch),
+                            orderBy('name')
+                        );
+                    }
+
                     unsubSnapshot = onSnapshot(q, (snapshot) => {
                         const data = snapshot.docs.map(d => ({
                             id: d.id,
-                            type: 'customer', // Varsayılan
+                            type: 'customer',
                             ...d.data()
                         }));
                         setAllContacts(data);
@@ -113,7 +134,7 @@ export default function CustomersPage() {
             unsubscribeAuth();
             if (unsubSnapshot) unsubSnapshot();
         };
-    }, []);
+    }, [selectedBranch]); // 🔥 Şube değişince yeniden çalış
 
     // Kayıt Silme
     const handleDelete = async (id: string, name: string) => {
@@ -133,6 +154,15 @@ export default function CustomersPage() {
         e.preventDefault();
         if (!user || !targetUid) return;
 
+        // Şube Belirleme
+        let finalBranchId = newContact.branchId || selectedBranch;
+
+        // Eğer şubeler var ama seçim yapılmadıysa varsayılan (Merkez)
+        if (branches.length > 0 && !finalBranchId) {
+            finalBranchId = branches.find(b => b.isHeadquarters)?.id || branches[0]?.id;
+        }
+
+        const branchName = branches.find(b => b.id === finalBranchId)?.name || 'Merkez';
         const contactType = newContact.type || viewMode;
 
         await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'customers'), {
@@ -141,12 +171,14 @@ export default function CustomersPage() {
             note: newContact.note,
             type: contactType,
             balance: 0,
-            createdBy: user.uid, // Kaydı oluşturan (Personel olabilir)
+            branchId: finalBranchId, // 🔥 Şube ID
+            branchName: branchName, // 🔥 Şube Adı
+            createdBy: user.uid,
             createdAt: serverTimestamp()
         });
 
         setShowAddModal(false);
-        setNewContact({ name: '', phone: '', note: '', type: 'customer' });
+        setNewContact({ name: '', phone: '', note: '', type: 'customer', branchId: '' });
     };
 
     // Cari İşlem (Borç/Alacak)
@@ -181,12 +213,17 @@ export default function CustomersPage() {
             type: transactionModal.type,
             amount: val,
             description: historyDesc,
-            processedBy: user.uid, // İşlemi yapan
+            processedBy: user.uid,
             date: new Date().toISOString(),
             createdAt: serverTimestamp()
         });
 
-        // 3. Finans Kasasına İşle (Patronun Kasası)
+        // 3. Finans Kasasına İşle (Müşterinin Şubesine)
+        // Eğer müşteri bir şubeye bağlıysa, o şubenin kasasına işlenir.
+        // Bağlı değilse (eski kayıt), o an seçili şubeye veya merkeze işlenir.
+        const targetBranchId = transactionModal.contact.branchId || selectedBranch || (branches.find(b => b.isHeadquarters)?.id);
+        const targetBranchName = branches.find(b => b.id === targetBranchId)?.name || 'Merkez';
+
         if (isPersonnel) {
             const expenseType = transactionModal.type === 'debt' ? 'Personel Avans' : 'Personel Maaş/Ödeme';
 
@@ -196,6 +233,8 @@ export default function CustomersPage() {
                 category: 'Personel',
                 description: `${transactionModal.contact.name} - ${description || expenseType}`,
                 date: new Date().toISOString().split('T')[0],
+                branchId: targetBranchId, // 🔥 Şubeye İşle
+                branchName: targetBranchName,
                 processedBy: user.uid,
                 createdAt: serverTimestamp()
             });
@@ -208,6 +247,8 @@ export default function CustomersPage() {
                     category: 'Tahsilat',
                     description: `${transactionModal.contact.name} - Cari Tahsilat`,
                     date: new Date().toISOString().split('T')[0],
+                    branchId: targetBranchId, // 🔥 Şubeye İşle
+                    branchName: targetBranchName,
                     processedBy: user.uid,
                     createdAt: serverTimestamp()
                 });
@@ -242,6 +283,11 @@ export default function CustomersPage() {
         return matchesSearch && matchesType;
     });
 
+    const openAddModal = () => {
+        setNewContact({ ...newContact, type: viewMode, branchId: selectedBranch || '' });
+        setShowAddModal(true);
+    }
+
     return (
         <div className="space-y-6 pb-20">
             {/* ÜST BAŞLIK VE TABLAR */}
@@ -251,8 +297,10 @@ export default function CustomersPage() {
                         {viewMode === 'personnel' ? <UserCog className="w-8 h-8 text-orange-600" /> : <Users className="w-8 h-8 text-blue-600" />}
                         {viewMode === 'personnel' ? 'Personel Listesi' : 'Müşteriler & Cari'}
                     </h1>
-                    <p className="text-slate-500 dark:text-slate-400">
-                        {viewMode === 'personnel' ? 'Çalışanlarınızın maaş ve avans takibi.' : 'Müşteri borç/alacak takibi.'}
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">
+                        {selectedBranch
+                            ? `${branches.find(b => b.id === selectedBranch)?.name} şubesine kayıtlı kişiler listeleniyor.`
+                            : 'Tüm şubelerdeki kişiler listeleniyor.'}
                     </p>
                 </div>
 
@@ -272,10 +320,7 @@ export default function CustomersPage() {
                 </div>
 
                 <button
-                    onClick={() => {
-                        setNewContact({ ...newContact, type: viewMode });
-                        setShowAddModal(true);
-                    }}
+                    onClick={openAddModal}
                     className={`flex items-center gap-2 px-4 py-2 text-white rounded-xl font-bold transition-colors shadow-lg ${viewMode === 'personnel' ? 'bg-orange-600 hover:bg-orange-700 shadow-orange-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'}`}
                 >
                     <Plus className="w-5 h-5" /> {viewMode === 'personnel' ? 'Personel Ekle' : 'Müşteri Ekle'}
@@ -313,14 +358,14 @@ export default function CustomersPage() {
                             <Trash2 className="w-4 h-4" />
                         </button>
 
-                        {/* Personel Badge */}
-                        {c.type === 'personnel' && (
-                            <span className="absolute top-4 right-12 px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold uppercase rounded-full">
-                                Personel
-                            </span>
+                        {/* Şube Badge */}
+                        {branches.length > 0 && (
+                            <div className="absolute top-3 right-12 text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1">
+                                <Store className="w-3 h-3" /> {c.branchName || 'Merkez'}
+                            </div>
                         )}
 
-                        <div className="flex justify-between items-start mb-4">
+                        <div className="flex justify-between items-start mb-4 mt-2">
                             <div className="flex items-center gap-3">
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg ${c.type === 'personnel' ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
                                     {c.name.charAt(0).toUpperCase()}
@@ -394,6 +439,27 @@ export default function CustomersPage() {
                             <button onClick={() => setShowAddModal(false)}><X className="text-slate-400 hover:text-slate-600" /></button>
                         </div>
                         <form onSubmit={handleAddContact} className="space-y-4">
+
+                            {/* 🔥 ŞUBE SEÇİMİ (Eğer "Tüm Şubeler" modundaysak) */}
+                            {branches.length > 0 && !selectedBranch && (
+                                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
+                                    <label className="block text-xs font-bold mb-1 text-blue-700 dark:text-blue-300 uppercase">Şube Seçimi</label>
+                                    <div className="relative">
+                                        <Store className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <select
+                                            className="w-full pl-9 p-2 bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 rounded-lg outline-none text-sm appearance-none"
+                                            value={newContact.branchId}
+                                            onChange={e => setNewContact({ ...newContact, branchId: e.target.value })}
+                                        >
+                                            <option value="">Merkez (Varsayılan)</option>
+                                            {branches.map(b => (
+                                                <option key={b.id} value={b.id}>{b.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-2 mb-4">
                                 <button
                                     type="button"
@@ -446,6 +512,9 @@ export default function CustomersPage() {
                             <p className="text-sm text-slate-500">{transactionModal.contact.type === 'personnel' ? 'Personel' : 'Müşteri'}</p>
                             <p className="font-bold text-slate-900 dark:text-white text-lg">{transactionModal.contact.name}</p>
                             <p className="text-xs text-slate-400">Güncel Bakiye: {transactionModal.contact.balance} ₺</p>
+                            <div className="text-[10px] text-slate-400 mt-1 flex justify-center items-center gap-1">
+                                <Store className="w-3 h-3" /> {transactionModal.contact.branchName || 'Merkez'}
+                            </div>
                         </div>
 
                         <form onSubmit={handleTransaction} className="space-y-4">

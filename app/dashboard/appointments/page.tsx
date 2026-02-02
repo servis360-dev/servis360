@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, getDoc, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -15,8 +15,11 @@ import {
     CheckCircle2,
     X,
     CalendarClock,
-    Globe
+    Globe,
+    Store
 } from 'lucide-react';
+// 🔥 ŞUBE BAĞLANTISI
+import { useBranch } from '../../../components/providers/branch-context';
 
 // Yaygın Alan Kodları Listesi
 const COUNTRY_CODES = [
@@ -33,8 +36,11 @@ export default function AppointmentsPage() {
     const [appointments, setAppointments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<any>(null);
-    const [targetUid, setTargetUid] = useState<string | null>(null); // 🔥 Verinin çekileceği asıl ID
+    const [targetUid, setTargetUid] = useState<string | null>(null);
     const [showModal, setShowModal] = useState(false);
+
+    // 🔥 Context'ten Şube Bilgisini Alıyoruz
+    const { selectedBranch, branches } = useBranch();
 
     // Ayarlar
     const [settings, setSettings] = useState({
@@ -42,14 +48,15 @@ export default function AppointmentsPage() {
         template: 'Sayın müşterimiz, yarın saat {saat} için randevunuz bulunmaktadır. Bekliyoruz.'
     });
 
-    // Form Verileri (Ülke Kodu Eklendi)
+    // Form Verileri
     const [countryCode, setCountryCode] = useState('+90');
     const [formData, setFormData] = useState({
         customerName: '',
         phoneNumberBody: '',
         date: '',
         time: '',
-        note: ''
+        note: '',
+        branchId: '' // 🔥 Randevunun Hangi Şubede Olduğu
     });
 
     useEffect(() => {
@@ -58,15 +65,14 @@ export default function AppointmentsPage() {
                 setUser(currentUser);
 
                 try {
-                    // 1. Profil Kontrolü (Personel mi Patron mu?)
+                    // 1. Profil Kontrolü
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
 
-                    let ownerId = currentUser.uid; // Varsayılan: Kendisi
+                    let ownerId = currentUser.uid;
 
                     if (profileSnap.exists()) {
                         const data = profileSnap.data();
-                        // Eğer ownerId varsa ve farklıysa, o personelin patronudur.
                         if (data.ownerId && data.ownerId !== currentUser.uid) {
                             ownerId = data.ownerId;
                         }
@@ -74,7 +80,7 @@ export default function AppointmentsPage() {
 
                     setTargetUid(ownerId);
 
-                    // 2. Ayarları Çek (Patronun ayarlarını kullan)
+                    // 2. Ayarları Çek
                     const ownerProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'users', 'profile');
                     getDoc(ownerProfileRef).then((snap) => {
                         if (snap.exists()) {
@@ -86,10 +92,18 @@ export default function AppointmentsPage() {
                         }
                     });
 
-                    // 3. Randevuları Çek (Patronun ID'sine göre)
-                    const q = query(
+                    // 3. Randevuları Çek (Şube Filtresi ile)
+                    let q = query(
                         collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'appointments')
                     );
+
+                    // 🔥 EĞER ŞUBE SEÇİLİYSE FİLTRELE
+                    if (selectedBranch) {
+                        q = query(
+                            collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'appointments'),
+                            where('branchId', '==', selectedBranch)
+                        );
+                    }
 
                     const unsubSnap = onSnapshot(q, (snapshot) => {
                         let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -115,16 +129,23 @@ export default function AppointmentsPage() {
             }
         });
         return () => unsubscribe();
-    }, []);
+    }, [selectedBranch]); // 🔥 Şube değişince yeniden çalış
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user || !targetUid) return;
 
+        // Şube Belirleme
+        let finalBranchId = formData.branchId || selectedBranch;
+
+        if (branches.length > 0 && !finalBranchId) {
+            finalBranchId = branches.find(b => b.isHeadquarters)?.id || branches[0]?.id;
+        }
+
+        const branchName = branches.find(b => b.id === finalBranchId)?.name || 'Merkez';
         const fullPhone = `${countryCode} ${formData.phoneNumberBody}`;
 
         try {
-            // 🔥 Kaydı Patronun DB'sine yap
             await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'appointments'), {
                 customerName: formData.customerName,
                 customerPhone: fullPhone,
@@ -132,11 +153,13 @@ export default function AppointmentsPage() {
                 time: formData.time,
                 note: formData.note,
                 status: 'pending',
-                createdBy: user.uid, // Oluşturan personel
+                branchId: finalBranchId, // 🔥 Şube ID
+                branchName: branchName, // 🔥 Şube Adı
+                createdBy: user.uid,
                 createdAt: serverTimestamp()
             });
             setShowModal(false);
-            setFormData({ customerName: '', phoneNumberBody: '', date: '', time: '', note: '' });
+            setFormData({ customerName: '', phoneNumberBody: '', date: '', time: '', note: '', branchId: '' });
             setCountryCode('+90');
         } catch (error) {
             console.error(error);
@@ -163,13 +186,11 @@ export default function AppointmentsPage() {
             alert("Müşteri telefonu kayıtlı değil!");
             return;
         }
-
         let message = settings.template
             .replace('{saat}', apt.time)
             .replace('{tarih}', new Date(apt.date).toLocaleDateString('tr-TR'));
 
         let phone = apt.customerPhone.replace(/[^0-9]/g, '');
-
         const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
         window.open(url, '_blank');
     };
@@ -179,16 +200,27 @@ export default function AppointmentsPage() {
         return dateString === today;
     };
 
+    const openModal = () => {
+        setFormData(prev => ({ ...prev, branchId: selectedBranch || '' }));
+        setShowModal(true);
+    };
+
     return (
         <div className="space-y-6 pb-20">
             {/* Başlık */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Randevu Takvimi</h1>
-                    <p className="text-slate-500 dark:text-slate-400">Müşteri randevularını takip edin ve hatırlatma gönderin.</p>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <CalendarClock className="w-6 h-6 text-blue-600" /> Randevu Takvimi
+                    </h1>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">
+                        {selectedBranch
+                            ? `${branches.find(b => b.id === selectedBranch)?.name} randevuları görüntüleniyor.`
+                            : 'Tüm şubelerdeki randevular görüntüleniyor.'}
+                    </p>
                 </div>
                 <button
-                    onClick={() => setShowModal(true)}
+                    onClick={openModal}
                     className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/30"
                 >
                     <Plus className="w-5 h-5" /> Yeni Randevu
@@ -223,6 +255,13 @@ export default function AppointmentsPage() {
                                     ${isPast ? 'opacity-60 grayscale-[0.5]' : ''}
                                 `}
                             >
+                                {/* Şube Badge */}
+                                {branches.length > 0 && !selectedBranch && (
+                                    <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-400 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 px-2 py-0.5 rounded flex items-center gap-1 z-10 shadow-sm">
+                                        <Store className="w-3 h-3" /> {apt.branchName || 'Merkez'}
+                                    </div>
+                                )}
+
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
                                         <CalendarIcon className="w-4 h-4 text-blue-500" />
@@ -289,7 +328,7 @@ export default function AppointmentsPage() {
             {/* YENİ RANDEVU MODALI */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-200 dark:border-slate-700">
+                    <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl animate-in zoom-in-95 border border-slate-200 dark:border-slate-700 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                                 <CalendarClock className="w-6 h-6 text-blue-600" /> Yeni Randevu
@@ -298,6 +337,27 @@ export default function AppointmentsPage() {
                         </div>
 
                         <form onSubmit={handleSave} className="space-y-4">
+
+                            {/* 🔥 ŞUBE SEÇİMİ (Eğer "Tüm Şubeler" modundaysak) */}
+                            {branches.length > 0 && !selectedBranch && (
+                                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
+                                    <label className="block text-xs font-bold mb-1 text-blue-700 dark:text-blue-300 uppercase">Şube Seçimi</label>
+                                    <div className="relative">
+                                        <Store className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <select
+                                            className="w-full pl-9 p-2 bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 rounded-lg outline-none text-sm appearance-none"
+                                            value={formData.branchId}
+                                            onChange={e => setFormData({ ...formData, branchId: e.target.value })}
+                                        >
+                                            <option value="">Merkez (Varsayılan)</option>
+                                            {branches.map(b => (
+                                                <option key={b.id} value={b.id}>{b.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-sm font-medium mb-1">Müşteri Adı</label>
                                 <div className="relative">
