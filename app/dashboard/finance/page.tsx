@@ -7,7 +7,7 @@ import {
 import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
-    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search, Calendar, Store, AlertTriangle
+    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search, Calendar, Store, AlertTriangle, ArrowRight
 } from 'lucide-react';
 // 🔥 ŞUBE BAĞLANTISI
 import { useBranch } from '../../../components/providers/branch-context';
@@ -219,9 +219,9 @@ export default function FinancePage() {
             </div>
 
             {/* LİSTE */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+            <div className="space-y-4">
                 {/* Header ve Arama */}
-                <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
                     <div className="flex items-center gap-2">
                         <History className="w-5 h-5 text-slate-500" />
                         <h3 className="font-bold text-slate-900 dark:text-white">Hesap Hareketleri</h3>
@@ -243,39 +243,91 @@ export default function FinancePage() {
                     </div>
                 </div>
 
-                {/* MOBİL VE MASAÜSTÜ LİSTE */}
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
-                        <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
-                            <tr><th className="p-4">Tarih</th><th className="p-4">Kategori</th><th className="p-4">Açıklama</th><th className="p-4 text-right">Tutar</th><th className="p-4 text-right">Sil</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {loading ? (
-                                <tr><td colSpan={5} className="p-8 text-center">Yükleniyor...</td></tr>
-                            ) : filteredTransactions.length === 0 ? (
-                                <tr><td colSpan={5} className="p-8 text-center text-slate-500">{searchTerm ? 'Kayıt bulunamadı.' : 'İşlem yok.'}</td></tr>
-                            ) : filteredTransactions.map((t) => {
-                                const dateObj = t.date?.toDate ? t.date.toDate() : new Date(t.date);
-                                return (
-                                    <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                                        <td className="p-4 font-medium text-slate-900 dark:text-white">
-                                            {dateObj.toLocaleDateString('tr-TR')}
-                                            {branches.length > 0 && <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1"><Store className="w-3 h-3" /> {t.branchName || 'Merkez'}</div>}
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${t.type === 'income' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                                                {t.relatedJobId && <Wrench className="w-3 h-3" />}
-                                                {t.category}
-                                            </span>
-                                        </td>
-                                        <td className="p-4">{t.description}</td>
-                                        <td className={`p-4 text-right font-bold font-mono text-base ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'} {t.amount} ₺</td>
-                                        <td className="p-4 text-right"><button onClick={() => handleDelete(t.id)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button></td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                {/* MOBİL İÇİN KART GÖRÜNÜMÜ (md:hidden) */}
+                <div className="grid grid-cols-1 gap-3 md:hidden">
+                    {loading ? (
+                        <p className="text-center py-10 text-slate-500">Yükleniyor...</p>
+                    ) : filteredTransactions.length === 0 ? (
+                        <div className="text-center py-10 bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+                            <History className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                            <p className="text-slate-400">İşlem bulunamadı.</p>
+                        </div>
+                    ) : filteredTransactions.map((t) => {
+                        const dateObj = t.date?.toDate ? t.date.toDate() : new Date(t.date);
+                        return (
+                            <div key={t.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`p-2 rounded-lg ${t.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                            {t.type === 'income' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                                        </div>
+                                        <div>
+                                            <span className={`block text-xs font-bold uppercase tracking-wider ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.category}</span>
+                                            <span className="text-xs text-slate-400">{dateObj.toLocaleDateString('tr-TR')}</span>
+                                        </div>
+                                    </div>
+                                    <div className={`text-lg font-black ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                        {t.type === 'income' ? '+' : '-'} {t.amount} ₺
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg mb-3">
+                                    <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+                                        {t.relatedJobId && <Wrench className="w-3 h-3 inline-block mr-1 text-blue-500" />}
+                                        {t.description || 'Açıklama yok'}
+                                    </p>
+                                </div>
+
+                                <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-700">
+                                    {t.branchName ? (
+                                        <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 px-2 py-1 rounded flex items-center gap-1">
+                                            <Store className="w-3 h-3" /> {t.branchName}
+                                        </span>
+                                    ) : <span></span>}
+                                    <button onClick={() => handleDelete(t.id)} className="text-slate-400 hover:text-red-500 p-1 transition-colors">
+                                        <Trash2 className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+
+                {/* MASAÜSTÜ İÇİN TABLO GÖRÜNÜMÜ (hidden md:block) */}
+                <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
+                            <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                                <tr><th className="p-4">Tarih</th><th className="p-4">Kategori</th><th className="p-4">Açıklama</th><th className="p-4 text-right">Tutar</th><th className="p-4 text-right">Sil</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                {loading ? (
+                                    <tr><td colSpan={5} className="p-8 text-center">Yükleniyor...</td></tr>
+                                ) : filteredTransactions.length === 0 ? (
+                                    <tr><td colSpan={5} className="p-8 text-center text-slate-500">{searchTerm ? 'Kayıt bulunamadı.' : 'İşlem yok.'}</td></tr>
+                                ) : filteredTransactions.map((t) => {
+                                    const dateObj = t.date?.toDate ? t.date.toDate() : new Date(t.date);
+                                    return (
+                                        <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                            <td className="p-4 font-medium text-slate-900 dark:text-white">
+                                                {dateObj.toLocaleDateString('tr-TR')}
+                                                {branches.length > 0 && <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1"><Store className="w-3 h-3" /> {t.branchName || 'Merkez'}</div>}
+                                            </td>
+                                            <td className="p-4">
+                                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${t.type === 'income' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                                    {t.relatedJobId && <Wrench className="w-3 h-3" />}
+                                                    {t.category}
+                                                </span>
+                                            </td>
+                                            <td className="p-4">{t.description}</td>
+                                            <td className={`p-4 text-right font-bold font-mono text-base ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'} {t.amount} ₺</td>
+                                            <td className="p-4 text-right"><button onClick={() => handleDelete(t.id)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button></td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 

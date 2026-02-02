@@ -15,15 +15,16 @@ import {
     Loader2,
     ShieldAlert,
     Crown,
-    Store
+    Store,
+    Phone // Eksik import eklendi
 } from 'lucide-react';
 
 export default function StaffPage() {
     const [staff, setStaff] = useState<any[]>([]);
-    const [branches, setBranches] = useState<any[]>([]); // 🔥 Şubeler
+    const [branches, setBranches] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<any>(null);
-    const [userData, setUserData] = useState<any>(null); // Patronun bilgileri
+    const [userData, setUserData] = useState<any>(null);
     const [showModal, setShowModal] = useState(false);
 
     const [formData, setFormData] = useState({
@@ -31,7 +32,7 @@ export default function StaffPage() {
         email: '',
         role: 'technical',
         phone: '',
-        branchId: '' // 🔥 Şube Seçimi
+        branchId: ''
     });
 
     useEffect(() => {
@@ -42,20 +43,17 @@ export default function StaffPage() {
             if (currentUser) {
                 setUser(currentUser);
 
-                // 1. Patronun Profilini Çek
                 const profileSnap = await getDoc(doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile'));
                 if (profileSnap.exists()) {
                     setUserData(profileSnap.data());
                 }
 
-                // 2. Personel Listesi
                 const q = query(collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'staff'));
                 unsubSnap = onSnapshot(q, (snapshot) => {
                     setStaff(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                     setLoading(false);
                 });
 
-                // 3. Şubeleri Çek (Dropdown için)
                 const qBranches = query(collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'branches'));
                 unsubBranches = onSnapshot(qBranches, (snapshot) => {
                     setBranches(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -74,13 +72,11 @@ export default function StaffPage() {
         e.preventDefault();
         if (!user || !userData) return;
 
-        // Şube Kontrolü: Eğer şube varsa seçim zorunlu olsun
         if (branches.length > 0 && !formData.branchId) {
             alert("Lütfen personelin çalışacağı şubeyi seçiniz.");
             return;
         }
 
-        // 🛑 LİMİT KONTROLÜ
         const isEsnaf = ['esnaf', 'business', 'tradesman'].includes(userData.accountType) || ['esnaf', 'business'].includes(userData.role);
         const defaultLimit = isEsnaf ? 5 : 999;
         const currentLimit = userData.customStaffLimit || defaultLimit;
@@ -95,25 +91,22 @@ export default function StaffPage() {
         }
 
         try {
-            // Seçilen şubenin adını bul
             const selectedBranchName = branches.find(b => b.id === formData.branchId)?.name || 'Merkez';
 
-            // 1. Kendi listene ekle
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'staff', formData.email), {
                 ...formData,
-                branchName: selectedBranchName, // Listede göstermek için
+                branchName: selectedBranchName,
                 status: 'invited',
                 invitedAt: serverTimestamp()
             });
 
-            // 2. GENEL DAVET LİSTESİNE EKLE (Register/Login sırasında bağlanması için)
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', formData.email), {
                 email: formData.email,
-                targetCompanyId: user.uid, // Patronun ID'si
+                targetCompanyId: user.uid,
                 targetCompanyName: userData.companyName || 'Şirket',
                 targetSector: userData.sectorType || 'technical_service',
                 assignedRole: formData.role,
-                assignedBranchId: formData.branchId, // 🔥 Şubeye Ata
+                assignedBranchId: formData.branchId,
                 invitedBy: userData.fullName,
                 createdAt: serverTimestamp()
             });
@@ -144,7 +137,6 @@ export default function StaffPage() {
         }
     };
 
-    // Limit Bilgisi
     const isEsnaf = userData && (['esnaf', 'business'].includes(userData.accountType));
     const limit = userData?.customStaffLimit || (isEsnaf ? 5 : 999);
     const remaining = limit - staff.length;
@@ -157,9 +149,8 @@ export default function StaffPage() {
                     <p className="text-slate-500 dark:text-slate-400">Çalışanlarınızı davet edin ve şubelere atayın.</p>
                 </div>
 
-                {/* Limit Göstergesi */}
                 {userData && (
-                    <div className={`px-4 py-2 rounded-xl border flex items-center gap-3 ${remaining <= 1 ? 'bg-red-50 border-red-200 text-red-600' : 'bg-blue-50 border-blue-200 text-blue-600'}`}>
+                    <div className={`px-4 py-2 rounded-xl border flex items-center gap-3 w-full md:w-auto ${remaining <= 1 ? 'bg-red-50 border-red-200 text-red-600' : 'bg-blue-50 border-blue-200 text-blue-600'}`}>
                         <Users className="w-5 h-5" />
                         <div>
                             <p className="text-[10px] font-bold uppercase tracking-wider">Kalan Hak</p>
@@ -168,12 +159,71 @@ export default function StaffPage() {
                     </div>
                 )}
 
-                <button onClick={() => setShowModal(true)} className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all active:scale-95">
+                <button onClick={() => setShowModal(true)} className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all active:scale-95">
                     <UserPlus className="w-5 h-5" /> Personel Ekle
                 </button>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+            {/* MOBİL KART GÖRÜNÜMÜ (Sadece Mobilde Görünür) */}
+            <div className="grid grid-cols-1 gap-4 md:hidden">
+                {loading ? <p className="text-center py-10 text-slate-500">Yükleniyor...</p> :
+                    staff.length === 0 ? (
+                        <div className="text-center py-10 bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+                            <Briefcase className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                            <p className="text-slate-400">Henüz personel eklenmedi.</p>
+                        </div>
+                    ) : staff.map(p => (
+                        <div key={p.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative">
+                            <div className="flex justify-between items-start mb-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 shrink-0">
+                                        <Briefcase className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 dark:text-white">{p.fullName}</h3>
+                                        <span className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded">
+                                            {getRoleName(p.role)}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button onClick={() => handleDelete(p.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300 mb-4">
+                                <div className="flex items-center gap-2">
+                                    <Mail className="w-4 h-4 text-slate-400" />
+                                    <span className="truncate">{p.email}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Phone className="w-4 h-4 text-slate-400" />
+                                    <span>{p.phone || '-'}</span>
+                                </div>
+                                {p.branchName && (
+                                    <div className="flex items-center gap-2">
+                                        <Store className="w-4 h-4 text-slate-400" />
+                                        <span>{p.branchName}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center">
+                                {p.status === 'active' ?
+                                    <span className="text-green-600 font-bold flex gap-1 items-center bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded text-xs">
+                                        <CheckCircle2 className="w-3 h-3" /> Aktif
+                                    </span> :
+                                    <span className="text-orange-500 font-bold text-xs bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded border border-orange-200 dark:border-orange-800 flex items-center gap-1">
+                                        ⏳ Davet Edildi
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    ))}
+            </div>
+
+            {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ (Mobilde Gizli) */}
+            <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                 <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                     <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
                         <tr>
@@ -220,7 +270,7 @@ export default function StaffPage() {
 
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-700 animate-in zoom-in-95">
+                    <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900 dark:text-white"><UserPlus className="w-6 h-6 text-blue-600" /> Personel Ekle</h2>
                             <button onClick={() => setShowModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><X className="text-slate-400" /></button>
@@ -236,7 +286,6 @@ export default function StaffPage() {
                             <div><label className="block text-sm font-bold mb-1 text-slate-700 dark:text-slate-300">E-Posta (Giriş Yapacağı)</label><input required type="email" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} placeholder="ahmet@gmail.com" /></div>
                             <div><label className="block text-sm font-bold mb-1 text-slate-700 dark:text-slate-300">Telefon</label><input type="tel" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="0555..." /></div>
 
-                            {/* 🔥 ŞUBE SEÇİMİ */}
                             {branches.length > 0 && (
                                 <div>
                                     <label className="block text-sm font-bold mb-1 text-slate-700 dark:text-slate-300">Çalışacağı Şube</label>

@@ -46,7 +46,7 @@ import {
     Smartphone
 } from 'lucide-react';
 import Link from 'next/link';
-// 🔥 ŞUBE BAĞLANTISI EKLENDİ
+// 🔥 ŞUBE BAĞLANTISI
 import { useBranch } from '../../../components/providers/branch-context';
 
 const statusConfig: any = {
@@ -135,18 +135,16 @@ export default function JobsPage() {
             }
         });
         return () => unsubscribeAuth();
-    }, [selectedBranch]); // 🔥 Şube değişince sorguyu yenile
+    }, [selectedBranch]);
 
     const handleAddJob = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user || !targetUid) return;
 
         // Şube Zorunluluğu Kontrolü
-        // Eğer şubeler varsa ve seçim yapılmadıysa (ve global seçiliyse), kullanıcıyı zorla.
         let finalBranchId = newJob.branchId || selectedBranch;
 
         if (branches.length > 0 && !finalBranchId) {
-            // Eğer hiçbiri seçili değilse ve formda da seçilmediyse, varsayılan olarak Merkez'i veya ilk şubeyi al
             finalBranchId = branches.find(b => b.isHeadquarters)?.id || branches[0]?.id;
         }
 
@@ -192,7 +190,6 @@ export default function JobsPage() {
         }
     };
 
-    // Ödeme İşlemleri
     const handlePaymentReceived = async (method: string) => {
         if (!selectedJobForPayment || !user || !targetUid) return;
 
@@ -218,7 +215,7 @@ export default function JobsPage() {
             date: serverTimestamp(),
             relatedJobId: selectedJobForPayment.id,
             paymentMethod: method,
-            branchId: selectedJobForPayment.branchId, // 🔥 Şube bilgisini finansa da işle
+            branchId: selectedJobForPayment.branchId,
             processedBy: user.uid
         });
 
@@ -266,7 +263,6 @@ export default function JobsPage() {
     });
 
     const openNewJobModal = () => {
-        // Eğer global bir şube seçiliyse onu ata, yoksa boş bırak (kullanıcı seçecek)
         setNewJob(prev => ({ ...prev, branchId: selectedBranch || '' }));
         setShowModal(true);
     }
@@ -285,7 +281,7 @@ export default function JobsPage() {
                             : 'Tüm şubelerdeki işler listeleniyor.'}
                     </p>
                 </div>
-                <button onClick={openNewJobModal} className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all active:scale-95">
+                <button onClick={openNewJobModal} className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all active:scale-95">
                     <Plus className="w-5 h-5" /> Yeni İş Ekle
                 </button>
             </div>
@@ -301,7 +297,7 @@ export default function JobsPage() {
                         onChange={e => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
+                <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
                     {['all', 'pending', 'in_progress', 'completed', 'delivered'].map(st => (
                         <button key={st} onClick={() => setStatusFilter(st)} className={`px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap border transition-all ${statusFilter === st ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}`}>
                             {st === 'all' ? 'Tümü' : statusConfig[st]?.label || st}
@@ -310,7 +306,7 @@ export default function JobsPage() {
                 </div>
             </div>
 
-            {/* LİSTE */}
+            {/* LİSTE (MOBIL UYUMLU KART YAPISI) */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {loading ? <p className="col-span-full text-center py-10 text-slate-500">Yükleniyor...</p> :
                     filteredJobs.length === 0 ? (
@@ -321,42 +317,73 @@ export default function JobsPage() {
                         </div>
                     ) : filteredJobs.map(job => (
                         <div key={job.id} className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group relative">
-                            {/* Şube Badge (Eğer çok şube varsa göster) */}
+                            {/* Şube Badge */}
                             {branches.length > 0 && (
                                 <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1">
                                     <Store className="w-3 h-3" /> {job.branchName || 'Merkez'}
                                 </div>
                             )}
-                            <div className="flex justify-between items-start mb-3 mt-1">
-                                <div>
-                                    <h3 className="font-bold text-slate-900 dark:text-white text-lg">{job.customerName}</h3>
-                                    <p className="text-xs text-slate-500 flex items-center gap-1"><Smartphone className="w-3 h-3" /> {job.device} | {job.phone}</p>
-                                </div>
+
+                            {/* Üst Kısım: İsim ve Cihaz */}
+                            <div className="mb-3 pr-16"> {/* Sağ taraftan padding bıraktık ki badge üstüne gelmesin */}
+                                <h3 className="font-bold text-slate-900 dark:text-white text-lg leading-tight">{job.customerName}</h3>
+                                <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                                    <Smartphone className="w-3 h-3" /> {job.device}
+                                    <span className="opacity-30">|</span>
+                                    {job.phone}
+                                </p>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg mb-3">
+
+                            {/* Orta Kısım: Sorun */}
+                            <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg mb-4">
                                 <p className="text-xs text-slate-500 line-clamp-2">{job.problem}</p>
                             </div>
-                            <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
-                                <div className="flex items-center gap-2">
-                                    <select value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`pl-2 pr-6 py-1 rounded text-xs font-bold border appearance-none cursor-pointer outline-none ${statusConfig[job.status]?.color}`}>
-                                        <option value="pending">Bekliyor</option><option value="in_progress">İşlemde</option><option value="waiting_parts">Parça Bekliyor</option><option value="completed">Tamamlandı</option><option value="cancelled">İptal</option>
+
+                            {/* Alt Kısım: Aksiyonlar (Mobil Uyumlu) */}
+                            <div className="pt-3 border-t border-slate-100 dark:border-slate-700">
+                                <div className="flex flex-col gap-3">
+                                    {/* Satır 1: Durum Seçimi (Mobilde Tam Genişlik) */}
+                                    <select
+                                        value={job.status}
+                                        onChange={e => handleStatusChange(job, e.target.value)}
+                                        className={`w-full px-3 py-2 rounded-lg text-xs font-bold border appearance-none cursor-pointer outline-none text-center ${statusConfig[job.status]?.color}`}
+                                    >
+                                        <option value="pending">Bekliyor</option>
+                                        <option value="in_progress">İşlemde</option>
+                                        <option value="waiting_parts">Parça Bekliyor</option>
+                                        <option value="completed">Tamamlandı</option>
+                                        <option value="cancelled">İptal</option>
                                     </select>
-                                    <span className="text-sm font-bold text-slate-900 dark:text-white">{job.price ? `${job.price} ₺` : ''}</span>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button onClick={() => sendWhatsAppMessage(job)} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg" title="WhatsApp"><MessageCircle className="w-4 h-4" /></button>
-                                    {job.status === 'completed' && job.paymentStatus === 'paid' ?
-                                        <button onClick={() => handleUndoPayment(job)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg" title="Ödemeyi İptal Et"><Undo2 className="w-4 h-4" /></button> :
-                                        <button onClick={() => { setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg" title="Tahsil Et"><CreditCard className="w-4 h-4" /></button>
-                                    }
-                                    <button onClick={() => handleDelete(job.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+
+                                    {/* Satır 2: Fiyat ve Butonlar */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-lg font-black text-slate-900 dark:text-white">
+                                            {job.price ? `${job.price} ₺` : <span className="text-slate-300 text-sm font-normal">Belirsiz</span>}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => sendWhatsAppMessage(job)} className="p-2.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors" title="WhatsApp">
+                                                <MessageCircle className="w-5 h-5" />
+                                            </button>
+                                            {job.status === 'completed' && job.paymentStatus === 'paid' ?
+                                                <button onClick={() => handleUndoPayment(job)} className="p-2.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg transition-colors" title="Ödemeyi İptal Et">
+                                                    <Undo2 className="w-5 h-5" />
+                                                </button> :
+                                                <button onClick={() => { setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors" title="Tahsil Et">
+                                                    <CreditCard className="w-5 h-5" />
+                                                </button>
+                                            }
+                                            <button onClick={() => handleDelete(job.id)} className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     ))}
             </div>
 
-            {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ */}
+            {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ (Mobilde Gizli) */}
             <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                     <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
@@ -404,7 +431,7 @@ export default function JobsPage() {
                         </div>
 
                         <form onSubmit={handleAddJob} className="space-y-4">
-                            {/* 🔥 ŞUBE SEÇİMİ (Eğer "Tüm Şubeler" modundaysak soruyoruz) */}
+                            {/* 🔥 ŞUBE SEÇİMİ */}
                             {branches.length > 0 && !selectedBranch && (
                                 <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
                                     <label className="block text-xs font-bold mb-1 text-blue-700 dark:text-blue-300 uppercase">Şube Seçimi</label>
@@ -443,7 +470,7 @@ export default function JobsPage() {
                 </div>
             )}
 
-            {/* Ödeme Modalı (Aynı kaldı) */}
+            {/* Ödeme Modalı (Değişmedi) */}
             {isPaymentModalOpen && selectedJobForPayment && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl p-6 shadow-2xl border dark:border-slate-800 animate-in zoom-in-95">
