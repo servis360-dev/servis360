@@ -10,7 +10,7 @@ import {
     signInWithPopup
 } from 'firebase/auth';
 import { auth, db } from '../../../lib/firebase';
-import { doc, setDoc, serverTimestamp, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore'; // 🔥 addDoc ve collection eklendi
 import Link from 'next/link';
 import {
     Mail,
@@ -103,7 +103,7 @@ export default function RegisterPage() {
                 finalAccountType = 'corporate';             // Personel kurumsal statüdedir
             } else if (finalAccountType === 'individual') {
                 finalCompanyName = 'Bireysel Hesap';
-                finalRole = 'individual'; // 🔥 GÜNCELLEME: Bireysel kullanıcı için rolü 'individual' olarak sabitliyoruz.
+                finalRole = 'individual';
             }
 
             // 4. Firestore Profil Kaydı
@@ -123,7 +123,7 @@ export default function RegisterPage() {
                 role: finalRole,
                 status: 'active',
                 createdAt: serverTimestamp(),
-                licenseEndsAt: null // Personelin lisansı patrona bağlıdır (Bireysel/Patron için null başlar, sonra satın alır)
+                licenseEndsAt: null
             });
 
             // 5. Public Directory (Admin Paneli İçin)
@@ -142,7 +142,26 @@ export default function RegisterPage() {
                 createdAt: serverTimestamp()
             });
 
-            // 6. Personel Listesini Güncelle (Eğer davetliyse, 'invited' -> 'active')
+            // 🔥 6. OTOMATİK MERKEZ ŞUBE OLUŞTURMA (Sadece Patronlar İçin)
+            // Eğer personel değilse ve bireysel değilse (veya bireysel olsa bile sistemi kullanacaksa) şube lazım.
+            // Bireyseller genelde tek şube gibi çalışır ama sistemin tutarlılığı için onlara da gizli bir 'Merkez' açabiliriz veya sadece business/corporate'e açarız.
+            // Burada basitlik adına: Personel olmayan herkese 'Merkez' şubesi açıyoruz.
+            if (!isStaff) {
+                try {
+                    await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'branches'), {
+                        name: 'Merkez',
+                        address: '',
+                        phone: formData.phone,
+                        isHeadquarters: true, // 🔥 Bu şubenin ANA ŞUBE olduğunu belirtir
+                        createdAt: serverTimestamp(),
+                        createdBy: user.uid
+                    });
+                } catch (branchError) {
+                    console.error("Otomatik şube oluşturma hatası:", branchError);
+                }
+            }
+
+            // 7. Personel Listesini Güncelle (Eğer davetliyse)
             if (isStaff) {
                 try {
                     await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', finalCompanyId, 'staff', formData.email), {
@@ -150,9 +169,6 @@ export default function RegisterPage() {
                         uid: user.uid,
                         joinedAt: serverTimestamp()
                     });
-
-                    // Davetiye dosyasını temizle (İsteğe bağlı, güvenlik için kalabilir veya silinebilir)
-                    // await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', formData.email));
                 } catch (e) { console.error("Personel güncelleme hatası", e); }
             }
 
@@ -233,6 +249,7 @@ export default function RegisterPage() {
                 router.push('/dashboard');
             } else {
                 // Davetli DEĞİL ve Yeni Kullanıcı -> Onboarding'e gönder
+                // Not: Onboarding sayfasında da profil oluştururken 'branch' oluşturmayı unutmayın.
                 router.push('/onboarding');
             }
 
