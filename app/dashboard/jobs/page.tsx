@@ -22,24 +22,31 @@ import {
     Briefcase,
     Plus,
     Search,
+    Clock,
+    CheckCircle2,
+    AlertTriangle,
+    Calendar,
+    Phone,
+    User,
+    MoreVertical,
+    MapPin,
+    Store,
+    Filter,
+    ArrowRight,
+    Loader2,
+    MessageCircle,
+    Undo2,
     CreditCard,
     Trash2,
     X,
     Wallet,
     Banknote,
     Building2,
-    Store,
-    Smartphone,
-    MessageCircle,
-    Undo2,
-    CheckCircle2,
-    Filter,
-    ArrowLeft,
-    MoreVertical,
-    Calendar,
-    MapPin
+    AlertCircle,
+    Smartphone
 } from 'lucide-react';
-// 🔥 Context'ten Şube Bilgisi
+import Link from 'next/link';
+// 🔥 ŞUBE BAĞLANTISI EKLENDİ
 import { useBranch } from '../../../components/providers/branch-context';
 
 const statusConfig: any = {
@@ -57,14 +64,14 @@ export default function JobsPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
 
-    // 🔥 Context
+    // 🔥 Context'ten Şube Bilgisini Alıyoruz
     const { selectedBranch, branches } = useBranch();
 
     // Kullanıcı
     const [user, setUser] = useState<any>(null);
     const [targetUid, setTargetUid] = useState<string | null>(null);
 
-    // Modallar
+    // Modal
     const [showModal, setShowModal] = useState(false);
     const [newJob, setNewJob] = useState({
         customerName: '',
@@ -73,7 +80,7 @@ export default function JobsPage() {
         problem: '',
         price: '',
         note: '',
-        branchId: ''
+        branchId: '' // İşin Hangi Şubede Olduğu
     });
 
     // Ödeme Modalı
@@ -86,7 +93,7 @@ export default function JobsPage() {
             if (currentUser) {
                 setUser(currentUser);
 
-                // 1. Hedef UID
+                // 1. Hedef UID Belirle (Personel ise Patronun ID'si)
                 const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                 const profileSnap = await getDoc(profileRef);
 
@@ -96,18 +103,20 @@ export default function JobsPage() {
                     if (data.ownerId && data.ownerId !== currentUser.uid) {
                         ownerId = data.ownerId;
                     }
+                    // WhatsApp Şablonunu Çek
                     if (data.whatsappTemplates?.deviceCompleted) {
                         setWhatsappTemplate(data.whatsappTemplates.deviceCompleted);
                     }
                 }
                 setTargetUid(ownerId);
 
-                // 2. İşleri Çek
+                // 2. İşleri Dinle (Şube Filtresi ile)
                 let q = query(
                     collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'jobs'),
                     orderBy('createdAt', 'desc')
                 );
 
+                // 🔥 EĞER ŞUBE SEÇİLİYSE SADECE O ŞUBENİN İŞLERİNİ GETİR
                 if (selectedBranch) {
                     q = query(
                         collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'jobs'),
@@ -126,16 +135,21 @@ export default function JobsPage() {
             }
         });
         return () => unsubscribeAuth();
-    }, [selectedBranch]);
+    }, [selectedBranch]); // 🔥 Şube değişince sorguyu yenile
 
     const handleAddJob = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user || !targetUid) return;
 
+        // Şube Zorunluluğu Kontrolü
+        // Eğer şubeler varsa ve seçim yapılmadıysa (ve global seçiliyse), kullanıcıyı zorla.
         let finalBranchId = newJob.branchId || selectedBranch;
+
         if (branches.length > 0 && !finalBranchId) {
+            // Eğer hiçbiri seçili değilse ve formda da seçilmediyse, varsayılan olarak Merkez'i veya ilk şubeyi al
             finalBranchId = branches.find(b => b.isHeadquarters)?.id || branches[0]?.id;
         }
+
         const branchName = branches.find(b => b.id === finalBranchId)?.name || 'Merkez';
 
         try {
@@ -152,39 +166,62 @@ export default function JobsPage() {
             setNewJob({ customerName: '', phone: '', device: '', problem: '', price: '', note: '', branchId: '' });
         } catch (error) {
             console.error("İş ekleme hatası:", error);
-            alert("Hata oluştu.");
+            alert("İş eklenirken hata oluştu.");
         }
     };
 
     const handleStatusChange = async (job: any, newStatus: string) => {
         if (!targetUid) return;
+
         if (newStatus === 'completed') {
             if (job.status === 'completed' && job.paymentStatus === 'paid') return;
             setSelectedJobForPayment(job);
             setIsPaymentModalOpen(true);
             return;
         }
-        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', job.id), { status: newStatus });
+
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', job.id), {
+            status: newStatus
+        });
     };
 
     const handleDelete = async (jobId: string) => {
         if (!targetUid) return;
-        if (confirm("Silmek istediğinize emin misiniz?")) {
+        if (confirm("Bu iş kaydını silmek istediğinize emin misiniz?")) {
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', jobId));
         }
     };
 
+    // Ödeme İşlemleri
     const handlePaymentReceived = async (method: string) => {
         if (!selectedJobForPayment || !user || !targetUid) return;
+
         const batch = writeBatch(db);
+
+        // 1. İşi Güncelle
         const jobRef = doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', selectedJobForPayment.id);
         batch.update(jobRef, {
-            status: 'completed', paymentStatus: 'paid', paymentMethod: method, completedAt: serverTimestamp(), completedBy: user.uid
+            status: 'completed',
+            paymentStatus: 'paid',
+            paymentMethod: method,
+            completedAt: serverTimestamp(),
+            completedBy: user.uid
         });
+
+        // 2. Finans Kaydı Oluştur
         const financeRef = doc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance'));
         batch.set(financeRef, {
-            type: 'income', category: 'service', amount: Number(selectedJobForPayment.price || 0), description: `${selectedJobForPayment.customerName} - Servis`, date: serverTimestamp(), relatedJobId: selectedJobForPayment.id, paymentMethod: method, branchId: selectedJobForPayment.branchId, processedBy: user.uid
+            type: 'income',
+            category: 'service',
+            amount: Number(selectedJobForPayment.price || 0),
+            description: `${selectedJobForPayment.customerName} - Servis`,
+            date: serverTimestamp(),
+            relatedJobId: selectedJobForPayment.id,
+            paymentMethod: method,
+            branchId: selectedJobForPayment.branchId, // 🔥 Şube bilgisini finansa da işle
+            processedBy: user.uid
         });
+
         await batch.commit();
         setIsPaymentModalOpen(false);
         setSelectedJobForPayment(null);
@@ -192,7 +229,9 @@ export default function JobsPage() {
 
     const handlePaymentPending = async () => {
         if (!selectedJobForPayment || !user || !targetUid) return;
-        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', selectedJobForPayment.id), { status: 'completed', paymentStatus: 'pending', completedAt: serverTimestamp() });
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', selectedJobForPayment.id), {
+            status: 'completed', paymentStatus: 'pending', completedAt: serverTimestamp()
+        });
         setIsPaymentModalOpen(false);
         setSelectedJobForPayment(null);
     };
@@ -216,131 +255,122 @@ export default function JobsPage() {
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
     };
 
+    // FİLTRELEME
     const filteredJobs = jobs.filter(job => {
-        const matchesSearch = job.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) || job.device?.toLowerCase().includes(searchTerm.toLowerCase()) || job.id.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch =
+            job.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            job.device?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            job.id.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
         return matchesSearch && matchesStatus;
     });
 
     const openNewJobModal = () => {
+        // Eğer global bir şube seçiliyse onu ata, yoksa boş bırak (kullanıcı seçecek)
         setNewJob(prev => ({ ...prev, branchId: selectedBranch || '' }));
         setShowModal(true);
     }
 
     return (
-        <div className="space-y-4 pb-24 md:pb-20">
-            {/* --- HEADER --- */}
-            {/* Mobilde yapışkan (sticky) başlık, masaüstünde normal */}
-            <div className="flex justify-between items-center sticky top-0 z-20 bg-slate-50 dark:bg-slate-950 py-2 md:static md:py-0 transition-all">
+        <div className="space-y-6 pb-20">
+            {/* BAŞLIK */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <Briefcase className="w-6 h-6 text-blue-600" /> İş Takibi
                     </h1>
-                    <p className="text-slate-500 dark:text-slate-400 text-xs md:text-sm">
-                        {selectedBranch ? `${branches.find(b => b.id === selectedBranch)?.name}` : 'Tüm Şubeler'}
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">
+                        {selectedBranch
+                            ? `${branches.find(b => b.id === selectedBranch)?.name} şubesindeki işler listeleniyor.`
+                            : 'Tüm şubelerdeki işler listeleniyor.'}
                     </p>
                 </div>
-                <button
-                    onClick={openNewJobModal}
-                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all active:scale-95 text-sm"
-                >
-                    <Plus className="w-5 h-5" /> <span className="hidden sm:inline">Yeni İş</span><span className="sm:hidden">Ekle</span>
+                <button onClick={openNewJobModal} className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all active:scale-95">
+                    <Plus className="w-5 h-5" /> Yeni İş Ekle
                 </button>
             </div>
 
-            {/* --- ARAMA VE FİLTRE --- */}
-            <div className="space-y-3">
-                <div className="relative">
+            {/* FİLTRELER */}
+            <div className="flex flex-col sm:flex-row gap-4 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
-                        className="w-full pl-9 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 text-sm shadow-sm transition-all"
-                        placeholder="Müşteri, cihaz veya no ara..."
+                        className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-blue-500 text-sm"
+                        placeholder="Müşteri, Cihaz veya Takip No ara..."
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                     />
                 </div>
-                {/* Mobilde Yatay Kaydırılabilir Filtreler */}
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-2 px-2 md:mx-0 md:px-0">
-                    {['all', 'pending', 'in_progress', 'waiting_parts', 'completed', 'delivered'].map(st => (
-                        <button
-                            key={st}
-                            onClick={() => setStatusFilter(st)}
-                            className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap border transition-all shadow-sm flex-shrink-0 active:scale-95 ${statusFilter === st ? 'bg-slate-800 text-white border-slate-800 dark:bg-white dark:text-slate-900' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}
-                        >
+                <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
+                    {['all', 'pending', 'in_progress', 'completed', 'delivered'].map(st => (
+                        <button key={st} onClick={() => setStatusFilter(st)} className={`px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap border transition-all ${statusFilter === st ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}`}>
                             {st === 'all' ? 'Tümü' : statusConfig[st]?.label || st}
                         </button>
                     ))}
                 </div>
             </div>
 
-            {/* --- İÇERİK --- */}
-            {/* 1. MOBİL / TABLET KART GÖRÜNÜMÜ (md altı için) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:hidden">
+            {/* LİSTE */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {loading ? <p className="col-span-full text-center py-10 text-slate-500">Yükleniyor...</p> :
                     filteredJobs.length === 0 ? (
                         <div className="col-span-full text-center py-16 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
-                            <Briefcase className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                            <p className="text-slate-500 text-sm">Kayıt bulunamadı.</p>
+                            <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                            <h3 className="font-bold text-slate-900 dark:text-white">Kayıt Bulunamadı</h3>
+                            <p className="text-slate-500 text-sm">Aradığınız kriterlere uygun iş yok.</p>
                         </div>
                     ) : filteredJobs.map(job => (
-                        <div key={job.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative group active:border-blue-300 transition-colors">
-                            {/* Kart Başlığı */}
-                            <div className="flex justify-between items-start mb-2">
+                        <div key={job.id} className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group relative">
+                            {/* Şube Badge (Eğer çok şube varsa göster) */}
+                            {branches.length > 0 && (
+                                <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1">
+                                    <Store className="w-3 h-3" /> {job.branchName || 'Merkez'}
+                                </div>
+                            )}
+                            <div className="flex justify-between items-start mb-3 mt-1">
                                 <div>
-                                    <h3 className="font-bold text-slate-900 dark:text-white text-base">{job.customerName}</h3>
-                                    <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                                        <Smartphone className="w-3 h-3" /> {job.device} <span className="text-slate-300">|</span> {job.phone}
-                                    </div>
+                                    <h3 className="font-bold text-slate-900 dark:text-white text-lg">{job.customerName}</h3>
+                                    <p className="text-xs text-slate-500 flex items-center gap-1"><Smartphone className="w-3 h-3" /> {job.device} | {job.phone}</p>
                                 </div>
-                                {branches.length > 0 && (
-                                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1">
-                                        <Store className="w-3 h-3" /> {job.branchName || 'Merkez'}
-                                    </span>
-                                )}
                             </div>
-
-                            {/* Arıza Açıklaması */}
-                            <div className="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg mb-3 border border-slate-100 dark:border-slate-800 min-h-[60px]">
-                                <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-3">{job.problem}</p>
+                            <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg mb-3">
+                                <p className="text-xs text-slate-500 line-clamp-2">{job.problem}</p>
                             </div>
-
-                            {/* Aksiyonlar Alt Bar */}
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700">
-                                <div className="flex items-center gap-2 flex-1">
-                                    {/* Mobil Dostu Dropdown */}
-                                    <div className="relative">
-                                        <select value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`w-full max-w-[110px] pl-2 pr-1 py-1.5 rounded-lg text-[10px] font-bold border appearance-none cursor-pointer outline-none truncate ${statusConfig[job.status]?.color}`}>
-                                            <option value="pending">Bekliyor</option><option value="in_progress">İşlemde</option><option value="waiting_parts">Parça Bekl.</option><option value="completed">Tamamlandı</option><option value="delivered">Teslim</option><option value="cancelled">İptal</option>
-                                        </select>
-                                    </div>
-                                    <span className="text-sm font-bold text-slate-900 dark:text-white whitespace-nowrap">{job.price ? `${job.price} ₺` : ''}</span>
+                            <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
+                                <div className="flex items-center gap-2">
+                                    <select value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`pl-2 pr-6 py-1 rounded text-xs font-bold border appearance-none cursor-pointer outline-none ${statusConfig[job.status]?.color}`}>
+                                        <option value="pending">Bekliyor</option><option value="in_progress">İşlemde</option><option value="waiting_parts">Parça Bekliyor</option><option value="completed">Tamamlandı</option><option value="cancelled">İptal</option>
+                                    </select>
+                                    <span className="text-sm font-bold text-slate-900 dark:text-white">{job.price ? `${job.price} ₺` : ''}</span>
                                 </div>
-
-                                <div className="flex gap-1.5">
-                                    <button onClick={() => sendWhatsAppMessage(job)} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg active:scale-95 transition-transform"><MessageCircle className="w-5 h-5" /></button>
+                                <div className="flex gap-2">
+                                    <button onClick={() => sendWhatsAppMessage(job)} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg" title="WhatsApp"><MessageCircle className="w-4 h-4" /></button>
                                     {job.status === 'completed' && job.paymentStatus === 'paid' ?
-                                        <button onClick={() => handleUndoPayment(job)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg active:scale-95 transition-transform"><Undo2 className="w-5 h-5" /></button> :
-                                        <button onClick={() => { setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg active:scale-95 transition-transform"><CreditCard className="w-5 h-5" /></button>
+                                        <button onClick={() => handleUndoPayment(job)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg" title="Ödemeyi İptal Et"><Undo2 className="w-4 h-4" /></button> :
+                                        <button onClick={() => { setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg" title="Tahsil Et"><CreditCard className="w-4 h-4" /></button>
                                     }
-                                    <button onClick={() => handleDelete(job.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg active:scale-95 transition-transform"><Trash2 className="w-5 h-5" /></button>
+                                    <button onClick={() => handleDelete(job.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                                 </div>
                             </div>
                         </div>
                     ))}
             </div>
 
-            {/* 2. MASAÜSTÜ TABLO GÖRÜNÜMÜ (md ve üstü için) */}
-            <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm mt-6">
+            {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ */}
+            <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                     <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
                         <tr><th className="p-4">Müşteri</th><th className="p-4">Durum</th><th className="p-4">Ödeme</th><th className="p-4">Ücret</th><th className="p-4 text-right">İşlemler</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {filteredJobs.map(job => (
-                            <tr key={job.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                        {loading ? <tr><td colSpan={5} className="p-8 text-center">Yükleniyor...</td></tr> : filteredJobs.map(job => (
+                            <tr key={job.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                 <td className="p-4">
                                     <div className="font-bold text-slate-900 dark:text-white">{job.customerName}</div>
-                                    <div className="text-xs text-slate-500">{job.device} | {job.phone}</div>
+                                    <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                                        <Smartphone className="w-3 h-3" /> {job.device} <span className="text-slate-300">|</span> {job.phone}
+                                    </div>
+                                    {branches.length > 0 && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-slate-500">{job.branchName}</span>}
                                 </td>
                                 <td className="p-4">
                                     <select value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`pl-3 pr-8 py-1.5 rounded-lg text-xs font-bold border appearance-none cursor-pointer outline-none ${statusConfig[job.status]?.color}`}>
@@ -348,15 +378,14 @@ export default function JobsPage() {
                                     </select>
                                 </td>
                                 <td className="p-4">
-                                    {job.paymentStatus === 'paid' ? <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ödendi</span> : <span className="text-slate-400">Bekliyor</span>}
+                                    {job.status === 'completed' && (job.paymentStatus === 'paid' ?
+                                        <div className="flex gap-2 items-center"><span className="text-green-700 bg-green-100 px-2 py-1 rounded text-xs font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ödendi</span><button onClick={() => handleUndoPayment(job)} className="text-slate-400 hover:text-red-500 p-1 rounded" title="İptal"><Undo2 className="w-4 h-4" /></button></div> :
+                                        <button onClick={() => { setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="text-blue-600 text-xs font-bold hover:underline">Tahsil Et</button>
+                                    )}
                                 </td>
-                                <td className="p-4 font-bold">{job.price} ₺</td>
+                                <td className="p-4 font-bold text-base">{job.price} ₺</td>
                                 <td className="p-4 text-right flex justify-end gap-2">
                                     <button onClick={() => sendWhatsAppMessage(job)} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg"><MessageCircle className="w-4 h-4" /></button>
-                                    {job.status === 'completed' && job.paymentStatus === 'paid' ?
-                                        <button onClick={() => handleUndoPayment(job)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Undo2 className="w-4 h-4" /></button> :
-                                        <button onClick={() => { setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg"><CreditCard className="w-4 h-4" /></button>
-                                    }
                                     <button onClick={() => handleDelete(job.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                                 </td>
                             </tr>
@@ -365,82 +394,79 @@ export default function JobsPage() {
                 </table>
             </div>
 
-            {/* --- MODALLAR (TAM EKRAN MOBILE) --- */}
-
-            {/* YENİ İŞ EKLEME MODALI */}
+            {/* EKLEME MODALI */}
             {showModal && (
-                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4 animate-in fade-in">
-                    <div className="bg-white dark:bg-slate-900 w-full h-full sm:h-auto sm:max-w-lg sm:rounded-2xl p-0 sm:p-0 shadow-2xl flex flex-col sm:block animate-in slide-in-from-bottom-10 sm:zoom-in-95">
-
-                        {/* Header */}
-                        <div className="flex justify-between items-center p-4 border-b border-slate-100 dark:border-slate-800">
-                            <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-white">
-                                <button onClick={() => setShowModal(false)} className="sm:hidden mr-2"><ArrowLeft className="w-6 h-6" /></button>
-                                Yeni İş Kaydı
-                            </h2>
-                            <button onClick={() => setShowModal(false)} className="hidden sm:block p-1 hover:bg-slate-100 rounded-full"><X className="text-slate-400" /></button>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900 dark:text-white"><Plus className="w-6 h-6 text-blue-600" /> Yeni İş Kaydı</h2>
+                            <button onClick={() => setShowModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><X className="text-slate-400" /></button>
                         </div>
 
-                        <div className="p-6 overflow-y-auto flex-1">
-                            <form onSubmit={handleAddJob} className="space-y-4">
-                                {branches.length > 0 && !selectedBranch && (
-                                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
-                                        <label className="block text-xs font-bold mb-1 text-blue-700 dark:text-blue-300 uppercase">Şube</label>
-                                        <select className="w-full p-2 bg-transparent border-b border-blue-200 dark:border-blue-800 outline-none text-sm font-bold" value={newJob.branchId} onChange={e => setNewJob({ ...newJob, branchId: e.target.value })}>
+                        <form onSubmit={handleAddJob} className="space-y-4">
+                            {/* 🔥 ŞUBE SEÇİMİ (Eğer "Tüm Şubeler" modundaysak soruyoruz) */}
+                            {branches.length > 0 && !selectedBranch && (
+                                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
+                                    <label className="block text-xs font-bold mb-1 text-blue-700 dark:text-blue-300 uppercase">Şube Seçimi</label>
+                                    <div className="relative">
+                                        <Store className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <select
+                                            className="w-full pl-9 p-2 bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 rounded-lg outline-none text-sm appearance-none"
+                                            value={newJob.branchId}
+                                            onChange={e => setNewJob({ ...newJob, branchId: e.target.value })}
+                                        >
                                             <option value="">Merkez (Varsayılan)</option>
-                                            {branches.map(b => (<option key={b.id} value={b.id}>{b.name}</option>))}
+                                            {branches.map(b => (
+                                                <option key={b.id} value={b.id}>{b.name}</option>
+                                            ))}
                                         </select>
                                     </div>
-                                )}
+                                </div>
+                            )}
 
-                                <div><label className="text-xs font-bold text-slate-500 uppercase">Müşteri</label><input required className="w-full p-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl mt-1 text-sm font-bold" placeholder="Ad Soyad" value={newJob.customerName} onChange={e => setNewJob({ ...newJob, customerName: e.target.value })} /></div>
-                                <div><label className="text-xs font-bold text-slate-500 uppercase">Telefon</label><input required type="tel" className="w-full p-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl mt-1 text-sm font-bold" placeholder="05XX..." value={newJob.phone} onChange={e => setNewJob({ ...newJob, phone: e.target.value })} /></div>
-                                <div><label className="text-xs font-bold text-slate-500 uppercase">Cihaz</label><input required className="w-full p-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl mt-1 text-sm font-bold" placeholder="iPhone 11, Samsung S20..." value={newJob.device} onChange={e => setNewJob({ ...newJob, device: e.target.value })} /></div>
-                                <div><label className="text-xs font-bold text-slate-500 uppercase">Arıza / İşlem</label><textarea required rows={2} className="w-full p-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl mt-1 text-sm" placeholder="Ekran değişimi yapılacak..." value={newJob.problem} onChange={e => setNewJob({ ...newJob, problem: e.target.value })} /></div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div><label className="text-xs font-bold text-slate-500 uppercase">Fiyat (TL)</label><input type="number" className="w-full p-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl mt-1 text-lg font-bold" placeholder="0.00" value={newJob.price} onChange={e => setNewJob({ ...newJob, price: e.target.value })} /></div>
-                                    <div><label className="text-xs font-bold text-slate-500 uppercase">Not</label><input className="w-full p-3 bg-slate-50 dark:bg-slate-800 border-none rounded-xl mt-1 text-sm" placeholder="Opsiyonel" value={newJob.note} onChange={e => setNewJob({ ...newJob, note: e.target.value })} /></div>
-                                </div>
-                                <div className="pt-4 pb-safe-bottom">
-                                    <button className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 active:scale-95 transition-all text-base">KAYDET</button>
-                                </div>
-                            </form>
-                        </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="block text-sm font-bold mb-1">Müşteri Adı</label><input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.customerName} onChange={e => setNewJob({ ...newJob, customerName: e.target.value })} /></div>
+                                <div><label className="block text-sm font-bold mb-1">Telefon</label><input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.phone} onChange={e => setNewJob({ ...newJob, phone: e.target.value })} /></div>
+                            </div>
+
+                            <div><label className="block text-sm font-bold mb-1">Cihaz / Model</label><input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.device} onChange={e => setNewJob({ ...newJob, device: e.target.value })} /></div>
+                            <div><label className="block text-sm font-bold mb-1">Arıza / İşlem</label><textarea required rows={2} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.problem} onChange={e => setNewJob({ ...newJob, problem: e.target.value })} /></div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="block text-sm font-bold mb-1">Fiyat</label><input type="number" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.price} onChange={e => setNewJob({ ...newJob, price: e.target.value })} placeholder="0.00" /></div>
+                                <div><label className="block text-sm font-bold mb-1">Notlar</label><input className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.note} onChange={e => setNewJob({ ...newJob, note: e.target.value })} /></div>
+                            </div>
+
+                            <button className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition-colors">Kaydet</button>
+                        </form>
                     </div>
                 </div>
             )}
 
-            {/* ÖDEME MODALI (TAM EKRAN MOBILE) */}
+            {/* Ödeme Modalı (Aynı kaldı) */}
             {isPaymentModalOpen && selectedJobForPayment && (
-                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4 animate-in fade-in">
-                    <div className="bg-white dark:bg-slate-900 w-full h-full sm:h-auto sm:max-w-md sm:rounded-2xl p-0 sm:p-0 shadow-2xl flex flex-col sm:block animate-in slide-in-from-bottom-10 sm:zoom-in-95">
-
-                        <div className="flex justify-between items-center p-4 border-b border-slate-100 dark:border-slate-800">
-                            <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-white">
-                                <button onClick={() => setIsPaymentModalOpen(false)} className="sm:hidden mr-2"><ArrowLeft className="w-6 h-6" /></button>
-                                Ödeme Al
-                            </h2>
-                            <button onClick={() => setIsPaymentModalOpen(false)} className="hidden sm:block p-1 hover:bg-slate-100 rounded-full"><X className="w-5 h-5" /></button>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl p-6 shadow-2xl border dark:border-slate-800 animate-in zoom-in-95">
+                        <div className="flex justify-between mb-6 items-center">
+                            <h2 className="text-xl font-bold dark:text-white flex items-center gap-2"><Wallet className="w-6 h-6 text-blue-600" /> Ödeme Al</h2>
+                            <button onClick={() => setIsPaymentModalOpen(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"><X className="w-5 h-5" /></button>
                         </div>
-
-                        <div className="p-6 flex-1 flex flex-col justify-center sm:block">
-                            <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-2xl mb-8 text-center border border-slate-100 dark:border-slate-700">
-                                <p className="text-sm text-slate-500 dark:text-slate-400 mb-1 font-bold uppercase">Toplam Tutar</p>
-                                <p className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">{selectedJobForPayment.price} ₺</p>
-                                <p className="text-xs text-slate-400 mt-2">{selectedJobForPayment.customerName} • {selectedJobForPayment.device}</p>
-                            </div>
-                            <div className="space-y-3">
-                                <button onClick={() => handlePaymentReceived('cash')} className="w-full p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/30 rounded-xl flex items-center gap-4 font-bold text-green-700 dark:text-green-400 active:scale-95 transition-transform">
-                                    <div className="p-2 bg-green-200 dark:bg-green-800 rounded-full"><Banknote className="w-5 h-5" /></div> Nakit Ödeme
-                                </button>
-                                <button onClick={() => handlePaymentReceived('credit_card')} className="w-full p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/30 rounded-xl flex items-center gap-4 font-bold text-blue-700 dark:text-blue-400 active:scale-95 transition-transform">
-                                    <div className="p-2 bg-blue-200 dark:bg-blue-800 rounded-full"><CreditCard className="w-5 h-5" /></div> Kredi Kartı
-                                </button>
-                                <button onClick={() => handlePaymentReceived('bank_transfer')} className="w-full p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/30 rounded-xl flex items-center gap-4 font-bold text-purple-700 dark:text-purple-400 active:scale-95 transition-transform">
-                                    <div className="p-2 bg-purple-200 dark:bg-purple-800 rounded-full"><Building2 className="w-5 h-5" /></div> Havale / EFT
-                                </button>
-                                <button onClick={handlePaymentPending} className="w-full py-4 text-slate-400 text-sm font-bold hover:text-slate-600">Ödeme Alınmadı (Veresiye)</button>
-                            </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl mb-6 text-center">
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">Toplam Tutar</p>
+                            <p className="text-3xl font-black text-slate-900 dark:text-white">{selectedJobForPayment.price} ₺</p>
+                            <p className="text-xs text-slate-400 mt-2">{selectedJobForPayment.customerName} - {selectedJobForPayment.device}</p>
+                        </div>
+                        <div className="space-y-3">
+                            <button onClick={() => handlePaymentReceived('cash')} className="w-full p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 flex items-center gap-3 font-bold text-slate-700 dark:text-slate-200 transition-all group">
+                                <div className="p-2 bg-green-100 text-green-600 rounded-lg group-hover:bg-green-200"><Banknote className="w-5 h-5" /></div> Nakit Ödeme
+                            </button>
+                            <button onClick={() => handlePaymentReceived('credit_card')} className="w-full p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-3 font-bold text-slate-700 dark:text-slate-200 transition-all group">
+                                <div className="p-2 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200"><CreditCard className="w-5 h-5" /></div> Kredi Kartı
+                            </button>
+                            <button onClick={() => handlePaymentReceived('bank_transfer')} className="w-full p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-3 font-bold text-slate-700 dark:text-slate-200 transition-all group">
+                                <div className="p-2 bg-purple-100 text-purple-600 rounded-lg group-hover:bg-purple-200"><Building2 className="w-5 h-5" /></div> Havale / EFT
+                            </button>
+                            <button onClick={handlePaymentPending} className="w-full py-3 text-slate-500 text-sm hover:text-red-500 transition-colors">Ödeme Alınmadı (Veresiye/Borç)</button>
                         </div>
                     </div>
                 </div>
