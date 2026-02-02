@@ -18,23 +18,12 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useRouter } from 'next/navigation'; // 🔥 Router Eklendi
+import { useRouter } from 'next/navigation';
 import {
     Briefcase,
     Plus,
     Search,
-    Clock,
-    CheckCircle2,
-    AlertTriangle,
-    Calendar,
-    Phone,
-    User,
-    MoreVertical,
-    MapPin,
     Store,
-    Filter,
-    ArrowRight,
-    Loader2,
     MessageCircle,
     Undo2,
     CreditCard,
@@ -43,11 +32,9 @@ import {
     Wallet,
     Banknote,
     Building2,
-    AlertCircle,
-    Smartphone
+    Smartphone,
+    CheckCircle2
 } from 'lucide-react';
-import Link from 'next/link';
-// 🔥 ŞUBE BAĞLANTISI
 import { useBranch } from '../../../components/providers/branch-context';
 
 const statusConfig: any = {
@@ -65,9 +52,9 @@ export default function JobsPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
 
-    // 🔥 Context'ten Şube Bilgisini Alıyoruz
+    // Context'ten Şube Bilgisini Alıyoruz
     const { selectedBranch, branches } = useBranch();
-    const router = useRouter(); // 🔥 Yönlendirme için
+    const router = useRouter();
 
     // Kullanıcı
     const [user, setUser] = useState<any>(null);
@@ -82,7 +69,7 @@ export default function JobsPage() {
         problem: '',
         price: '',
         note: '',
-        branchId: '' // İşin Hangi Şubede Olduğu
+        branchId: ''
     });
 
     // Ödeme Modalı
@@ -95,7 +82,6 @@ export default function JobsPage() {
             if (currentUser) {
                 setUser(currentUser);
 
-                // 1. Hedef UID Belirle (Personel ise Patronun ID'si)
                 const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                 const profileSnap = await getDoc(profileRef);
 
@@ -105,20 +91,17 @@ export default function JobsPage() {
                     if (data.ownerId && data.ownerId !== currentUser.uid) {
                         ownerId = data.ownerId;
                     }
-                    // WhatsApp Şablonunu Çek
                     if (data.whatsappTemplates?.deviceCompleted) {
                         setWhatsappTemplate(data.whatsappTemplates.deviceCompleted);
                     }
                 }
                 setTargetUid(ownerId);
 
-                // 2. İşleri Dinle (Şube Filtresi ile)
                 let q = query(
                     collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'jobs'),
                     orderBy('createdAt', 'desc')
                 );
 
-                // 🔥 EĞER ŞUBE SEÇİLİYSE SADECE O ŞUBENİN İŞLERİNİ GETİR
                 if (selectedBranch) {
                     q = query(
                         collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'jobs'),
@@ -143,7 +126,6 @@ export default function JobsPage() {
         e.preventDefault();
         if (!user || !targetUid) return;
 
-        // Şube Zorunluluğu Kontrolü
         let finalBranchId = newJob.branchId || selectedBranch;
 
         if (branches.length > 0 && !finalBranchId) {
@@ -197,7 +179,6 @@ export default function JobsPage() {
 
         const batch = writeBatch(db);
 
-        // 1. İşi Güncelle
         const jobRef = doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', selectedJobForPayment.id);
         batch.update(jobRef, {
             status: 'completed',
@@ -207,7 +188,6 @@ export default function JobsPage() {
             completedBy: user.uid
         });
 
-        // 2. Finans Kaydı Oluştur
         const financeRef = doc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance'));
         batch.set(financeRef, {
             type: 'income',
@@ -254,7 +234,6 @@ export default function JobsPage() {
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
     };
 
-    // FİLTRELEME
     const filteredJobs = jobs.filter(job => {
         const matchesSearch =
             job.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -321,18 +300,18 @@ export default function JobsPage() {
                         <div
                             key={job.id}
                             onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
-                            className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group relative cursor-pointer"
+                            // 🔥 MOBİLDE DAHA AZ PADDING (p-4), TABLET VE ÜSTÜNDE NORMAL (sm:p-5)
+                            className="bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group relative cursor-pointer"
                         >
-                            {/* Şube Badge */}
                             {branches.length > 0 && (
                                 <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1">
                                     <Store className="w-3 h-3" /> {job.branchName || 'Merkez'}
                                 </div>
                             )}
 
-                            {/* Üst Kısım: İsim ve Cihaz */}
+                            {/* Üst Kısım: İsim (Truncate eklendi) ve Cihaz */}
                             <div className="mb-3 pr-16">
-                                <h3 className="font-bold text-slate-900 dark:text-white text-lg leading-tight">{job.customerName}</h3>
+                                <h3 className="font-bold text-slate-900 dark:text-white text-lg leading-tight truncate pr-2">{job.customerName}</h3>
                                 <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
                                     <Smartphone className="w-3 h-3" /> {job.device}
                                     <span className="opacity-30">|</span>
@@ -345,10 +324,9 @@ export default function JobsPage() {
                                 <p className="text-xs text-slate-500 line-clamp-2">{job.problem}</p>
                             </div>
 
-                            {/* Alt Kısım: Aksiyonlar (Mobil Uyumlu) */}
+                            {/* Alt Kısım */}
                             <div className="pt-3 border-t border-slate-100 dark:border-slate-700">
                                 <div className="flex flex-col gap-3">
-                                    {/* Satır 1: Durum Seçimi */}
                                     <select
                                         onClick={(e) => e.stopPropagation()}
                                         value={job.status}
@@ -362,24 +340,24 @@ export default function JobsPage() {
                                         <option value="cancelled">İptal</option>
                                     </select>
 
-                                    {/* Satır 2: Fiyat ve Butonlar */}
                                     <div className="flex items-center justify-between">
                                         <div className="text-lg font-black text-slate-900 dark:text-white">
                                             {job.price ? `${job.price} ₺` : <span className="text-slate-300 text-sm font-normal">Belirsiz</span>}
                                         </div>
+                                        {/* 🔥 BUTONLAR MOBİLDE KÜÇÜLTÜLDÜ (p-2) */}
                                         <div className="flex gap-2">
-                                            <button onClick={(e) => { e.stopPropagation(); sendWhatsAppMessage(job) }} className="p-2.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors" title="WhatsApp">
+                                            <button onClick={(e) => { e.stopPropagation(); sendWhatsAppMessage(job) }} className="p-2 sm:p-2.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors" title="WhatsApp">
                                                 <MessageCircle className="w-5 h-5" />
                                             </button>
                                             {job.status === 'completed' && job.paymentStatus === 'paid' ?
-                                                <button onClick={(e) => { e.stopPropagation(); handleUndoPayment(job) }} className="p-2.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg transition-colors" title="Ödemeyi İptal Et">
+                                                <button onClick={(e) => { e.stopPropagation(); handleUndoPayment(job) }} className="p-2 sm:p-2.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg transition-colors" title="Ödemeyi İptal Et">
                                                     <Undo2 className="w-5 h-5" />
                                                 </button> :
-                                                <button onClick={(e) => { e.stopPropagation(); setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors" title="Tahsil Et">
+                                                <button onClick={(e) => { e.stopPropagation(); setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2 sm:p-2.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors" title="Tahsil Et">
                                                     <CreditCard className="w-5 h-5" />
                                                 </button>
                                             }
-                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(job.id) }} className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(job.id) }} className="p-2 sm:p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                                                 <Trash2 className="w-5 h-5" />
                                             </button>
                                         </div>
@@ -447,7 +425,6 @@ export default function JobsPage() {
                         </div>
 
                         <form onSubmit={handleAddJob} className="space-y-4">
-                            {/* 🔥 ŞUBE SEÇİMİ */}
                             {branches.length > 0 && !selectedBranch && (
                                 <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
                                     <label className="block text-xs font-bold mb-1 text-blue-700 dark:text-blue-300 uppercase">Şube Seçimi</label>
@@ -486,7 +463,6 @@ export default function JobsPage() {
                 </div>
             )}
 
-            {/* Ödeme Modalı (Değişmedi) */}
             {isPaymentModalOpen && selectedJobForPayment && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl p-6 shadow-2xl border dark:border-slate-800 animate-in zoom-in-95">
