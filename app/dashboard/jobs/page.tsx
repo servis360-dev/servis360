@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { useRouter } from 'next/navigation'; // 🔥 Router Eklendi
 import {
     Briefcase,
     Plus,
@@ -66,6 +67,7 @@ export default function JobsPage() {
 
     // 🔥 Context'ten Şube Bilgisini Alıyoruz
     const { selectedBranch, branches } = useBranch();
+    const router = useRouter(); // 🔥 Yönlendirme için
 
     // Kullanıcı
     const [user, setUser] = useState<any>(null);
@@ -316,7 +318,11 @@ export default function JobsPage() {
                             <p className="text-slate-500 text-sm">Aradığınız kriterlere uygun iş yok.</p>
                         </div>
                     ) : filteredJobs.map(job => (
-                        <div key={job.id} className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group relative">
+                        <div
+                            key={job.id}
+                            onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
+                            className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group relative cursor-pointer"
+                        >
                             {/* Şube Badge */}
                             {branches.length > 0 && (
                                 <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1">
@@ -325,7 +331,7 @@ export default function JobsPage() {
                             )}
 
                             {/* Üst Kısım: İsim ve Cihaz */}
-                            <div className="mb-3 pr-16"> {/* Sağ taraftan padding bıraktık ki badge üstüne gelmesin */}
+                            <div className="mb-3 pr-16">
                                 <h3 className="font-bold text-slate-900 dark:text-white text-lg leading-tight">{job.customerName}</h3>
                                 <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
                                     <Smartphone className="w-3 h-3" /> {job.device}
@@ -342,8 +348,9 @@ export default function JobsPage() {
                             {/* Alt Kısım: Aksiyonlar (Mobil Uyumlu) */}
                             <div className="pt-3 border-t border-slate-100 dark:border-slate-700">
                                 <div className="flex flex-col gap-3">
-                                    {/* Satır 1: Durum Seçimi (Mobilde Tam Genişlik) */}
+                                    {/* Satır 1: Durum Seçimi */}
                                     <select
+                                        onClick={(e) => e.stopPropagation()}
                                         value={job.status}
                                         onChange={e => handleStatusChange(job, e.target.value)}
                                         className={`w-full px-3 py-2 rounded-lg text-xs font-bold border appearance-none cursor-pointer outline-none text-center ${statusConfig[job.status]?.color}`}
@@ -361,18 +368,18 @@ export default function JobsPage() {
                                             {job.price ? `${job.price} ₺` : <span className="text-slate-300 text-sm font-normal">Belirsiz</span>}
                                         </div>
                                         <div className="flex gap-2">
-                                            <button onClick={() => sendWhatsAppMessage(job)} className="p-2.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors" title="WhatsApp">
+                                            <button onClick={(e) => { e.stopPropagation(); sendWhatsAppMessage(job) }} className="p-2.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors" title="WhatsApp">
                                                 <MessageCircle className="w-5 h-5" />
                                             </button>
                                             {job.status === 'completed' && job.paymentStatus === 'paid' ?
-                                                <button onClick={() => handleUndoPayment(job)} className="p-2.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg transition-colors" title="Ödemeyi İptal Et">
+                                                <button onClick={(e) => { e.stopPropagation(); handleUndoPayment(job) }} className="p-2.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg transition-colors" title="Ödemeyi İptal Et">
                                                     <Undo2 className="w-5 h-5" />
                                                 </button> :
-                                                <button onClick={() => { setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors" title="Tahsil Et">
+                                                <button onClick={(e) => { e.stopPropagation(); setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors" title="Tahsil Et">
                                                     <CreditCard className="w-5 h-5" />
                                                 </button>
                                             }
-                                            <button onClick={() => handleDelete(job.id)} className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(job.id) }} className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                                                 <Trash2 className="w-5 h-5" />
                                             </button>
                                         </div>
@@ -383,7 +390,7 @@ export default function JobsPage() {
                     ))}
             </div>
 
-            {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ (Mobilde Gizli) */}
+            {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ */}
             <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                     <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
@@ -391,7 +398,11 @@ export default function JobsPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {loading ? <tr><td colSpan={5} className="p-8 text-center">Yükleniyor...</td></tr> : filteredJobs.map(job => (
-                            <tr key={job.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                            <tr
+                                key={job.id}
+                                onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
+                                className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
+                            >
                                 <td className="p-4">
                                     <div className="font-bold text-slate-900 dark:text-white">{job.customerName}</div>
                                     <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
@@ -400,20 +411,25 @@ export default function JobsPage() {
                                     {branches.length > 0 && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-slate-500">{job.branchName}</span>}
                                 </td>
                                 <td className="p-4">
-                                    <select value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`pl-3 pr-8 py-1.5 rounded-lg text-xs font-bold border appearance-none cursor-pointer outline-none ${statusConfig[job.status]?.color}`}>
+                                    <select
+                                        onClick={(e) => e.stopPropagation()}
+                                        value={job.status}
+                                        onChange={e => handleStatusChange(job, e.target.value)}
+                                        className={`pl-3 pr-8 py-1.5 rounded-lg text-xs font-bold border appearance-none cursor-pointer outline-none ${statusConfig[job.status]?.color}`}
+                                    >
                                         <option value="pending">Bekliyor</option><option value="in_progress">İşlemde</option><option value="waiting_parts">Parça Bekliyor</option><option value="completed">Tamamlandı</option><option value="cancelled">İptal</option>
                                     </select>
                                 </td>
                                 <td className="p-4">
                                     {job.status === 'completed' && (job.paymentStatus === 'paid' ?
-                                        <div className="flex gap-2 items-center"><span className="text-green-700 bg-green-100 px-2 py-1 rounded text-xs font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ödendi</span><button onClick={() => handleUndoPayment(job)} className="text-slate-400 hover:text-red-500 p-1 rounded" title="İptal"><Undo2 className="w-4 h-4" /></button></div> :
-                                        <button onClick={() => { setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="text-blue-600 text-xs font-bold hover:underline">Tahsil Et</button>
+                                        <div className="flex gap-2 items-center"><span className="text-green-700 bg-green-100 px-2 py-1 rounded text-xs font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ödendi</span><button onClick={(e) => { e.stopPropagation(); handleUndoPayment(job) }} className="text-slate-400 hover:text-red-500 p-1 rounded" title="İptal"><Undo2 className="w-4 h-4" /></button></div> :
+                                        <button onClick={(e) => { e.stopPropagation(); setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="text-blue-600 text-xs font-bold hover:underline">Tahsil Et</button>
                                     )}
                                 </td>
                                 <td className="p-4 font-bold text-base">{job.price} ₺</td>
                                 <td className="p-4 text-right flex justify-end gap-2">
-                                    <button onClick={() => sendWhatsAppMessage(job)} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg"><MessageCircle className="w-4 h-4" /></button>
-                                    <button onClick={() => handleDelete(job.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); sendWhatsAppMessage(job) }} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg"><MessageCircle className="w-4 h-4" /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(job.id) }} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                                 </td>
                             </tr>
                         ))}
