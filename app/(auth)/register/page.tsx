@@ -7,10 +7,11 @@ import {
     updateProfile,
     GoogleAuthProvider,
     OAuthProvider,
-    signInWithPopup
+    signInWithPopup,
+    sendEmailVerification // 🔥 Bu import eklendi
 } from 'firebase/auth';
 import { auth, db } from '../../../lib/firebase';
-import { doc, setDoc, serverTimestamp, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore'; // 🔥 addDoc ve collection eklendi
+import { doc, setDoc, serverTimestamp, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore';
 import Link from 'next/link';
 import {
     Mail,
@@ -85,6 +86,9 @@ export default function RegisterPage() {
 
             await updateProfile(user, { displayName: formData.fullName });
 
+            // 🔥 KRİTİK EKLEME: DOĞRULAMA MAİLİNİ GÖNDER
+            await sendEmailVerification(user);
+
             // 3. Rol ve Şirket Belirleme (Kritik Adım)
             let finalRole = 'owner';
             let finalCompanyId = user.uid; // Patron ise kendi ID'si şirket ID'sidir
@@ -143,9 +147,6 @@ export default function RegisterPage() {
             });
 
             // 🔥 6. OTOMATİK MERKEZ ŞUBE OLUŞTURMA (Sadece Patronlar İçin)
-            // Eğer personel değilse ve bireysel değilse (veya bireysel olsa bile sistemi kullanacaksa) şube lazım.
-            // Bireyseller genelde tek şube gibi çalışır ama sistemin tutarlılığı için onlara da gizli bir 'Merkez' açabiliriz veya sadece business/corporate'e açarız.
-            // Burada basitlik adına: Personel olmayan herkese 'Merkez' şubesi açıyoruz.
             if (!isStaff) {
                 try {
                     await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'branches'), {
@@ -249,7 +250,6 @@ export default function RegisterPage() {
                 router.push('/dashboard');
             } else {
                 // Davetli DEĞİL ve Yeni Kullanıcı -> Onboarding'e gönder
-                // Not: Onboarding sayfasında da profil oluştururken 'branch' oluşturmayı unutmayın.
                 router.push('/onboarding');
             }
 
