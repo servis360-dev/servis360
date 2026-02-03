@@ -30,35 +30,35 @@ export default function SubscriptionPage() {
         staffCount: 0
     });
 
-    // 🔥 LEMON SQUEEZY LINKLERI (Panelden alıp buraya yapıştıracağız)
+    // 🔥 LEMON SQUEEZY LİNKLERİ (Senin Verdiğin Gerçek Linkler)
     const PRODUCT_LINKS: any = {
         individual: {
-            monthly: '#',
-            sixMonth: '#',
-            yearly: '#'
+            monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/ae1d868f-2947-47c1-9264-83967db3b953',
+            sixMonth: 'https://servis-360.lemonsqueezy.com/checkout/buy/0d9a1fe4-8374-47c1-9264-83967db3b953',
+            yearly: 'https://servis-360.lemonsqueezy.com/checkout/buy/6e9e8e74-29d0-4046-901c-7f3381175bf3'
         },
         business: { // Esnaf
-            monthly: '#',
-            sixMonth: '#',
-            yearly: '#'
+            monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/2d68ed3d-c897-4a24-9705-0acfce6e4373',
+            sixMonth: 'https://servis-360.lemonsqueezy.com/checkout/buy/350a8f65-a2cf-49a5-9dd2-15cb13e5edbe',
+            yearly: 'https://servis-360.lemonsqueezy.com/checkout/buy/3e91f8a0-81f1-4c80-b25d-6ea505fa8498'
         },
         corporate: { // Kurumsal
-            monthly: '#',
-            sixMonth: '#',
-            yearly: '#'
+            monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/0323688b-de82-4da5-8f30-6ecb87b693a3',
+            sixMonth: 'https://servis-360.lemonsqueezy.com/checkout/buy/dfcc31c3-5614-4483-b6d1-c6fc64b92204',
+            yearly: 'https://servis-360.lemonsqueezy.com/checkout/buy/1fc1c55a-e12a-4024-9160-1bfc06fd5c16'
         },
         addons: {
-            branch: '#', // Ek Şube Linki
-            staff: '#'   // Ek Personel Linki
+            branch: 'https://servis-360.lemonsqueezy.com/checkout/buy/5e8767d4-a6a2-4abf-aa84-ca198afdebc0', // Ek Şube
+            staff: 'https://servis-360.lemonsqueezy.com/checkout/buy/df950796-5c65-4fd0-9931-f12d0f2c6265'   // Ek Personel
         }
     };
 
-    // Görünen Fiyatlar (Görsel amaçlı)
+    // Görünen Fiyatlar (USD olarak güncellendi)
     const DISPLAY_PRICES: any = {
-        individual: { monthly: 1500, sixMonth: 8000, yearly: 15000 },
-        business: { monthly: 2500, sixMonth: 13500, yearly: 25000 },
-        corporate: { monthly: 5000, sixMonth: 27000, yearly: 50000 },
-        addons: { branch: 2500, staff: 1000 }
+        individual: { monthly: 9.90, sixMonth: 54.90, yearly: 99.00 },
+        business: { monthly: 24.90, sixMonth: 139.90, yearly: 249.00 },
+        corporate: { monthly: 49.90, sixMonth: 279.90, yearly: 499.00 },
+        addons: { branch: 79.00, staff: 29.00 }
     };
 
     useEffect(() => {
@@ -105,8 +105,8 @@ export default function SubscriptionPage() {
     };
 
     const handleBuy = (url: string) => {
-        if (url === '#') {
-            alert("Ödeme sistemi şu an yapılandırılıyor. Lütfen WhatsApp hattından iletişime geçin.");
+        if (!url || url === '#') {
+            alert("Ödeme sistemi şu an bakımda.");
             return;
         }
         const finalUrl = getCheckoutUrl(url);
@@ -118,7 +118,7 @@ export default function SubscriptionPage() {
         window.open(`https://wa.me/${cleanNumber}?text=Merhaba, abonelik paketleri hakkında bilgi almak istiyorum.`, '_blank');
     };
 
-    // Limit ve Kalan Gün Hesaplamaları (Eski koddan korundu)
+    // Limit ve Kalan Gün Hesaplamaları
     const getDaysLeft = () => {
         if (!userData?.licenseEndsAt) return 0;
         const diff = userData.licenseEndsAt.toDate().getTime() - new Date().getTime();
@@ -227,17 +227,17 @@ export default function SubscriptionPage() {
                     </div>
                 </div>
 
-                {/* --- EK PAKETLER (Add-ons) - BİREYSEL HARİÇ --- */}
+                {/* --- EK PAKETLER (Add-ons) --- */}
                 {accountTypeKey !== 'individual' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-16">
                         {/* Ek Şube */}
                         <div className="bg-slate-900/80 border border-slate-700 p-6 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6 hover:border-blue-500/50 transition-all">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-400"><Store className="w-6 h-6" /></div>
-                                <div><h3 className="font-bold text-white text-lg">+1 Şube Hakkı</h3><p className="text-xs text-slate-400">Tek seferlik ödeme.</p></div>
+                                <div><h3 className="font-bold text-white text-lg">+1 Şube</h3><p className="text-xs text-slate-400">Tek seferlik ödeme.</p></div>
                             </div>
                             <div className="text-right">
-                                <p className="text-2xl font-bold text-white mb-2">{DISPLAY_PRICES.addons.branch} ₺</p>
+                                <p className="text-2xl font-bold text-white mb-2">${DISPLAY_PRICES.addons.branch}</p>
                                 <button onClick={() => handleBuy(PRODUCT_LINKS.addons.branch)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-2">
                                     Satın Al <ExternalLink className="w-3 h-3" />
                                 </button>
@@ -248,10 +248,10 @@ export default function SubscriptionPage() {
                         <div className="bg-slate-900/80 border border-slate-700 p-6 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6 hover:border-orange-500/50 transition-all">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 rounded-xl bg-orange-500/20 flex items-center justify-center text-orange-400"><Users className="w-6 h-6" /></div>
-                                <div><h3 className="font-bold text-white text-lg">+5 Personel Hakkı</h3><p className="text-xs text-slate-400">Tek seferlik ödeme.</p></div>
+                                <div><h3 className="font-bold text-white text-lg">+5 Personel</h3><p className="text-xs text-slate-400">Tek seferlik ödeme.</p></div>
                             </div>
                             <div className="text-right">
-                                <p className="text-2xl font-bold text-white mb-2">{DISPLAY_PRICES.addons.staff} ₺</p>
+                                <p className="text-2xl font-bold text-white mb-2">${DISPLAY_PRICES.addons.staff}</p>
                                 <button onClick={() => handleBuy(PRODUCT_LINKS.addons.staff)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-2">
                                     Satın Al <ExternalLink className="w-3 h-3" />
                                 </button>
@@ -268,23 +268,23 @@ export default function SubscriptionPage() {
                     <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 hover:border-slate-600 transition-all">
                         <h3 className="text-lg font-bold text-slate-200">Aylık</h3>
                         <div className="flex items-baseline gap-1 my-4">
-                            <span className="text-3xl font-bold text-white">{currentPrices.monthly}</span>
-                            <span className="text-sm text-slate-500">₺/ay</span>
+                            <span className="text-3xl font-bold text-white">${currentPrices.monthly}</span>
+                            <span className="text-sm text-slate-500">/ay</span>
                         </div>
                         <button onClick={() => handleBuy(currentLinks.monthly)} className="w-full py-3 rounded-xl border border-slate-700 text-slate-300 font-bold hover:bg-slate-800 hover:text-white transition-all">Satın Al</button>
                     </div>
 
                     {/* Yıllık (Vurgulu) */}
-                    <div className="relative bg-gradient-to-b from-slate-800 to-black border border-blue-500/50 rounded-3xl p-8 transform md:-translate-y-4 shadow-2xl shadow-blue-900/20">
-                        <div className="absolute top-4 right-4 bg-blue-600 text-[10px] font-bold px-2 py-1 rounded text-white">AVANTAJLI</div>
+                    <div className="relative bg-gradient-to-b from-slate-800 to-black border border-blue-500/50 rounded-3xl p-8 transform md:-translate-y-4 shadow-2xl shadow-blue-900/20 order-first md:order-none">
+                        <div className="absolute top-4 right-4 bg-blue-600 text-[10px] font-bold px-2 py-1 rounded text-white">EN İYİ</div>
                         <h3 className="text-2xl font-bold text-white flex items-center gap-2"><Crown className="w-5 h-5 text-yellow-400" /> Yıllık</h3>
                         <div className="flex items-baseline gap-1 my-4">
-                            <span className="text-5xl font-black text-white">{currentPrices.yearly}</span>
-                            <span className="text-sm text-slate-400">₺/yıl</span>
+                            <span className="text-5xl font-black text-white">${currentPrices.yearly}</span>
+                            <span className="text-sm text-slate-400">/yıl</span>
                         </div>
                         <p className="text-green-400 text-xs font-bold mb-6">2 Ay Bedava!</p>
                         <button onClick={() => handleBuy(currentLinks.yearly)} className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg transition-all flex justify-center items-center gap-2">
-                            Hemen Başla <Check className="w-4 h-4" />
+                            Yıllık Başla <Check className="w-4 h-4" />
                         </button>
                     </div>
 
@@ -292,8 +292,8 @@ export default function SubscriptionPage() {
                     <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 hover:border-slate-600 transition-all">
                         <h3 className="text-lg font-bold text-slate-200">6 Aylık</h3>
                         <div className="flex items-baseline gap-1 my-4">
-                            <span className="text-3xl font-bold text-white">{currentPrices.sixMonth}</span>
-                            <span className="text-sm text-slate-500">₺/6ay</span>
+                            <span className="text-3xl font-bold text-white">${currentPrices.sixMonth}</span>
+                            <span className="text-sm text-slate-500">/6ay</span>
                         </div>
                         <button onClick={() => handleBuy(currentLinks.sixMonth)} className="w-full py-3 rounded-xl border border-slate-700 text-slate-300 font-bold hover:bg-slate-800 hover:text-white transition-all">Satın Al</button>
                     </div>

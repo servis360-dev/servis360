@@ -3,26 +3,26 @@ import crypto from 'crypto';
 import { db } from '../../../../lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
-// 🔥 AYARLAR: Lemon Squeezy Variant ID'leri
+// 🔥 AYARLAR: Lemon Squeezy Variant ID'leri (Senin Verdiğin Gerçek ID'ler)
 const PLAN_IDS = {
-    // BİREYSEL
-    INDIVIDUAL_MONTHLY: 'variant_123456',
-    INDIVIDUAL_6MONTH: 'variant_123457',
-    INDIVIDUAL_YEARLY: 'variant_123458',
+    // BİREYSEL (Individual)
+    INDIVIDUAL_MONTHLY: '1275947',
+    INDIVIDUAL_6MONTH: '1275951',
+    INDIVIDUAL_YEARLY: '1275952',
 
-    // ESNAF
-    BUSINESS_MONTHLY: 'variant_223456',
-    BUSINESS_6MONTH: 'variant_223457',
-    BUSINESS_YEARLY: 'variant_223458',
+    // ESNAF (Business)
+    BUSINESS_MONTHLY: '1275953',
+    BUSINESS_6MONTH: '1275958',
+    BUSINESS_YEARLY: '1275960',
 
-    // KURUMSAL
-    CORPORATE_MONTHLY: 'variant_323456',
-    CORPORATE_6MONTH: 'variant_323457',
-    CORPORATE_YEARLY: 'variant_323458',
+    // KURUMSAL (Enterprise)
+    CORPORATE_MONTHLY: '1275966',
+    CORPORATE_6MONTH: '1275972',
+    CORPORATE_YEARLY: '1275976',
 
-    // EK PAKETLER
-    ADDON_BRANCH: 'variant_999001',
-    ADDON_STAFF: 'variant_999002'
+    // EK PAKETLER (Add-ons)
+    ADDON_BRANCH: '1275989',
+    ADDON_STAFF: '1276003'
 };
 
 // 🔥 TELEGRAM GÖNDERME FONKSİYONU
@@ -51,8 +51,8 @@ async function sendTelegramNotification(message: string) {
 export async function POST(req: Request) {
     try {
         // 1. GÜVENLİK (İmza Doğrulama)
-        const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET || 'gizli-imza-kodun';
-        const hmac = crypto.createHmac('sha256', secret);
+        const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+        const hmac = crypto.createHmac('sha256', secret || '');
         const rawBody = await req.text();
         const digest = Buffer.from(hmac.update(rawBody).digest('hex'), 'utf8');
         const signature = Buffer.from(req.headers.get('x-signature') || '', 'utf8');
@@ -86,15 +86,21 @@ export async function POST(req: Request) {
         if (eventName === 'subscription_created' || eventName === 'subscription_updated') {
             const variantId = String(data.attributes.variant_id);
             const renwesAt = new Date(data.attributes.renews_at);
-            const price = data.attributes.total_formatted; // Örn: 1500.00 TL
+            const price = data.attributes.total_formatted; // Örn: $9.90
 
             let accountType = 'individual';
+            let planName = 'Bireysel';
+
+            // Hangi Paket?
             if ([PLAN_IDS.BUSINESS_MONTHLY, PLAN_IDS.BUSINESS_6MONTH, PLAN_IDS.BUSINESS_YEARLY].includes(variantId)) {
-                accountType = 'business';
+                accountType = 'business'; // Esnaf
+                planName = 'Esnaf (Pro)';
             } else if ([PLAN_IDS.CORPORATE_MONTHLY, PLAN_IDS.CORPORATE_6MONTH, PLAN_IDS.CORPORATE_YEARLY].includes(variantId)) {
-                accountType = 'corporate';
+                accountType = 'corporate'; // Kurumsal
+                planName = 'Kurumsal (Enterprise)';
             }
 
+            // Veritabanını Güncelle
             await userRef.update({
                 accountType: accountType,
                 licenseEndsAt: renwesAt,
@@ -105,15 +111,13 @@ export async function POST(req: Request) {
 
             // 🔔 TELEGRAM BİLDİRİMİ
             await sendTelegramNotification(
-                `🚀 <b>YENİ ABONELİK!</b>\n\n👤 <b>Müşteri:</b> ${userName}\n📦 <b>Paket:</b> ${accountType.toUpperCase()}\n💰 <b>Tutar:</b> ${price}\n📅 <b>Bitiş:</b> ${renwesAt.toLocaleDateString('tr-TR')}`
+                `🚀 <b>YENİ ABONELİK!</b>\n\n👤 <b>Müşteri:</b> ${userName}\n📦 <b>Paket:</b> ${planName}\n💰 <b>Tutar:</b> ${price}\n📅 <b>Bitiş:</b> ${renwesAt.toLocaleDateString('tr-TR')}`
             );
         }
 
         // --- SENARYO B: İPTAL EDİLDİ ---
         else if (eventName === 'subscription_cancelled') {
             await userRef.update({ subscriptionStatus: 'cancelled_pending' });
-
-            // 🔔 TELEGRAM BİLDİRİMİ
             await sendTelegramNotification(`⚠️ <b>ABONELİK İPTALİ</b>\n👤 ${userName} aboneliğini iptal etti (Süre bitene kadar kullanacak).`);
         }
 
@@ -123,8 +127,6 @@ export async function POST(req: Request) {
                 subscriptionStatus: 'expired',
                 licenseEndsAt: FieldValue.serverTimestamp()
             });
-
-            // 🔔 TELEGRAM BİLDİRİMİ
             await sendTelegramNotification(`❌ <b>LİSANS DOLDU</b>\n👤 ${userName} kullanıcısının süresi bitti.`);
         }
 
