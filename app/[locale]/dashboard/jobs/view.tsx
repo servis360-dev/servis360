@@ -37,7 +37,7 @@ import {
     Smartphone,
     CheckCircle2
 } from 'lucide-react';
-import { useBranch } from '../../../components/providers/branch-context';
+import { useBranch } from '../../../../components/providers/branch-context';
 
 export default function JobsView({ dict }: { dict: any }) {
     // Statik config yerine dinamik (sözlükten gelen) config kullanacağız

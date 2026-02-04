@@ -3,15 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from '../../lib/firebase';
+import { auth, db } from '../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
-import { Sidebar } from '../../components/layout/sidebar';
-import { Header } from '../../components/layout/header';
+import { Sidebar } from '../../../components/layout/sidebar';
+import { Header } from '../../../components/layout/header';
 import { Loader2, LockKeyhole, CreditCard, AlertTriangle } from 'lucide-react';
 
 // 🔥 YENİ: Şube Yönetim Sistemi (Context) Eklendi
-import { BranchProvider } from '../../components/providers/branch-context';
+import { BranchProvider } from '../../../components/providers/branch-context';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<any>(null);
