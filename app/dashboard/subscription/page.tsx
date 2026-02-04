@@ -30,7 +30,7 @@ export default function SubscriptionPage() {
         staffCount: 0
     });
 
-    // 🔥 LEMON SQUEEZY LİNKLERİ (YENİ - AYRIŞTIRILMIŞ PAKETLER)
+    // 🔥 LEMON SQUEEZY LİNKLERİ
     const PRODUCT_LINKS: any = {
         individual: {
             monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/ff917ef3-5518-4bd8-aad3-d2df5f8aa6dd',
@@ -126,15 +126,35 @@ export default function SubscriptionPage() {
         return days > 0 ? days : 0;
     };
 
+    // 🛠️ YENİLENMİŞ LİMİT HESAPLAMA MANTIĞI
     const getLimits = () => {
-        if (!userData) return { branchLimit: 1, staffLimit: 5 };
-        let branchLimit = userData.customBranchLimit || 1;
-        if (!userData.customBranchLimit && (['corporate', 'company'].includes(userData.accountType))) branchLimit = 5;
+        // Eğer kullanıcı verisi yoksa en düşük varsayılanları döndür
+        if (!userData) return { branchLimit: 1, staffLimit: 1 };
 
-        let staffLimit = userData.customStaffLimit || 999;
-        if (!userData.customStaffLimit && ['esnaf', 'business', 'tradesman'].includes(userData.accountType)) staffLimit = 5;
+        // 1. Adım: Paketin Kendi Temel Limitlerini Belirle
+        let baseBranchLimit = 1;
+        let baseStaffLimit = 1; // Bireysel için varsayılan
 
-        return { branchLimit, staffLimit };
+        if (['corporate', 'company'].includes(userData.accountType)) {
+            // Kurumsal Paket: 5 Şube + 50 Personel
+            baseBranchLimit = 5;
+            baseStaffLimit = 50;
+        } else if (['esnaf', 'business', 'tradesman'].includes(userData.accountType)) {
+            // Esnaf Paketi: 1 Şube + 5 Personel
+            baseBranchLimit = 1;
+            baseStaffLimit = 5;
+        }
+
+        // 2. Adım: Satın Alınan Ekstraları (Add-ons) Üzerine Ekle
+        // Veritabanındaki 'customBranchLimit' artık sadece "EKSTRA" alınanları temsil ediyor.
+        const extraBranch = userData.customBranchLimit || 0;
+        const extraStaff = userData.customStaffLimit || 0;
+
+        // Sonuç: Paket Hakkı + Satın Alınanlar
+        return {
+            branchLimit: baseBranchLimit + extraBranch,
+            staffLimit: baseStaffLimit + extraStaff
+        };
     };
 
     if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-950"><Loader2 className="w-8 h-8 animate-spin text-blue-500" /></div>;
