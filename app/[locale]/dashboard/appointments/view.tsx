@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { collection, query, onSnapshot, addDoc, deleteDoc, doc, getDoc, serverTimestamp, updateDoc, where } from 'firebase/firestore';
-import { auth, db } from '../../../lib/firebase';
+import { auth, db } from '../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
     Calendar as CalendarIcon,
@@ -19,7 +19,7 @@ import {
     Globe,
     Store
 } from 'lucide-react';
-import { useBranch } from '../../../components/providers/branch-context';
+import { useBranch } from '../../../../components/providers/branch-context';
 
 // Yaygın Alan Kodları Listesi
 const COUNTRY_CODES = [
