@@ -182,8 +182,12 @@ export default function SubscriptionView({ dict }: { dict: any }) {
         typeIcon = <Store className="w-4 h-4 text-yellow-400" />;
     }
 
-    const currentPrices = DISPLAY_PRICES[accountTypeKey as keyof typeof DISPLAY_PRICES];
+    // 🔥 DÜZELTME BURADA YAPILDI: "as any" ile TS hatası engellendi
+    const currentPrices = DISPLAY_PRICES[accountTypeKey as keyof typeof DISPLAY_PRICES] as any;
     const currentLinks = PRODUCT_LINKS[accountTypeKey as keyof typeof PRODUCT_LINKS];
+
+    // Ek Özellik Fiyatları (Addons)
+    const addonPrices = DISPLAY_PRICES.addons as any;
 
     return (
         <div className="min-h-screen bg-slate-950 text-white font-sans relative overflow-hidden pb-24">
@@ -249,7 +253,7 @@ export default function SubscriptionView({ dict }: { dict: any }) {
                                 <div><h3 className="font-bold text-white text-lg">{dict.subscription.addon_branch_title}</h3><p className="text-xs text-slate-400">{dict.subscription.addon_branch_desc}</p></div>
                             </div>
                             <div className="text-right">
-                                <p className="text-2xl font-bold text-white mb-2">{currency.symbol}{DISPLAY_PRICES.addons.branch}</p>
+                                <p className="text-2xl font-bold text-white mb-2">{currency.symbol}{addonPrices.branch}</p>
                                 <button onClick={() => handleBuy(PRODUCT_LINKS.addons.branch)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-2">
                                     {dict.subscription.btn_buy} <ExternalLink className="w-3 h-3" />
                                 </button>
@@ -261,7 +265,7 @@ export default function SubscriptionView({ dict }: { dict: any }) {
                                 <div><h3 className="font-bold text-white text-lg">{dict.subscription.addon_staff_title}</h3><p className="text-xs text-slate-400">{dict.subscription.addon_staff_desc}</p></div>
                             </div>
                             <div className="text-right">
-                                <p className="text-2xl font-bold text-white mb-2">{currency.symbol}{DISPLAY_PRICES.addons.staff}</p>
+                                <p className="text-2xl font-bold text-white mb-2">{currency.symbol}{addonPrices.staff}</p>
                                 <button onClick={() => handleBuy(PRODUCT_LINKS.addons.staff)} className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-2">
                                     {dict.subscription.btn_buy} <ExternalLink className="w-3 h-3" />
                                 </button>
