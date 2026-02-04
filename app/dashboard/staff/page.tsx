@@ -16,7 +16,7 @@ import {
     ShieldAlert,
     Crown,
     Store,
-    Phone // Eksik import eklendi
+    Phone
 } from 'lucide-react';
 
 export default function StaffPage() {
@@ -68,6 +68,24 @@ export default function StaffPage() {
         };
     }, []);
 
+    // 🔥 YENİ LİMİT HESAPLAMA MANTIĞI (Subscription Sayfası ile Eşitlendi)
+    const getStaffLimit = () => {
+        if (!userData) return 1;
+
+        let baseLimit = 1; // Bireysel Varsayılan
+
+        if (['corporate', 'company', 'enterprise'].includes(userData.accountType)) {
+            baseLimit = 50; // Kurumsal: 50 Personel
+        } else if (['esnaf', 'business', 'tradesman'].includes(userData.accountType)) {
+            baseLimit = 5; // Esnaf: 5 Personel
+        }
+
+        // Veritabanındaki 'customStaffLimit' artık sadece "EKSTRA" alınanları temsil ediyor.
+        const extra = userData.customStaffLimit || 0;
+
+        return baseLimit + extra;
+    };
+
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user || !userData) return;
@@ -77,15 +95,13 @@ export default function StaffPage() {
             return;
         }
 
-        const isEsnaf = ['esnaf', 'business', 'tradesman'].includes(userData.accountType) || ['esnaf', 'business'].includes(userData.role);
-        const defaultLimit = isEsnaf ? 5 : 999;
-        const currentLimit = userData.customStaffLimit || defaultLimit;
+        const currentLimit = getStaffLimit();
 
         if (staff.length >= currentLimit) {
             alert(
                 `⚠️ PERSONEL LİMİTİ DOLDU!\n\n` +
                 `Paketiniz en fazla ${currentLimit} personel eklemenize izin veriyor.\n` +
-                `Yeni personel eklemek için Yönetici ile iletişime geçerek "Ek Personel Hakkı" satın almalısınız.`
+                `Yeni personel eklemek için Abonelik sayfasından "Ek Personel Hakkı" satın alabilirsiniz.`
             );
             return;
         }
@@ -137,8 +153,7 @@ export default function StaffPage() {
         }
     };
 
-    const isEsnaf = userData && (['esnaf', 'business'].includes(userData.accountType));
-    const limit = userData?.customStaffLimit || (isEsnaf ? 5 : 999);
+    const limit = getStaffLimit();
     const remaining = limit - staff.length;
 
     return (
