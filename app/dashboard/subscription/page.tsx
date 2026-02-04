@@ -30,22 +30,22 @@ export default function SubscriptionPage() {
         staffCount: 0
     });
 
-    // 🔥 LEMON SQUEEZY LİNKLERİ (Senin Verdiğin Gerçek Linkler)
+    // 🔥 LEMON SQUEEZY LİNKLERİ (YENİ - AYRIŞTIRILMIŞ PAKETLER)
     const PRODUCT_LINKS: any = {
         individual: {
-            monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/ae1d868f-2947-47c1-9264-83967db3b953',
-            sixMonth: 'https://servis-360.lemonsqueezy.com/checkout/buy/0d9a1fe4-8374-47c1-9264-83967db3b953',
-            yearly: 'https://servis-360.lemonsqueezy.com/checkout/buy/6e9e8e74-29d0-4046-901c-7f3381175bf3'
+            monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/ff917ef3-5518-4bd8-aad3-d2df5f8aa6dd',
+            sixMonth: 'https://servis-360.lemonsqueezy.com/checkout/buy/d677bf15-48b1-40ac-b33b-2dea05a8ed9c',
+            yearly: 'https://servis-360.lemonsqueezy.com/checkout/buy/52e700c2-bcc0-4e6c-b52f-eeba351564f2'
         },
         business: { // Esnaf
-            monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/2d68ed3d-c897-4a24-9705-0acfce6e4373',
-            sixMonth: 'https://servis-360.lemonsqueezy.com/checkout/buy/350a8f65-a2cf-49a5-9dd2-15cb13e5edbe',
-            yearly: 'https://servis-360.lemonsqueezy.com/checkout/buy/3e91f8a0-81f1-4c80-b25d-6ea505fa8498'
+            monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/d5cad434-ddcf-4f25-babe-50401d5e109b',
+            sixMonth: 'https://servis-360.lemonsqueezy.com/checkout/buy/c31d399a-297e-4cac-80f9-d39a8319af3f',
+            yearly: 'https://servis-360.lemonsqueezy.com/checkout/buy/dc092be5-29b1-4ad1-8231-b1b332d210f4'
         },
         corporate: { // Kurumsal
-            monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/0323688b-de82-4da5-8f30-6ecb87b693a3',
-            sixMonth: 'https://servis-360.lemonsqueezy.com/checkout/buy/dfcc31c3-5614-4483-b6d1-c6fc64b92204',
-            yearly: 'https://servis-360.lemonsqueezy.com/checkout/buy/1fc1c55a-e12a-4024-9160-1bfc06fd5c16'
+            monthly: 'https://servis-360.lemonsqueezy.com/checkout/buy/385f680c-e693-485a-b562-82c01a01e08d',
+            sixMonth: 'https://servis-360.lemonsqueezy.com/checkout/buy/c3d77ebf-585b-4160-a512-33dad9cfa57d',
+            yearly: 'https://servis-360.lemonsqueezy.com/checkout/buy/0ab6675a-869e-475f-8962-0d28fd5938aa'
         },
         addons: {
             branch: 'https://servis-360.lemonsqueezy.com/checkout/buy/5e8767d4-a6a2-4abf-aa84-ca198afdebc0', // Ek Şube
@@ -53,7 +53,7 @@ export default function SubscriptionPage() {
         }
     };
 
-    // Görünen Fiyatlar (USD olarak güncellendi)
+    // Görünen Fiyatlar (USD)
     const DISPLAY_PRICES: any = {
         individual: { monthly: 9.90, sixMonth: 54.90, yearly: 99.00 },
         business: { monthly: 24.90, sixMonth: 139.90, yearly: 249.00 },

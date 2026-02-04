@@ -3,24 +3,24 @@ import crypto from 'crypto';
 import { db } from '../../../../lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
-// 🔥 AYARLAR: Lemon Squeezy Variant ID'leri (Senin Verdiğin Gerçek ID'ler)
+// 🔥 AYARLAR: Lemon Squeezy Variant ID'leri (YENİ VE FİNAL LİSTE)
 const PLAN_IDS = {
     // BİREYSEL (Individual)
-    INDIVIDUAL_MONTHLY: '1275947',
-    INDIVIDUAL_6MONTH: '1275951',
-    INDIVIDUAL_YEARLY: '1275952',
+    INDIVIDUAL_MONTHLY: '1276140',
+    INDIVIDUAL_6MONTH: '1276141',
+    INDIVIDUAL_YEARLY: '1276142',
 
     // ESNAF (Business)
-    BUSINESS_MONTHLY: '1275953',
-    BUSINESS_6MONTH: '1275958',
-    BUSINESS_YEARLY: '1275960',
+    BUSINESS_MONTHLY: '1276155',
+    BUSINESS_6MONTH: '1276152',
+    BUSINESS_YEARLY: '1276153',
 
     // KURUMSAL (Enterprise)
-    CORPORATE_MONTHLY: '1275966',
-    CORPORATE_6MONTH: '1275972',
-    CORPORATE_YEARLY: '1275976',
+    CORPORATE_MONTHLY: '1276158',
+    CORPORATE_6MONTH: '1276165',
+    CORPORATE_YEARLY: '1276166',
 
-    // EK PAKETLER (Add-ons)
+    // EK PAKETLER (Add-ons) - Bunlar değişmedi
     ADDON_BRANCH: '1275989',
     ADDON_STAFF: '1276003'
 };
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
 
         const userRef = db.collection('artifacts').doc('servis-360-live').collection('users').doc(userId).collection('users').doc('profile');
 
-        // Kullanıcı adını çekmeye çalış (Bildirim için)
+        // Kullanıcı adını çekmeye çalış
         let userName = "Kullanıcı";
         try {
             const userSnap = await userRef.get();
@@ -86,17 +86,17 @@ export async function POST(req: Request) {
         if (eventName === 'subscription_created' || eventName === 'subscription_updated') {
             const variantId = String(data.attributes.variant_id);
             const renwesAt = new Date(data.attributes.renews_at);
-            const price = data.attributes.total_formatted; // Örn: $9.90
+            const price = data.attributes.total_formatted;
 
             let accountType = 'individual';
             let planName = 'Bireysel';
 
             // Hangi Paket?
             if ([PLAN_IDS.BUSINESS_MONTHLY, PLAN_IDS.BUSINESS_6MONTH, PLAN_IDS.BUSINESS_YEARLY].includes(variantId)) {
-                accountType = 'business'; // Esnaf
+                accountType = 'business';
                 planName = 'Esnaf (Pro)';
             } else if ([PLAN_IDS.CORPORATE_MONTHLY, PLAN_IDS.CORPORATE_6MONTH, PLAN_IDS.CORPORATE_YEARLY].includes(variantId)) {
-                accountType = 'corporate'; // Kurumsal
+                accountType = 'corporate';
                 planName = 'Kurumsal (Enterprise)';
             }
 
@@ -118,7 +118,7 @@ export async function POST(req: Request) {
         // --- SENARYO B: İPTAL EDİLDİ ---
         else if (eventName === 'subscription_cancelled') {
             await userRef.update({ subscriptionStatus: 'cancelled_pending' });
-            await sendTelegramNotification(`⚠️ <b>ABONELİK İPTALİ</b>\n👤 ${userName} aboneliğini iptal etti (Süre bitene kadar kullanacak).`);
+            await sendTelegramNotification(`⚠️ <b>ABONELİK İPTALİ</b>\n👤 ${userName} aboneliğini iptal etti.`);
         }
 
         // --- SENARYO C: SÜRE BİTTİ ---
