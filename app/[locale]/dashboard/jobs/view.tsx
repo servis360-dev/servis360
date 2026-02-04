@@ -1,0 +1,417 @@
+﻿'use client';
+
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { formatMoney, getCurrencySettings } from '../../../../lib/format';
+import {
+    collection,
+    query,
+    onSnapshot,
+    addDoc,
+    doc,
+    updateDoc,
+    deleteDoc,
+    serverTimestamp,
+    orderBy,
+    where,
+    getDoc,
+    writeBatch,
+    getDocs
+} from 'firebase/firestore';
+import { auth, db } from '../../../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import {
+    Briefcase,
+    Plus,
+    Search,
+    Store,
+    Loader2,
+    MessageCircle,
+    Undo2,
+    CreditCard,
+    Trash2,
+    X,
+    Wallet,
+    Banknote,
+    Building2,
+    Smartphone,
+    CheckCircle2
+} from 'lucide-react';
+import { useBranch } from '../../../components/providers/branch-context';
+
+export default function JobsView({ dict }: { dict: any }) {
+    // Statik config yerine dinamik (sözlükten gelen) config kullanacağız
+    const statusConfig: any = {
+        pending: { label: dict.jobs.status.pending, color: 'text-yellow-600 bg-yellow-50 border-yellow-200' },
+        in_progress: { label: dict.jobs.status.in_progress, color: 'text-blue-600 bg-blue-50 border-blue-200' },
+        waiting_parts: { label: dict.jobs.status.waiting_parts, color: 'text-orange-600 bg-orange-50 border-orange-200' },
+        completed: { label: dict.jobs.status.completed, color: 'text-green-600 bg-green-50 border-green-200' },
+        delivered: { label: dict.jobs.status.delivered, color: 'text-slate-600 bg-slate-50 border-slate-200' },
+        cancelled: { label: dict.jobs.status.cancelled, color: 'text-red-600 bg-red-50 border-red-200' }
+    };
+
+    const [jobs, setJobs] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
+
+    const { selectedBranch, branches } = useBranch();
+    const router = useRouter();
+
+    // Dil ve Para Birimi
+    const params = useParams();
+    const currentLocale = params?.locale as string || 'en';
+    const currency = getCurrencySettings(currentLocale);
+
+    const [user, setUser] = useState<any>(null);
+    const [targetUid, setTargetUid] = useState<string | null>(null);
+
+    const [showModal, setShowModal] = useState(false);
+    const [newJob, setNewJob] = useState({
+        customerName: '', phone: '', device: '', problem: '', price: '', note: '', branchId: ''
+    });
+
+    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+    const [selectedJobForPayment, setSelectedJobForPayment] = useState<any>(null);
+    const [whatsappTemplate, setWhatsappTemplate] = useState('Sayın müşterimiz, cihazınızın işlemleri tamamlanmıştır. Ücret: {tutar}');
+
+    useEffect(() => {
+        const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+            if (currentUser) {
+                setUser(currentUser);
+                const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
+                const profileSnap = await getDoc(profileRef);
+
+                let ownerId = currentUser.uid;
+                if (profileSnap.exists()) {
+                    const data = profileSnap.data();
+                    if (data.ownerId && data.ownerId !== currentUser.uid) {
+                        ownerId = data.ownerId;
+                    }
+                    if (data.whatsappTemplates?.deviceCompleted) {
+                        setWhatsappTemplate(data.whatsappTemplates.deviceCompleted);
+                    }
+                }
+                setTargetUid(ownerId);
+
+                let q = query(
+                    collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'jobs'),
+                    orderBy('createdAt', 'desc')
+                );
+
+                if (selectedBranch) {
+                    q = query(
+                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'jobs'),
+                        where('branchId', '==', selectedBranch),
+                        orderBy('createdAt', 'desc')
+                    );
+                }
+
+                const unsub = onSnapshot(q, (snapshot) => {
+                    const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setJobs(data);
+                    setLoading(false);
+                });
+                return () => unsub();
+            }
+        });
+        return () => unsubscribeAuth();
+    }, [selectedBranch]);
+
+    const handleAddJob = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!user || !targetUid) return;
+
+        let finalBranchId = newJob.branchId || selectedBranch;
+        if (branches.length > 0 && !finalBranchId) {
+            finalBranchId = branches.find(b => b.isHeadquarters)?.id || branches[0]?.id;
+        }
+        const branchName = branches.find(b => b.id === finalBranchId)?.name || 'Merkez';
+
+        try {
+            await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs'), {
+                ...newJob,
+                branchId: finalBranchId,
+                branchName: branchName,
+                status: 'pending',
+                paymentStatus: 'pending',
+                createdBy: user.uid,
+                createdAt: serverTimestamp()
+            });
+            setShowModal(false);
+            setNewJob({ customerName: '', phone: '', device: '', problem: '', price: '', note: '', branchId: '' });
+            alert(dict.common.save); // Opsiyonel
+        } catch (error) {
+            console.error("Hata:", error);
+            alert(dict.common.error);
+        }
+    };
+
+    const handleStatusChange = async (job: any, newStatus: string) => {
+        if (!targetUid) return;
+        if (newStatus === 'completed') {
+            if (job.status === 'completed' && job.paymentStatus === 'paid') return;
+            setSelectedJobForPayment(job);
+            setIsPaymentModalOpen(true);
+            return;
+        }
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', job.id), { status: newStatus });
+    };
+
+    const handleDelete = async (jobId: string) => {
+        if (!targetUid) return;
+        if (confirm(dict.jobs.confirm_delete)) {
+            await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', jobId));
+        }
+    };
+
+    const handlePaymentReceived = async (method: string) => {
+        if (!selectedJobForPayment || !user || !targetUid) return;
+        const batch = writeBatch(db);
+        const jobRef = doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', selectedJobForPayment.id);
+
+        batch.update(jobRef, {
+            status: 'completed', paymentStatus: 'paid', paymentMethod: method, completedAt: serverTimestamp(), completedBy: user.uid
+        });
+
+        const financeRef = doc(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance'));
+        batch.set(financeRef, {
+            type: 'income', category: 'service', amount: Number(selectedJobForPayment.price || 0),
+            description: `${selectedJobForPayment.customerName} - Servis`,
+            date: serverTimestamp(), relatedJobId: selectedJobForPayment.id, paymentMethod: method,
+            branchId: selectedJobForPayment.branchId, processedBy: user.uid
+        });
+
+        await batch.commit();
+        setIsPaymentModalOpen(false);
+        setSelectedJobForPayment(null);
+    };
+
+    const handlePaymentPending = async () => {
+        if (!selectedJobForPayment || !user || !targetUid) return;
+        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', selectedJobForPayment.id), {
+            status: 'completed', paymentStatus: 'pending', completedAt: serverTimestamp()
+        });
+        setIsPaymentModalOpen(false);
+        setSelectedJobForPayment(null);
+    };
+
+    const handleUndoPayment = async (job: any) => {
+        if (!user || !targetUid || !confirm(dict.jobs.confirm_undo_payment)) return;
+        const q = query(collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance'), where('relatedJobId', '==', job.id));
+        const snaps = await getDocs(q);
+        const batch = writeBatch(db);
+        snaps.forEach(d => batch.delete(d.ref));
+        batch.update(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs', job.id), { paymentStatus: 'pending', paymentMethod: null });
+        await batch.commit();
+    };
+
+    const sendWhatsAppMessage = (job: any) => {
+        if (!job.phone) { alert(dict.jobs.alert_no_phone); return; }
+        // WhatsApp mesajındaki tutarı da formatlıyoruz
+        let message = whatsappTemplate.replace('{tutar}', formatMoney(Number(job.price || 0), currentLocale)).replace('{musteri}', job.customerName || 'Müşteri');
+        let phone = job.phone.replace(/\D/g, '');
+        if (phone.startsWith('0')) phone = phone.substring(1);
+        // Uluslararası numara kontrolü (basit) - Türkiye varsayılan
+        if (currentLocale === 'tr' && !phone.startsWith('90')) phone = '90' + phone;
+
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
+    };
+
+    const filteredJobs = jobs.filter(job => {
+        const matchesSearch = job.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            job.device?.toLowerCase().includes(searchTerm.toLowerCase()) || job.id.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
+        return matchesSearch && matchesStatus;
+    });
+
+    const openNewJobModal = () => {
+        setNewJob(prev => ({ ...prev, branchId: selectedBranch || '' }));
+        setShowModal(true);
+    }
+
+    const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || 'Merkez';
+
+    return (
+        <div className="space-y-6 pb-20">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <Briefcase className="w-6 h-6 text-blue-600" /> {dict.jobs.title}
+                    </h1>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">
+                        {selectedBranch
+                            ? dict.jobs.subtitle_branch.replace('{branchName}', getBranchName(selectedBranch))
+                            : dict.jobs.subtitle_all}
+                    </p>
+                </div>
+                <button onClick={openNewJobModal} className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all active:scale-95">
+                    <Plus className="w-5 h-5" /> {dict.jobs.btn_add}
+                </button>
+            </div>
+
+            <div className="flex flex-col gap-3 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="grid grid-cols-2 gap-2">
+                    {['all', 'pending'].map(st => (
+                        <button key={st} onClick={() => setStatusFilter(st)} className={`py-2.5 rounded-lg text-sm font-bold border transition-all flex items-center justify-center ${statusFilter === st ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}`}>
+                            {st === 'all' ? dict.jobs.status.all : statusConfig[st]?.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="relative w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input className="w-full pl-9 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:border-blue-500 text-sm" placeholder={dict.jobs.search_placeholder} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                    {['in_progress', 'completed', 'delivered'].map(st => (
+                        <button key={st} onClick={() => setStatusFilter(st)} className={`py-2 rounded-lg text-[10px] sm:text-xs font-bold border transition-all flex items-center justify-center whitespace-nowrap overflow-hidden ${statusFilter === st ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'}`}>
+                            {statusConfig[st]?.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {loading ? <p className="col-span-full text-center py-10 text-slate-500">{dict.common.loading}</p> :
+                    filteredJobs.length === 0 ? (
+                        <div className="col-span-full text-center py-16 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+                            <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                            <h3 className="font-bold text-slate-900 dark:text-white">{dict.jobs.empty_title}</h3>
+                            <p className="text-slate-500 text-sm">{dict.jobs.empty_desc}</p>
+                        </div>
+                    ) : filteredJobs.map(job => (
+                        <div key={job.id} onClick={() => router.push(`/dashboard/jobs/${job.id}`)} className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group relative cursor-pointer">
+                            {branches.length > 0 && (
+                                <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1"><Store className="w-3 h-3" /> {job.branchName || 'Merkez'}</div>
+                            )}
+                            <div className="mb-3 pr-16">
+                                <h3 className="font-bold text-slate-900 dark:text-white text-lg leading-tight">{job.customerName}</h3>
+                                <p className="text-xs text-slate-500 flex items-center gap-1 mt-1"><Smartphone className="w-3 h-3" /> {job.device} <span className="opacity-30">|</span> {job.phone}</p>
+                            </div>
+                            <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg mb-4"><p className="text-xs text-slate-500 line-clamp-2">{job.problem}</p></div>
+                            <div className="pt-3 border-t border-slate-100 dark:border-slate-700">
+                                <div className="flex flex-col gap-3">
+                                    <select onClick={(e) => e.stopPropagation()} value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`w-full px-3 py-2 rounded-lg text-xs font-bold border appearance-none cursor-pointer outline-none text-center ${statusConfig[job.status]?.color}`}>
+                                        {Object.keys(statusConfig).map(key => (<option key={key} value={key}>{statusConfig[key].label}</option>))}
+                                    </select>
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-lg font-black text-slate-900 dark:text-white">
+                                            {/* 🔥 PARA BİRİMİ DİNAMİK */}
+                                            {job.price ? formatMoney(Number(job.price), currentLocale) : <span className="text-slate-300 text-sm font-normal">{dict.jobs.price_unknown}</span>}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => { e.stopPropagation(); sendWhatsAppMessage(job) }} className="p-2.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"><MessageCircle className="w-5 h-5" /></button>
+                                            {job.status === 'completed' && job.paymentStatus === 'paid' ?
+                                                <button onClick={(e) => { e.stopPropagation(); handleUndoPayment(job) }} className="p-2.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg transition-colors"><Undo2 className="w-5 h-5" /></button> :
+                                                <button onClick={(e) => { e.stopPropagation(); setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="p-2.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"><CreditCard className="w-5 h-5" /></button>
+                                            }
+                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(job.id) }} className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-5 h-5" /></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+            </div>
+
+            <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+                <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
+                    <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                        <tr><th className="p-4">{dict.jobs.table_customer}</th><th className="p-4">{dict.jobs.table_status}</th><th className="p-4">{dict.jobs.table_payment}</th><th className="p-4">{dict.jobs.table_price}</th><th className="p-4 text-right">{dict.common.actions}</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {loading ? <tr><td colSpan={5} className="p-8 text-center">{dict.common.loading}</td></tr> : filteredJobs.map(job => (
+                            <tr key={job.id} onClick={() => router.push(`/dashboard/jobs/${job.id}`)} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer">
+                                <td className="p-4">
+                                    <div className="font-bold text-slate-900 dark:text-white">{job.customerName}</div>
+                                    <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5"><Smartphone className="w-3 h-3" /> {job.device} <span className="text-slate-300">|</span> {job.phone}</div>
+                                    {branches.length > 0 && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-slate-500">{job.branchName}</span>}
+                                </td>
+                                <td className="p-4">
+                                    <select onClick={(e) => e.stopPropagation()} value={job.status} onChange={e => handleStatusChange(job, e.target.value)} className={`pl-3 pr-8 py-1.5 rounded-lg text-xs font-bold border appearance-none cursor-pointer outline-none ${statusConfig[job.status]?.color}`}>
+                                        {Object.keys(statusConfig).map(key => (<option key={key} value={key}>{statusConfig[key].label}</option>))}
+                                    </select>
+                                </td>
+                                <td className="p-4">
+                                    {job.status === 'completed' && (job.paymentStatus === 'paid' ?
+                                        <div className="flex gap-2 items-center"><span className="text-green-700 bg-green-100 px-2 py-1 rounded text-xs font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> {dict.jobs.payment_paid}</span><button onClick={(e) => { e.stopPropagation(); handleUndoPayment(job) }} className="text-slate-400 hover:text-red-500 p-1 rounded"><Undo2 className="w-4 h-4" /></button></div> :
+                                        <button onClick={(e) => { e.stopPropagation(); setSelectedJobForPayment(job); setIsPaymentModalOpen(true) }} className="text-blue-600 text-xs font-bold hover:underline">{dict.jobs.payment_collect}</button>
+                                    )}
+                                </td>
+                                <td className="p-4 font-bold text-base">{job.price ? formatMoney(Number(job.price), currentLocale) : '-'}</td>
+                                <td className="p-4 text-right flex justify-end gap-2">
+                                    <button onClick={(e) => { e.stopPropagation(); sendWhatsAppMessage(job) }} className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg"><MessageCircle className="w-4 h-4" /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(job.id) }} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {showModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900 dark:text-white"><Plus className="w-6 h-6 text-blue-600" /> {dict.jobs.modal_title}</h2>
+                            <button onClick={() => setShowModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><X className="text-slate-400" /></button>
+                        </div>
+                        <form onSubmit={handleAddJob} className="space-y-4">
+                            {branches.length > 0 && !selectedBranch && (
+                                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800">
+                                    <label className="block text-xs font-bold mb-1 text-blue-700 dark:text-blue-300 uppercase">{dict.jobs.label_branch}</label>
+                                    <div className="relative">
+                                        <Store className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                        <select className="w-full pl-9 p-2 bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 rounded-lg outline-none text-sm appearance-none" value={newJob.branchId} onChange={e => setNewJob({ ...newJob, branchId: e.target.value })}>
+                                            <option value="">{dict.jobs.option_hq}</option>
+                                            {branches.map(b => (<option key={b.id} value={b.id}>{b.name}</option>))}
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="block text-sm font-bold mb-1">{dict.jobs.label_customer}</label><input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.customerName} onChange={e => setNewJob({ ...newJob, customerName: e.target.value })} /></div>
+                                <div><label className="block text-sm font-bold mb-1">{dict.jobs.label_phone}</label><input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.phone} onChange={e => setNewJob({ ...newJob, phone: e.target.value })} /></div>
+                            </div>
+                            <div><label className="block text-sm font-bold mb-1">{dict.jobs.label_device}</label><input required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.device} onChange={e => setNewJob({ ...newJob, device: e.target.value })} /></div>
+                            <div><label className="block text-sm font-bold mb-1">{dict.jobs.label_problem}</label><textarea required rows={2} className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.problem} onChange={e => setNewJob({ ...newJob, problem: e.target.value })} /></div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="block text-sm font-bold mb-1">{dict.jobs.label_price}</label><input type="number" className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.price} onChange={e => setNewJob({ ...newJob, price: e.target.value })} placeholder="0.00" /></div>
+                                <div><label className="block text-sm font-bold mb-1">{dict.jobs.label_note}</label><input className="w-full p-3 bg-slate-50 dark:bg-slate-900 border rounded-xl text-sm outline-none focus:border-blue-500" value={newJob.note} onChange={e => setNewJob({ ...newJob, note: e.target.value })} /></div>
+                            </div>
+                            <button className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 transition-colors">{dict.jobs.btn_save}</button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {isPaymentModalOpen && selectedJobForPayment && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl p-6 shadow-2xl border dark:border-slate-800 animate-in zoom-in-95">
+                        <div className="flex justify-between mb-6 items-center">
+                            <h2 className="text-xl font-bold dark:text-white flex items-center gap-2"><Wallet className="w-6 h-6 text-blue-600" /> {dict.jobs.payment_modal_title}</h2>
+                            <button onClick={() => setIsPaymentModalOpen(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl mb-6 text-center">
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-1">{dict.jobs.label_total}</p>
+                            <p className="text-3xl font-black text-slate-900 dark:text-white">{formatMoney(Number(selectedJobForPayment.price), currentLocale)}</p>
+                            <p className="text-xs text-slate-400 mt-2">{selectedJobForPayment.customerName} - {selectedJobForPayment.device}</p>
+                        </div>
+                        <div className="space-y-3">
+                            <button onClick={() => handlePaymentReceived('cash')} className="w-full p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 flex items-center gap-3 font-bold text-slate-700 dark:text-slate-200 transition-all group">
+                                <div className="p-2 bg-green-100 text-green-600 rounded-lg group-hover:bg-green-200"><Banknote className="w-5 h-5" /></div> {dict.jobs.btn_cash}
+                            </button>
+                            <button onClick={() => handlePaymentReceived('credit_card')} className="w-full p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-3 font-bold text-slate-700 dark:text-slate-200 transition-all group">
+                                <div className="p-2 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-200"><CreditCard className="w-5 h-5" /></div> {dict.jobs.btn_card}
+                            </button>
+                            <button onClick={() => handlePaymentReceived('bank_transfer')} className="w-full p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 flex items-center gap-3 font-bold text-slate-700 dark:text-slate-200 transition-all group">
+                                <div className="p-2 bg-purple-100 text-purple-600 rounded-lg group-hover:bg-purple-200"><Building2 className="w-5 h-5" /></div> {dict.jobs.btn_bank}
+                            </button>
+                            <button onClick={handlePaymentPending} className="w-full py-3 text-slate-500 text-sm hover:text-red-500 transition-colors">{dict.jobs.btn_pending}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
