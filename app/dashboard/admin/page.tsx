@@ -47,7 +47,7 @@ export default function AdminPage() {
         businessCount: 0,
         individualCount: 0,
         staffCount: 0,
-        sleepyUsers: 0 // 💤 Yeni: 2 günden fazla girmeyenler
+        sleepyUsers: 0
     });
 
     const [currentUser, setCurrentUser] = useState<any>(null);
@@ -88,13 +88,21 @@ export default function AdminPage() {
         return ['corporate', 'company', 'enterprise', 'business', 'esnaf', 'tradesman'].includes(u.accountType);
     };
 
+    // 💤 GÜN HESAPLAYICI (Son Giriş)
+    const getDaysSinceLogin = (lastLoginAt: any) => {
+        if (!lastLoginAt) return -1; // -1: Hiç Girmedi veya Veri Yok
+        const date = lastLoginAt.toDate ? lastLoginAt.toDate() : new Date(lastLoginAt);
+        const diff = new Date().getTime() - date.getTime();
+        return Math.floor(diff / (1000 * 3600 * 24));
+    };
+
     // --- VERİ ÇEKME ---
     useEffect(() => {
         const user = auth.currentUser;
         if (!user) return;
         setCurrentUser(user);
 
-        // 1. Duyuru
+        // 1. Duyuru Çek
         const fetchBroadcast = async () => {
             try {
                 const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
@@ -118,13 +126,10 @@ export default function AdminPage() {
             const individual = userList.filter((u: any) => (!u.accountType || u.accountType === 'individual') && !isStaff(u)).length;
 
             // 💤 Hayalet Kullanıcı Tespiti (2 Günden Fazla)
-            const twoDaysAgo = new Date();
-            twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-
             const sleepy = userList.filter((u: any) => {
-                if (!u.lastLoginAt) return true; // Hiç girmemişse de uykuda say
-                const lastLogin = u.lastLoginAt.toDate ? u.lastLoginAt.toDate() : new Date(u.lastLoginAt);
-                return lastLogin < twoDaysAgo;
+                const days = getDaysSinceLogin(u.lastLoginAt);
+                // -1 ise (hiç girmedi) veya 2 günden fazlaysa "Uyuyan" say
+                return days === -1 || days > 2;
             }).length;
 
             setStats(prev => ({
@@ -172,9 +177,11 @@ export default function AdminPage() {
 
     // --- FONKSİYONLAR ---
     const logAction = async (action: string, details: string) => {
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_logs'), {
-            action, details, adminEmail: currentUser?.email || 'Unknown', createdAt: serverTimestamp()
-        });
+        try {
+            await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_logs'), {
+                action, details, adminEmail: currentUser?.email || 'Unknown', createdAt: serverTimestamp()
+            });
+        } catch (e) { console.error("Log error", e); }
     };
 
     const toggleCompanyStaff = async (companyId: string) => {
@@ -187,66 +194,80 @@ export default function AdminPage() {
         } catch (error) { console.error(error); } finally { setLoadingStaff(false); }
     };
 
-    // 🔥 GÜNCELLENEN DUYURU KAYDETME (HATA ÇÖZÜMÜ)
+    // 🔥 DÜZELTME 1: DUYURU YETKİ HATASI
+    // system_settings/broadcast dosyasının varlığından emin oluyoruz
     const saveBroadcast = async () => {
         try {
-            // Klasör yapısının varlığından emin olmak için setDoc + merge kullanıyoruz
-            await setDoc(
-                doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast'),
-                broadcast,
-                { merge: true }
-            );
+            const settingsRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
+
+            await setDoc(settingsRef, {
+                message: broadcast.message,
+                isActive: broadcast.isActive,
+                type: broadcast.type,
+                updatedAt: serverTimestamp()
+            }, { merge: true });
+
             await logAction('BROADCAST_UPDATE', `Duyuru: ${broadcast.message}`);
             alert("✅ Duyuru başarıyla güncellendi!");
         } catch (error: any) {
             console.error("Broadcast Error:", error);
-            alert(`Hata oluştu: ${error.message}`);
+            alert(`YETKİ HATASI: ${error.message}\nLütfen veritabanı kurallarını kontrol edin.`);
         }
     };
 
     const processTransaction = async (userId: string, userName: string, amount: number, months: number, description: string, refCode: string) => {
         const batchDate = serverTimestamp();
-        // Gelir koleksiyonuna ekle (Admin panelindeki ciro buradan beslenir)
+
+        // 1. Gelir Ekle
         await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'saas_income'), {
             amount: Number(amount),
-            userId,
-            userName,
-            description,
-            type: 'income',
-            refCode,
-            createdAt: batchDate
+            userId, userName, description, type: 'income', refCode, createdAt: batchDate
         });
 
+        // 2. Gider Ekle
         await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', userId, 'finance'), {
             amount: Number(amount),
-            type: 'expense',
-            category: 'Lisans',
-            title: 'Servis360',
-            description,
-            date: batchDate,
-            createdAt: batchDate
+            type: 'expense', category: 'Lisans', title: 'Servis360', description, date: batchDate, createdAt: batchDate
         });
 
-        const userProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile');
-        const userProfileSnap = await getDoc(userProfileRef);
-        let currentEndDate = new Date();
-        if (userProfileSnap.exists() && userProfileSnap.data().licenseEndsAt) {
-            const existingDate = userProfileSnap.data().licenseEndsAt.toDate();
-            if (existingDate > new Date()) currentEndDate = existingDate;
-        }
-        const newEndDate = new Date(currentEndDate);
-        newEndDate.setMonth(newEndDate.getMonth() + Number(months));
+        // 3. Süre Uzat (Eğer months > 0 ise)
+        if (months > 0) {
+            const userProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile');
+            const userProfileSnap = await getDoc(userProfileRef);
+            let currentEndDate = new Date();
+            if (userProfileSnap.exists() && userProfileSnap.data().licenseEndsAt) {
+                const existingDate = userProfileSnap.data().licenseEndsAt.toDate();
+                if (existingDate > new Date()) currentEndDate = existingDate;
+            }
+            const newEndDate = new Date(currentEndDate);
+            newEndDate.setMonth(newEndDate.getMonth() + Number(months));
 
-        await updateDoc(userProfileRef, { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
-        await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
+            await updateDoc(userProfileRef, { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
+        }
+
         await logAction('MANUAL_SALE', `${userName} -> $${amount}`);
     };
 
+    // 🔥 DÜZELTME 2: MANUEL SATIŞ ONAYI
     const handleManualSale = async () => {
         if (!saleForm.amount) return;
+
+        const confirmMsg = `
+        MANUEL SATIŞ ONAYI
+        -------------------
+        Müşteri: ${saleTargetUser?.fullName}
+        Tutar: $${saleForm.amount}
+        Süre Eklenecek: ${saleForm.months} Ay
+        
+        Bu işlemi onaylıyor musunuz?
+        `;
+
+        if (!confirm(confirmMsg)) return;
+
         await processTransaction(saleTargetUser.id, saleTargetUser.fullName, Number(saleForm.amount), Number(saleForm.months), saleForm.description, 'MANUEL');
         setShowSaleModal(false);
-        alert("Satış eklendi ve ciro güncellendi.");
+        alert("✅ Satış başarıyla işlendi.");
     };
 
     const calculateLimits = (user: any, profile: any) => {
@@ -258,32 +279,60 @@ export default function AdminPage() {
         return { branch: { base: baseBranch, extra: extraBranch, total: baseBranch + extraBranch }, staff: { base: baseStaff, extra: extraStaff, total: baseStaff + extraStaff } };
     };
 
-    // 🔥 GÜNCELLENEN EK SATIŞ (DİNAMİK FİYAT)
+    // 🔥 DÜZELTME 3: EK SATIŞ HATASI VE ONAYI
     const handleBuyLimit = async (type: 'branch' | 'staff') => {
         if (!viewUser || !userProfileData) return;
 
-        // Fiyatı Admin'e Sor
-        const priceStr = prompt(`Ek ${type === 'branch' ? 'Şube' : 'Personel'} için alınacak ücreti girin ($):`, "800");
-        if (priceStr === null) return; // İptal ederse çık
+        // 1. Fiyatı Sor
+        const priceStr = prompt(`Ek ${type === 'branch' ? 'Şube' : 'Personel'} için ücret ($):`, "800");
+        if (priceStr === null) return; // İptal edildi
+
         const price = Number(priceStr);
-        if (isNaN(price)) { alert("Geçersiz tutar!"); return; }
+        if (isNaN(price)) {
+            alert("❌ Geçersiz tutar! Lütfen sayı girin.");
+            return;
+        }
 
         const limits = calculateLimits(viewUser, userProfileData);
         const currentExtra = type === 'branch' ? limits.branch.extra : limits.staff.extra;
         const newExtra = currentExtra + 1;
 
-        if (!confirm(`${viewUser.fullName} için Ek ${type === 'branch' ? 'Şube' : 'Personel'} Hakkı (+1) ?\nTutar: $${price}`)) return;
+        // 2. Onay İste
+        const confirmMsg = `
+        EK HAK SATIŞ ONAYI
+        ------------------
+        Müşteri: ${viewUser.fullName}
+        Hizmet: Ek ${type === 'branch' ? 'Şube' : 'Personel'} (+1)
+        Tutar: $${price}
+        
+        Onaylıyor musunuz?
+        `;
+
+        if (!confirm(confirmMsg)) return;
+
         try {
             const field = type === 'branch' ? 'customBranchLimit' : 'customStaffLimit';
+            const logMsg = type === 'branch' ? 'Ek Şube' : 'Ek Personel';
+
+            // Profili Güncelle
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { [field]: newExtra });
+
+            // Dizin Güncelle
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { [field]: newExtra });
 
-            // Satışı işle (Ciroya ekle)
-            await processTransaction(viewUser.id, viewUser.fullName, price, 0, `Ek ${type} Satışı`, `${type.toUpperCase()}_UPGRADE`);
+            // Satış Kaydı (Ciro için)
+            if (price > 0) {
+                await processTransaction(viewUser.id, viewUser.fullName, price, 0, `${logMsg} Satışı`, `${type.toUpperCase()}_UPGRADE`);
+            } else {
+                await logAction('FREE_UPGRADE', `${viewUser.fullName} -> Ücretsiz ${logMsg} tanımlandı.`);
+            }
 
             setUserProfileData({ ...userProfileData, [field]: newExtra });
-            alert("İşlem Başarılı! Ciroya işlendi.");
-        } catch (err) { alert("Hata oluştu."); }
+            alert("✅ İşlem Başarılı! Hak tanımlandı ve ciroya işlendi.");
+        } catch (err: any) {
+            console.error(err);
+            alert(`❌ Hata oluştu: ${err.message}`);
+        }
     };
 
     const deleteUser = async (userId: string) => {
@@ -299,14 +348,6 @@ export default function AdminPage() {
         if (!timestamp) return '-';
         if (timestamp.toDate) return timestamp.toDate().toLocaleDateString('tr-TR');
         return new Date(timestamp).toLocaleDateString('tr-TR');
-    };
-
-    // 💤 GÜN HESAPLAYICI (Son Giriş)
-    const getDaysSinceLogin = (lastLoginAt: any) => {
-        if (!lastLoginAt) return 999; // Hiç girmemiş
-        const date = lastLoginAt.toDate ? lastLoginAt.toDate() : new Date(lastLoginAt);
-        const diff = new Date().getTime() - date.getTime();
-        return Math.floor(diff / (1000 * 3600 * 24));
     };
 
     const filteredUsers = users.filter(u => {
@@ -344,7 +385,7 @@ export default function AdminPage() {
                         <ShieldAlert className="w-8 h-8 text-blue-600" />
                         <div>
                             <h1 className="text-xl font-black text-white tracking-tight">SERVİS360 KOMUTA MERKEZİ</h1>
-                            <p className="text-xs text-slate-500 font-mono">SİSTEM_VERSİYONU_V4.0 (GLOBAL_USD)</p>
+                            <p className="text-xs text-slate-500 font-mono">SİSTEM_VERSİYONU_V5.0 (STABLE)</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-6">
@@ -392,7 +433,7 @@ export default function AdminPage() {
                                 <h3 className="text-2xl font-black text-slate-300">{stats.staffCount}</h3>
                                 <p className="text-[10px] text-slate-500">Alt Kullanıcılar</p>
                             </div>
-                            {/* 🔥 YENİ: UYUYANLAR */}
+                            {/* 🔥 GÜNCELLENEN: UYUYANLAR */}
                             <div className="bg-slate-900 border border-red-900/30 p-4 rounded-xl relative overflow-hidden">
                                 <div className="absolute top-0 right-0 p-2 opacity-10"><Moon className="w-12 h-12 text-red-500" /></div>
                                 <div className="flex justify-between mb-2"><Clock className="text-red-500" /><span className="text-[10px] bg-red-900/20 text-red-400 px-2 rounded font-bold">UYUYANLAR</span></div>
@@ -447,12 +488,16 @@ export default function AdminPage() {
                                                         <td className="p-4">
                                                             <div className="font-bold text-white flex items-center gap-2">
                                                                 {u.fullName}
-                                                                {/* 🔥 UYARI ROZETİ */}
-                                                                {daysOffline > 2 && (
+                                                                {/* 🔥 DÜZELTME: 999 GÜN HATASI GİDERİLDİ */}
+                                                                {daysOffline === -1 ? (
+                                                                    <span className="text-[10px] text-slate-500 bg-slate-800 px-1 rounded flex items-center gap-1">
+                                                                        <Moon className="w-3 h-3" /> Hiç Girmedi
+                                                                    </span>
+                                                                ) : daysOffline > 2 ? (
                                                                     <span className="text-[10px] text-red-500 bg-red-900/20 px-1 rounded flex items-center gap-1">
                                                                         <Moon className="w-3 h-3" /> {daysOffline}g yok
                                                                     </span>
-                                                                )}
+                                                                ) : null}
                                                             </div>
                                                             <div className="text-[10px] text-slate-500">{u.companyName || u.email}</div>
                                                         </td>
@@ -533,7 +578,7 @@ export default function AdminPage() {
                     )}
                 </div>
 
-                {/* MODALLAR AYNEN DEVAM EDİYOR... (Manuel Satış & Detay) */}
+                {/* MODAL: MANUEL SATIŞ */}
                 {showSaleModal && (
                     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
                         <div className="bg-slate-900 border border-yellow-600 p-6 rounded w-full max-w-sm shadow-2xl">
@@ -543,13 +588,14 @@ export default function AdminPage() {
                             <input type="number" placeholder="Süre (Ay)" className="w-full bg-black border border-slate-700 p-3 mb-2 text-white rounded" value={saleForm.months} onChange={e => setSaleForm({ ...saleForm, months: e.target.value })} />
                             <input type="text" placeholder="Açıklama" className="w-full bg-black border border-slate-700 p-3 mb-4 text-white rounded" value={saleForm.description} onChange={e => setSaleForm({ ...saleForm, description: e.target.value })} />
                             <div className="flex gap-2">
-                                <button onClick={handleManualSale} className="flex-1 bg-yellow-600 text-black font-bold p-3 rounded">KAYDET</button>
+                                <button onClick={handleManualSale} className="flex-1 bg-yellow-600 text-black font-bold p-3 rounded">ONAYLA VE KAYDET</button>
                                 <button onClick={() => setShowSaleModal(false)} className="flex-1 bg-slate-800 text-white p-3 rounded">İPTAL</button>
                             </div>
                         </div>
                     </div>
                 )}
 
+                {/* MODAL: KULLANICI DETAY */}
                 {viewUser && (
                     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4" onClick={() => setViewUser(null)}>
                         <div className="bg-slate-900 border border-slate-700 rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -575,14 +621,14 @@ export default function AdminPage() {
                                                 <span className="text-white font-bold flex gap-2"><Store className="w-4 h-4" /> Şube Hakkı</span>
                                                 <span className="text-green-400 font-bold text-lg">{calculateLimits(viewUser, userProfileData).branch.total}</span>
                                             </div>
-                                            <button onClick={() => handleBuyLimit('branch')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Şube Sat (Fiyat Gir)</button>
+                                            <button onClick={() => handleBuyLimit('branch')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Şube Sat (Fiyat Belirle)</button>
                                         </div>
                                         <div className="bg-slate-800/50 p-4 rounded border border-slate-700">
                                             <div className="flex justify-between items-center mb-2">
                                                 <span className="text-white font-bold flex gap-2"><Users className="w-4 h-4" /> Personel Hakkı</span>
                                                 <span className="text-green-400 font-bold text-lg">{calculateLimits(viewUser, userProfileData).staff.total}</span>
                                             </div>
-                                            <button onClick={() => handleBuyLimit('staff')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Personel Sat (Fiyat Gir)</button>
+                                            <button onClick={() => handleBuyLimit('staff')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Personel Sat (Fiyat Belirle)</button>
                                         </div>
                                     </div>
                                 )}
