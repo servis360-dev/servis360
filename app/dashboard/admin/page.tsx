@@ -27,7 +27,8 @@ import {
     ShieldAlert, Search, Trash2, Users, Save,
     LayoutDashboard, Megaphone, BellRing, Wallet,
     BadgeCheck, X, Building2, Store, User,
-    Mail, Calendar, Eye, Phone, ChevronRight, ChevronDown, Plus, Briefcase, Activity, FileText, Filter
+    Mail, Calendar, Eye, Phone, ChevronRight, ChevronDown, Plus, Briefcase, Activity, FileText, Filter,
+    Clock, Moon
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -45,7 +46,8 @@ export default function AdminPage() {
         corporateCount: 0,
         businessCount: 0,
         individualCount: 0,
-        staffCount: 0 // Yeni: Personel Sayısı
+        staffCount: 0,
+        sleepyUsers: 0 // 💤 Yeni: 2 günden fazla girmeyenler
     });
 
     const [currentUser, setCurrentUser] = useState<any>(null);
@@ -73,7 +75,6 @@ export default function AdminPage() {
     const [userProfileData, setUserProfileData] = useState<any>(null);
 
     // --- YARDIMCI: Personel Rolleri ---
-    // Bu rollerden biri varsa o kişi PERSONEL'dir.
     const staffRoles = ['staff', 'personnel', 'employee', 'technical', 'technician', 'sales', 'accountant', 'satis', 'muhasebe', 'teknik'];
 
     const isStaff = (u: any) => {
@@ -83,7 +84,6 @@ export default function AdminPage() {
 
     const isBusinessOwner = (u: any) => {
         if (!u) return false;
-        // Eğer personelse işletme sahibi DEĞİLDİR.
         if (isStaff(u)) return false;
         return ['corporate', 'company', 'enterprise', 'business', 'esnaf', 'tradesman'].includes(u.accountType);
     };
@@ -96,9 +96,11 @@ export default function AdminPage() {
 
         // 1. Duyuru
         const fetchBroadcast = async () => {
-            const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
-            const snap = await getDoc(docRef);
-            if (snap.exists()) setBroadcast(snap.data() as any);
+            try {
+                const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
+                const snap = await getDoc(docRef);
+                if (snap.exists()) setBroadcast(snap.data() as any);
+            } catch (e) { console.error("Duyuru çekme hatası", e); }
         };
         fetchBroadcast();
 
@@ -108,15 +110,22 @@ export default function AdminPage() {
             const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             setUsers(userList);
 
-            // İstatistik Hesapla (Personelleri Şirketlerden Ayırarak)
+            // İstatistik Hesapla
             const active = userList.filter((u: any) => u.status === 'active').length;
-
             const staff = userList.filter((u: any) => isStaff(u)).length;
-
-            // Şirket sayılarını hesaplarken personelleri hariç tutuyoruz (!isStaff)
             const corporate = userList.filter((u: any) => ['corporate', 'company', 'enterprise'].includes(u.accountType) && !isStaff(u)).length;
             const business = userList.filter((u: any) => ['esnaf', 'business', 'tradesman'].includes(u.accountType) && !isStaff(u)).length;
             const individual = userList.filter((u: any) => (!u.accountType || u.accountType === 'individual') && !isStaff(u)).length;
+
+            // 💤 Hayalet Kullanıcı Tespiti (2 Günden Fazla)
+            const twoDaysAgo = new Date();
+            twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+            const sleepy = userList.filter((u: any) => {
+                if (!u.lastLoginAt) return true; // Hiç girmemişse de uykuda say
+                const lastLogin = u.lastLoginAt.toDate ? u.lastLoginAt.toDate() : new Date(u.lastLoginAt);
+                return lastLogin < twoDaysAgo;
+            }).length;
 
             setStats(prev => ({
                 ...prev,
@@ -125,12 +134,13 @@ export default function AdminPage() {
                 corporateCount: corporate,
                 businessCount: business,
                 individualCount: individual,
-                staffCount: staff
+                staffCount: staff,
+                sleepyUsers: sleepy
             }));
             setLoading(false);
         });
 
-        // 3. Gelir
+        // 3. Gelir (SaaS Income)
         const unsubIncome = onSnapshot(query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'saas_income')), (snapshot) => {
             let total = 0;
             snapshot.docs.forEach(d => total += Number(d.data().amount || 0));
@@ -177,18 +187,45 @@ export default function AdminPage() {
         } catch (error) { console.error(error); } finally { setLoadingStaff(false); }
     };
 
+    // 🔥 GÜNCELLENEN DUYURU KAYDETME (HATA ÇÖZÜMÜ)
     const saveBroadcast = async () => {
         try {
-            await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast'), broadcast);
+            // Klasör yapısının varlığından emin olmak için setDoc + merge kullanıyoruz
+            await setDoc(
+                doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast'),
+                broadcast,
+                { merge: true }
+            );
             await logAction('BROADCAST_UPDATE', `Duyuru: ${broadcast.message}`);
-            alert("✅ Duyuru güncellendi!");
-        } catch (error) { alert("Hata"); }
+            alert("✅ Duyuru başarıyla güncellendi!");
+        } catch (error: any) {
+            console.error("Broadcast Error:", error);
+            alert(`Hata oluştu: ${error.message}`);
+        }
     };
 
     const processTransaction = async (userId: string, userName: string, amount: number, months: number, description: string, refCode: string) => {
         const batchDate = serverTimestamp();
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'saas_income'), { amount: Number(amount), userId, userName, description, type: 'income', refCode, createdAt: batchDate });
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', userId, 'finance'), { amount: Number(amount), type: 'expense', category: 'Lisans', title: 'Servis360', description, date: batchDate, createdAt: batchDate });
+        // Gelir koleksiyonuna ekle (Admin panelindeki ciro buradan beslenir)
+        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'saas_income'), {
+            amount: Number(amount),
+            userId,
+            userName,
+            description,
+            type: 'income',
+            refCode,
+            createdAt: batchDate
+        });
+
+        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', userId, 'finance'), {
+            amount: Number(amount),
+            type: 'expense',
+            category: 'Lisans',
+            title: 'Servis360',
+            description,
+            date: batchDate,
+            createdAt: batchDate
+        });
 
         const userProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile');
         const userProfileSnap = await getDoc(userProfileRef);
@@ -202,14 +239,14 @@ export default function AdminPage() {
 
         await updateDoc(userProfileRef, { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
         await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
-        await logAction('MANUAL_SALE', `${userName} -> ${amount}TL`);
+        await logAction('MANUAL_SALE', `${userName} -> $${amount}`);
     };
 
     const handleManualSale = async () => {
         if (!saleForm.amount) return;
         await processTransaction(saleTargetUser.id, saleTargetUser.fullName, Number(saleForm.amount), Number(saleForm.months), saleForm.description, 'MANUEL');
         setShowSaleModal(false);
-        alert("Satış eklendi.");
+        alert("Satış eklendi ve ciro güncellendi.");
     };
 
     const calculateLimits = (user: any, profile: any) => {
@@ -221,21 +258,32 @@ export default function AdminPage() {
         return { branch: { base: baseBranch, extra: extraBranch, total: baseBranch + extraBranch }, staff: { base: baseStaff, extra: extraStaff, total: baseStaff + extraStaff } };
     };
 
+    // 🔥 GÜNCELLENEN EK SATIŞ (DİNAMİK FİYAT)
     const handleBuyLimit = async (type: 'branch' | 'staff') => {
         if (!viewUser || !userProfileData) return;
-        const price = 800;
+
+        // Fiyatı Admin'e Sor
+        const priceStr = prompt(`Ek ${type === 'branch' ? 'Şube' : 'Personel'} için alınacak ücreti girin ($):`, "800");
+        if (priceStr === null) return; // İptal ederse çık
+        const price = Number(priceStr);
+        if (isNaN(price)) { alert("Geçersiz tutar!"); return; }
+
         const limits = calculateLimits(viewUser, userProfileData);
         const currentExtra = type === 'branch' ? limits.branch.extra : limits.staff.extra;
         const newExtra = currentExtra + 1;
-        if (!confirm(`Ek ${type === 'branch' ? 'Şube' : 'Personel'} Hakkı (+1) ?\nÜcret: ${price} TL`)) return;
+
+        if (!confirm(`${viewUser.fullName} için Ek ${type === 'branch' ? 'Şube' : 'Personel'} Hakkı (+1) ?\nTutar: $${price}`)) return;
         try {
             const field = type === 'branch' ? 'customBranchLimit' : 'customStaffLimit';
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { [field]: newExtra });
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { [field]: newExtra });
+
+            // Satışı işle (Ciroya ekle)
             await processTransaction(viewUser.id, viewUser.fullName, price, 0, `Ek ${type} Satışı`, `${type.toUpperCase()}_UPGRADE`);
+
             setUserProfileData({ ...userProfileData, [field]: newExtra });
-            alert("İşlem Başarılı!");
-        } catch (err) { alert("Hata"); }
+            alert("İşlem Başarılı! Ciroya işlendi.");
+        } catch (err) { alert("Hata oluştu."); }
     };
 
     const deleteUser = async (userId: string) => {
@@ -251,6 +299,14 @@ export default function AdminPage() {
         if (!timestamp) return '-';
         if (timestamp.toDate) return timestamp.toDate().toLocaleDateString('tr-TR');
         return new Date(timestamp).toLocaleDateString('tr-TR');
+    };
+
+    // 💤 GÜN HESAPLAYICI (Son Giriş)
+    const getDaysSinceLogin = (lastLoginAt: any) => {
+        if (!lastLoginAt) return 999; // Hiç girmemiş
+        const date = lastLoginAt.toDate ? lastLoginAt.toDate() : new Date(lastLoginAt);
+        const diff = new Date().getTime() - date.getTime();
+        return Math.floor(diff / (1000 * 3600 * 24));
     };
 
     const filteredUsers = users.filter(u => {
@@ -288,13 +344,13 @@ export default function AdminPage() {
                         <ShieldAlert className="w-8 h-8 text-blue-600" />
                         <div>
                             <h1 className="text-xl font-black text-white tracking-tight">SERVİS360 KOMUTA MERKEZİ</h1>
-                            <p className="text-xs text-slate-500 font-mono">SİSTEM_VERSİYONU_V3.1 (STAFF_FIX)</p>
+                            <p className="text-xs text-slate-500 font-mono">SİSTEM_VERSİYONU_V4.0 (GLOBAL_USD)</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-6">
                         <div className="text-right">
-                            <span className="text-[10px] text-slate-500 uppercase font-bold">Ciro</span>
-                            <p className="text-2xl font-black text-green-400 font-mono">{stats.totalRevenue.toLocaleString('tr-TR')} ₺</p>
+                            <span className="text-[10px] text-slate-500 uppercase font-bold">Toplam Ciro</span>
+                            <p className="text-2xl font-black text-green-400 font-mono">${stats.totalRevenue.toLocaleString()}</p>
                         </div>
                         <div className="w-px h-8 bg-slate-800"></div>
                         <div className="text-right">
@@ -336,9 +392,12 @@ export default function AdminPage() {
                                 <h3 className="text-2xl font-black text-slate-300">{stats.staffCount}</h3>
                                 <p className="text-[10px] text-slate-500">Alt Kullanıcılar</p>
                             </div>
-                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                                <div className="flex justify-between mb-2"><X className="text-red-500" /><span className="text-[10px] bg-slate-800 px-2 rounded">PASİF</span></div>
-                                <h3 className="text-2xl font-black text-white">{stats.expiredUsers}</h3>
+                            {/* 🔥 YENİ: UYUYANLAR */}
+                            <div className="bg-slate-900 border border-red-900/30 p-4 rounded-xl relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-2 opacity-10"><Moon className="w-12 h-12 text-red-500" /></div>
+                                <div className="flex justify-between mb-2"><Clock className="text-red-500" /><span className="text-[10px] bg-red-900/20 text-red-400 px-2 rounded font-bold">UYUYANLAR</span></div>
+                                <h3 className="text-2xl font-black text-white">{stats.sleepyUsers}</h3>
+                                <p className="text-[10px] text-red-400">2+ Gündür girmeyen</p>
                             </div>
                         </div>
                     )}
@@ -373,52 +432,63 @@ export default function AdminPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-800">
-                                        {filteredUsers.map(u => (
-                                            <>
-                                                <tr key={u.id} className="hover:bg-slate-800/50 transition-colors">
-                                                    <td className="p-4">
-                                                        {isBusinessOwner(u) && (
-                                                            <button onClick={() => toggleCompanyStaff(u.id)} className="p-1 hover:bg-slate-700 rounded text-blue-500">
-                                                                {expandedCompanyId === u.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                                                            </button>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-4">
-                                                        <div className="font-bold text-white">{u.fullName}</div>
-                                                        <div className="text-[10px] text-slate-500">{u.companyName || u.email}</div>
-                                                    </td>
-                                                    <td className="p-4">
-                                                        {getUserBadge(u)}
-                                                    </td>
-                                                    <td className="p-4">{u.licenseEndsAt ? formatDate(u.licenseEndsAt) : '-'}</td>
-                                                    <td className="p-4">{u.status === 'active' ? <span className="text-green-500 font-bold">Aktif</span> : <span className="text-red-500 font-bold">Pasif</span>}</td>
-                                                    <td className="p-4 text-right flex justify-end gap-2">
-                                                        <button onClick={() => setViewUser(u)} className="p-2 hover:bg-slate-700 rounded text-blue-400"><Eye className="w-4 h-4" /></button>
-                                                        <button onClick={() => { setSaleTargetUser(u); setShowSaleModal(true); }} className="p-2 hover:bg-slate-700 rounded text-yellow-500"><Wallet className="w-4 h-4" /></button>
-                                                        <button onClick={() => deleteUser(u.id)} className="p-2 hover:bg-slate-700 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
-                                                    </td>
-                                                </tr>
-                                                {expandedCompanyId === u.id && (
-                                                    <tr className="bg-slate-900/50 animate-in fade-in">
-                                                        <td colSpan={6} className="p-4 pl-12 border-b border-slate-800">
-                                                            <p className="text-xs font-bold text-slate-500 mb-2">FİRMA PERSONELİ</p>
-                                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                                                {loadingStaff ? <span>Yükleniyor...</span> : companyStaff.map(s => (
-                                                                    <div key={s.id} className="bg-black border border-slate-700 p-2 rounded flex items-center justify-between group hover:border-blue-500/50 transition-colors">
-                                                                        <div>
-                                                                            <div className="text-white text-xs font-bold">{s.fullName}</div>
-                                                                            <div className="text-[10px] text-slate-500">{s.role === 'technical' ? 'Tekniker' : s.role === 'sales' ? 'Satış' : 'Personel'}</div>
-                                                                        </div>
-                                                                        <div className={`w-2 h-2 rounded-full ${s.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                                                    </div>
-                                                                ))}
-                                                                {companyStaff.length === 0 && <span className="text-xs text-slate-600 italic">Personel yok.</span>}
+                                        {filteredUsers.map(u => {
+                                            const daysOffline = getDaysSinceLogin(u.lastLoginAt);
+                                            return (
+                                                <>
+                                                    <tr key={u.id} className="hover:bg-slate-800/50 transition-colors">
+                                                        <td className="p-4">
+                                                            {isBusinessOwner(u) && (
+                                                                <button onClick={() => toggleCompanyStaff(u.id)} className="p-1 hover:bg-slate-700 rounded text-blue-500">
+                                                                    {expandedCompanyId === u.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <div className="font-bold text-white flex items-center gap-2">
+                                                                {u.fullName}
+                                                                {/* 🔥 UYARI ROZETİ */}
+                                                                {daysOffline > 2 && (
+                                                                    <span className="text-[10px] text-red-500 bg-red-900/20 px-1 rounded flex items-center gap-1">
+                                                                        <Moon className="w-3 h-3" /> {daysOffline}g yok
+                                                                    </span>
+                                                                )}
                                                             </div>
+                                                            <div className="text-[10px] text-slate-500">{u.companyName || u.email}</div>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            {getUserBadge(u)}
+                                                        </td>
+                                                        <td className="p-4">{u.licenseEndsAt ? formatDate(u.licenseEndsAt) : '-'}</td>
+                                                        <td className="p-4">{u.status === 'active' ? <span className="text-green-500 font-bold">Aktif</span> : <span className="text-red-500 font-bold">Pasif</span>}</td>
+                                                        <td className="p-4 text-right flex justify-end gap-2">
+                                                            <button onClick={() => setViewUser(u)} className="p-2 hover:bg-slate-700 rounded text-blue-400"><Eye className="w-4 h-4" /></button>
+                                                            <button onClick={() => { setSaleTargetUser(u); setShowSaleModal(true); }} className="p-2 hover:bg-slate-700 rounded text-yellow-500"><Wallet className="w-4 h-4" /></button>
+                                                            <button onClick={() => deleteUser(u.id)} className="p-2 hover:bg-slate-700 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
                                                         </td>
                                                     </tr>
-                                                )}
-                                            </>
-                                        ))}
+                                                    {expandedCompanyId === u.id && (
+                                                        <tr className="bg-slate-900/50 animate-in fade-in">
+                                                            <td colSpan={6} className="p-4 pl-12 border-b border-slate-800">
+                                                                <p className="text-xs font-bold text-slate-500 mb-2">FİRMA PERSONELİ</p>
+                                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                                                    {loadingStaff ? <span>Yükleniyor...</span> : companyStaff.map(s => (
+                                                                        <div key={s.id} className="bg-black border border-slate-700 p-2 rounded flex items-center justify-between group hover:border-blue-500/50 transition-colors">
+                                                                            <div>
+                                                                                <div className="text-white text-xs font-bold">{s.fullName}</div>
+                                                                                <div className="text-[10px] text-slate-500">{s.role === 'technical' ? 'Tekniker' : s.role === 'sales' ? 'Satış' : 'Personel'}</div>
+                                                                            </div>
+                                                                            <div className={`w-2 h-2 rounded-full ${s.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                                                                        </div>
+                                                                    ))}
+                                                                    {companyStaff.length === 0 && <span className="text-xs text-slate-600 italic">Personel yok.</span>}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
@@ -469,7 +539,7 @@ export default function AdminPage() {
                         <div className="bg-slate-900 border border-yellow-600 p-6 rounded w-full max-w-sm shadow-2xl">
                             <h3 className="text-white font-bold mb-4">Manuel Satış Ekle</h3>
                             <p className="text-xs text-slate-400 mb-4 bg-black p-2 rounded">Kullanıcı: {saleTargetUser?.fullName}</p>
-                            <input type="number" placeholder="Tutar (TL)" className="w-full bg-black border border-slate-700 p-3 mb-2 text-white rounded" value={saleForm.amount} onChange={e => setSaleForm({ ...saleForm, amount: e.target.value })} />
+                            <input type="number" placeholder="Tutar ($)" className="w-full bg-black border border-slate-700 p-3 mb-2 text-white rounded" value={saleForm.amount} onChange={e => setSaleForm({ ...saleForm, amount: e.target.value })} />
                             <input type="number" placeholder="Süre (Ay)" className="w-full bg-black border border-slate-700 p-3 mb-2 text-white rounded" value={saleForm.months} onChange={e => setSaleForm({ ...saleForm, months: e.target.value })} />
                             <input type="text" placeholder="Açıklama" className="w-full bg-black border border-slate-700 p-3 mb-4 text-white rounded" value={saleForm.description} onChange={e => setSaleForm({ ...saleForm, description: e.target.value })} />
                             <div className="flex gap-2">
@@ -505,14 +575,14 @@ export default function AdminPage() {
                                                 <span className="text-white font-bold flex gap-2"><Store className="w-4 h-4" /> Şube Hakkı</span>
                                                 <span className="text-green-400 font-bold text-lg">{calculateLimits(viewUser, userProfileData).branch.total}</span>
                                             </div>
-                                            <button onClick={() => handleBuyLimit('branch')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Şube Sat (800₺)</button>
+                                            <button onClick={() => handleBuyLimit('branch')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Şube Sat (Fiyat Gir)</button>
                                         </div>
                                         <div className="bg-slate-800/50 p-4 rounded border border-slate-700">
                                             <div className="flex justify-between items-center mb-2">
                                                 <span className="text-white font-bold flex gap-2"><Users className="w-4 h-4" /> Personel Hakkı</span>
                                                 <span className="text-green-400 font-bold text-lg">{calculateLimits(viewUser, userProfileData).staff.total}</span>
                                             </div>
-                                            <button onClick={() => handleBuyLimit('staff')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Personel Sat (800₺)</button>
+                                            <button onClick={() => handleBuyLimit('staff')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Personel Sat (Fiyat Gir)</button>
                                         </div>
                                     </div>
                                 )}
