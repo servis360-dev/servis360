@@ -19,8 +19,8 @@ import {
 } from 'firebase/firestore';
 
 // 👇 PROJE İÇİ IMPORTLAR
-import { auth, db } from '../../../lib/firebase';
-import RoleGuard from '../../../components/auth/role-guard';
+import { auth, db } from '../../../../lib/firebase';
+import RoleGuard from '../../../../components/auth/role-guard';
 
 // 👇 DÜZELTME: Eksik ikonlar eklendi (ChevronDown, ChevronRight, Eye, Plus)
 import {

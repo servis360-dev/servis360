@@ -10,7 +10,7 @@ import {
     sendEmailVerification
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { auth, db } from '../../../lib/firebase';
+import { auth, db } from '../../../../lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {

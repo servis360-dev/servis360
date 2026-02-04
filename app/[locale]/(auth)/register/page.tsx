@@ -11,7 +11,7 @@ import {
     sendEmailVerification,
     signOut // 🔥 Oturumu kapatmak için eklendi
 } from 'firebase/auth';
-import { auth, db } from '../../../lib/firebase';
+import { auth, db } from '../../../../lib/firebase';
 import { doc, setDoc, serverTimestamp, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore';
 import Link from 'next/link';
 import {
