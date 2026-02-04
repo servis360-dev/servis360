@@ -234,7 +234,7 @@ export default function FinanceView({ dict }: { dict: any }) {
                                         <div className={`p-2 rounded-lg ${t.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>{t.type === 'income' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}</div>
                                         <div>
                                             <span className={`block text-xs font-bold uppercase tracking-wider ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.category}</span>
-                                            <span className="text-xs text-slate-400">{dateObj.toLocaleDateString(currency.locale)}</span>
+                                            <span className="text-xs text-slate-400">{dateObj.toLocaleDateString(currentLocale)}</span>
                                         </div>
                                     </div>
                                     <div className={`text-lg font-black ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>{t.type === 'income' ? '+' : '-'} {formatMoney(Number(t.amount), currentLocale)}</div>
