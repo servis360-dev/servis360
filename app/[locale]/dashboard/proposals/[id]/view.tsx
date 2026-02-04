@@ -1,4 +1,4 @@
-'use client';
+ï»¿'use client';
 
 import { useEffect, useState, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
@@ -25,7 +25,7 @@ export default function ProposalView({ dict, id, locale }: { dict: any, id: stri
     const [loading, setLoading] = useState(true);
     const [downloading, setDownloading] = useState(false);
 
-    // PDF referansý
+    // PDF referansÄ±
     const invoiceRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
 
@@ -96,7 +96,7 @@ export default function ProposalView({ dict, id, locale }: { dict: any, id: stri
             pdf.save(`Proposal-${proposal.proposalNo || 'Doc'}.pdf`);
 
         } catch (error) {
-            console.error("PDF hatasý:", error);
+            console.error("PDF hatasÄ±:", error);
             alert(dict.common.error || "PDF Error");
         } finally {
             setDownloading(false);
@@ -134,7 +134,7 @@ export default function ProposalView({ dict, id, locale }: { dict: any, id: stri
                 `}
             </style>
 
-            {/* Üst Bar (Butonlar) */}
+            {/* Ãœst Bar (Butonlar) */}
             <div className="w-full max-w-[210mm] flex flex-col sm:flex-row justify-between items-center gap-4 no-print">
                 <Link href="/dashboard/proposals" className="flex items-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors">
                     <ArrowLeft className="w-4 h-4 mr-2" /> {dict.proposals.view.btn_back}
@@ -160,7 +160,7 @@ export default function ProposalView({ dict, id, locale }: { dict: any, id: stri
                 </div>
             </div>
 
-            {/* A4 KAÐIT ALANI */}
+            {/* A4 KAÄžIT ALANI */}
             <div className="overflow-auto w-full flex justify-center no-print-scroll">
                 <div
                     ref={invoiceRef}
@@ -173,11 +173,11 @@ export default function ProposalView({ dict, id, locale }: { dict: any, id: stri
                         boxSizing: 'border-box'
                     }}
                 >
-                    {/* ÜST BAÞLIK (HEADER) */}
+                    {/* ÃœST BAÅžLIK (HEADER) */}
                     <div className="bg-[#1e293b] text-white p-8 h-48 flex justify-between items-start relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
 
-                        {/* Sol: Logo ve Firma Adý */}
+                        {/* Sol: Logo ve Firma AdÄ± */}
                         <div className="z-10 flex flex-col justify-center h-full">
                             {companyInfo?.logoUrl ? (
                                 <img
@@ -192,7 +192,7 @@ export default function ProposalView({ dict, id, locale }: { dict: any, id: stri
                                     <div className="w-10 h-10 bg-white/20 flex items-center justify-center rounded-lg backdrop-blur-sm">
                                         <Building2 className="w-6 h-6 text-white" />
                                     </div>
-                                    <h1 className="text-xl font-bold uppercase tracking-wider">{companyInfo?.companyName || 'FÝRMA ADI'}</h1>
+                                    <h1 className="text-xl font-bold uppercase tracking-wider">{companyInfo?.companyName || 'FÄ°RMA ADI'}</h1>
                                 </div>
                             )}
                             <div className="text-xs text-slate-300 space-y-1 font-light max-w-[300px]">
@@ -204,7 +204,7 @@ export default function ProposalView({ dict, id, locale }: { dict: any, id: stri
                             </div>
                         </div>
 
-                        {/* Sað: Büyük TEKLÝF Yazýsý */}
+                        {/* SaÄŸ: BÃ¼yÃ¼k TEKLÄ°F YazÄ±sÄ± */}
                         <div className="z-10 text-right h-full flex flex-col justify-between">
                             <h2 className="text-5xl font-black tracking-widest text-white/10 absolute right-4 top-4">{dict.proposals.view.header_proposal}</h2>
                             <div className="mt-auto">
@@ -220,7 +220,7 @@ export default function ProposalView({ dict, id, locale }: { dict: any, id: stri
                         </div>
                     </div>
 
-                    {/* MÜÞTERÝ BÝLGÝLERÝ */}
+                    {/* MÃœÅžTERÄ° BÄ°LGÄ°LERÄ° */}
                     <div className="px-10 py-8 grid grid-cols-2 gap-8">
                         <div>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-100 pb-1">{dict.proposals.view.label_dear}</p>
@@ -264,7 +264,7 @@ export default function ProposalView({ dict, id, locale }: { dict: any, id: stri
                         </table>
                     </div>
 
-                    {/* ALT BÝLGÝ (TOPLAM & NOTLAR) */}
+                    {/* ALT BÄ°LGÄ° (TOPLAM & NOTLAR) */}
                     <div className="px-10 pb-10 pt-6 mt-auto">
                         <div className="flex justify-end mb-6">
                             <div className="w-72 bg-slate-50 rounded-xl p-4 border border-slate-100">

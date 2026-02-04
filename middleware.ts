@@ -1,30 +1,30 @@
-import { NextRequest, NextResponse } from 'next/server';
+ï»¿import { NextRequest, NextResponse } from 'next/server';
 
 export function middleware(request: NextRequest) {
-    // 1. Kullanýcýnýn ülkesini Vercel'den alýyoruz
-    const country = request.geo?.country || 'US'; // Bulamazsa varsayýlan US
+    // 1. KullanÄ±cÄ±nÄ±n Ã¼lkesini Vercel'den alÄ±yoruz
+    const country = request.geo?.country || 'US'; // Bulamazsa varsayÄ±lan US
 
-    // 2. Gidilmek istenen yolu al (örn: /dashboard)
+    // 2. Gidilmek istenen yolu al (Ã¶rn: /dashboard)
     const pathname = request.nextUrl.pathname;
 
-    // Eðer statik dosyalara (resim, icon, api) gidiyorsa karýþma
+    // EÄŸer statik dosyalara (resim, icon, api) gidiyorsa karÄ±ÅŸma
     if (
         pathname.startsWith('/_next') ||
         pathname.startsWith('/api') ||
-        pathname.includes('.') // dosya uzantýsý varsa (logo.png gibi)
+        pathname.includes('.') // dosya uzantÄ±sÄ± varsa (logo.png gibi)
     ) {
         return NextResponse.next();
     }
 
-    // 3. Mevcut dili URL'den kontrol et (zaten /tr, /en, /de var mý?)
+    // 3. Mevcut dili URL'den kontrol et (zaten /tr, /en, /de var mÄ±?)
     const pathnameIsMissingLocale =
         !pathname.startsWith('/tr') &&
         !pathname.startsWith('/en') &&
         !pathname.startsWith('/de');
 
-    // 4. Eðer dil yoksa, ülkeye göre ekle ve yönlendir
+    // 4. EÄŸer dil yoksa, Ã¼lkeye gÃ¶re ekle ve yÃ¶nlendir
     if (pathnameIsMissingLocale) {
-        let locale = 'en'; // Varsayýlan (Global)
+        let locale = 'en'; // VarsayÄ±lan (Global)
 
         if (country === 'TR') {
             locale = 'tr';
@@ -32,7 +32,7 @@ export function middleware(request: NextRequest) {
             locale = 'de';
         }
 
-        // Kullanýcýyý doðru dile yönlendir (örn: servis360.com -> servis360.com/tr/dashboard)
+        // KullanÄ±cÄ±yÄ± doÄŸru dile yÃ¶nlendir (Ã¶rn: servis360.com -> servis360.com/tr/dashboard)
         return NextResponse.redirect(
             new URL(`/${locale}${pathname === '/' ? '' : pathname}`, request.url)
         );
@@ -42,6 +42,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    // Middleware'in çalýþacaðý yollar
+    // Middleware'in Ã§alÄ±ÅŸacaÄŸÄ± yollar
     matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
 };
