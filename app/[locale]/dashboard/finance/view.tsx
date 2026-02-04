@@ -6,12 +6,12 @@ import { formatMoney, getCurrencySettings } from '../../../../lib/format';
 import {
     collection, query, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, orderBy, getDoc, where
 } from 'firebase/firestore';
-import { auth, db } from '../../../lib/firebase';
+import { auth, db } from '../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
     Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search, Calendar, Store
 } from 'lucide-react';
-import { useBranch } from '../../../components/providers/branch-context';
+import { useBranch } from '../../../../components/providers/branch-context';
 
 export default function FinanceView({ dict }: { dict: any }) {
     const [transactions, setTransactions] = useState<any[]>([]);
