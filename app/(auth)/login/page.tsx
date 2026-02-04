@@ -9,7 +9,7 @@ import {
     signOut,
     sendEmailVerification
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore'; // 🔥 EKLENDİ
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../../../lib/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -68,6 +68,7 @@ export default function LoginPage() {
                     role: staffData.assignedRole,
                     status: 'active',
                     createdAt: serverTimestamp(),
+                    lastLoginAt: serverTimestamp(), // 🔥 İLK GİRİŞ TARİHİ EKLENDİ
                     licenseEndsAt: null
                 });
 
@@ -83,7 +84,8 @@ export default function LoginPage() {
                     role: staffData.assignedRole,
                     status: 'active',
                     ip: clientIp,
-                    createdAt: serverTimestamp()
+                    createdAt: serverTimestamp(),
+                    lastLoginAt: serverTimestamp() // 🔥 İLK GİRİŞ TARİHİ EKLENDİ
                 });
 
                 // 5. Davet durumunu güncelle
@@ -133,6 +135,22 @@ export default function LoginPage() {
                     setError('Hesabınız dondurulmuştur. Lütfen ödeme yapın veya yönetici ile iletişime geçin.');
                     setLoading(false);
                     return;
+                }
+
+                // 🔥 KRİTİK GÜNCELLEME: SON GİRİŞ TARİHİNİ GÜNCELLE
+                try {
+                    const loginUpdate = { lastLoginAt: serverTimestamp() };
+
+                    // A) Profil Dokümanını Güncelle
+                    await updateDoc(docRef, loginUpdate);
+
+                    // B) Public Directory (Admin Paneli) Dokümanını Güncelle
+                    const publicDirRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', user.uid);
+                    await setDoc(publicDirRef, loginUpdate, { merge: true });
+
+                } catch (updateErr) {
+                    console.error("Login tarihi güncellenemedi:", updateErr);
+                    // Login tarihi güncellenemese bile kullanıcıyı içeri al, akışı bozma.
                 }
 
                 router.push('/dashboard');

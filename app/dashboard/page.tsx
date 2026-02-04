@@ -14,7 +14,7 @@ import {
     addDoc,
     deleteDoc,
     serverTimestamp,
-    where // 🔥 Filtreleme için eklendi
+    where
 } from 'firebase/firestore';
 import {
     TrendingUp,
@@ -34,7 +34,11 @@ import {
     Building2,
     Megaphone,
     Send,
-    Trash2
+    Trash2,
+    AlertTriangle,
+    Info,
+    XCircle,
+    AlertOctagon
 } from 'lucide-react';
 import {
     BarChart,
@@ -47,23 +51,23 @@ import {
     Legend
 } from 'recharts';
 import Link from 'next/link';
-// 🔥 ŞUBE BAĞLANTISI EKLENDİ
 import { useBranch } from '../../components/providers/branch-context';
 
 export default function DashboardPage() {
     const [user, setUser] = useState<any>(null);
-    const [userData, setUserData] = useState<any>(null); // Profil verisi
+    const [userData, setUserData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [timeFilter, setTimeFilter] = useState<'week' | 'month'>('week');
 
-    // 🔥 Şube Bilgisi
     const { selectedBranch } = useBranch();
 
-    // Duyuru Sistemi
+    // Şirket İçi Duyurular (Patron -> Personel)
     const [announcements, setAnnouncements] = useState<any[]>([]);
     const [newAnnouncement, setNewAnnouncement] = useState('');
 
-    // İstatistikler
+    // 🔥 GLOBAL SİSTEM DUYURUSU (Admin -> Herkes)
+    const [systemBroadcast, setSystemBroadcast] = useState<any>(null);
+
     const [stats, setStats] = useState({
         periodIncome: 0,
         periodExpense: 0,
@@ -87,6 +91,7 @@ export default function DashboardPage() {
         let unsubTrans: () => void;
         let unsubJobs: () => void;
         let unsubAnnounce: () => void;
+        let unsubBroadcast: () => void; // Global duyuru dinleyicisi
 
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (!currentUser) {
@@ -104,7 +109,6 @@ export default function DashboardPage() {
                         configureSector(data.sectorType || 'technical_service');
                     }
 
-                    // Dinleyicileri Başlat (Seçili şubeyi de gönderiyoruz)
                     const listeners = setupRealtimeListeners(currentUser.uid, timeFilter, data, selectedBranch);
                     unsubTrans = listeners.unsubTrans;
                     unsubJobs = listeners.unsubJobs;
@@ -113,13 +117,24 @@ export default function DashboardPage() {
             }
         });
 
+        // 🔥 GLOBAL DUYURU DİNLEYİCİSİ (Auth'tan bağımsız çalışabilir ama burada güvenli)
+        const broadcastRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
+        unsubBroadcast = onSnapshot(broadcastRef, (doc) => {
+            if (doc.exists()) {
+                setSystemBroadcast(doc.data());
+            } else {
+                setSystemBroadcast(null);
+            }
+        });
+
         return () => {
             unsubscribeAuth();
             if (unsubTrans) unsubTrans();
             if (unsubJobs) unsubJobs();
             if (unsubAnnounce) unsubAnnounce();
+            if (unsubBroadcast) unsubBroadcast();
         };
-    }, [router, timeFilter, selectedBranch]); // 🔥 selectedBranch değişince yenile
+    }, [router, timeFilter, selectedBranch]);
 
     const configureSector = (sector: string) => {
         let config = { title: 'Aktif İşler', unit: 'adet', icon: Briefcase, path: '/dashboard/jobs' };
@@ -130,34 +145,22 @@ export default function DashboardPage() {
     };
 
     const setupRealtimeListeners = (uid: string, filter: 'week' | 'month', profileData: any, branchId: string | null) => {
-        // Hedef ID (Patron veya Kendisi)
         const targetUid = (profileData.role === 'staff' || profileData.role === 'technician' || profileData.role === 'sales' || profileData.role === 'accounting') && profileData.ownerId
             ? profileData.ownerId
             : uid;
 
         const userPath = `artifacts/servis-360-live/users/${targetUid}`;
 
-        // 1. FİNANS DİNLEYİCİSİ (Şube Filtreli)
         let qTrans;
         if (branchId) {
-            // Şube seçiliyse sadece o şubenin verilerini getir
-            qTrans = query(
-                collection(db, userPath, 'finance'),
-                where('branchId', '==', branchId),
-                orderBy('date', 'asc')
-            );
+            qTrans = query(collection(db, userPath, 'finance'), where('branchId', '==', branchId), orderBy('date', 'asc'));
         } else {
-            // Şube seçili değilse (Tüm Şubeler) hepsini getir
-            qTrans = query(
-                collection(db, userPath, 'finance'),
-                orderBy('date', 'asc')
-            );
+            qTrans = query(collection(db, userPath, 'finance'), orderBy('date', 'asc'));
         }
 
         const unsubTrans = onSnapshot(qTrans, (snapshot) => {
             let periodInc = 0, periodExp = 0;
             let totalInc = 0, totalExp = 0;
-
             const dailyMap = new Map();
             const now = new Date();
             const limitDate = new Date();
@@ -175,9 +178,7 @@ export default function DashboardPage() {
                 const data = doc.data();
                 const itemDate = data.date?.toDate ? data.date.toDate() : new Date(data.date);
                 const val = Number(data.amount) || 0;
-
                 if (data.type === 'income') totalInc += val; else totalExp += val;
-
                 if (itemDate >= limitDate) {
                     if (data.type === 'income') periodInc += val; else periodExp += val;
                     const dateKey = itemDate.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
@@ -191,7 +192,6 @@ export default function DashboardPage() {
             setStats(prev => ({ ...prev, periodIncome: periodInc, periodExpense: periodExp, netBalance: totalInc - totalExp }));
             setChartData(Array.from(dailyMap.values()));
 
-            // Son 5 hareket
             const recentTrans = snapshot.docs.reverse().slice(0, 5).map(d => ({
                 id: d.id,
                 type: d.data().type === 'income' ? 'plus' : 'minus',
@@ -204,13 +204,9 @@ export default function DashboardPage() {
             setLoading(false);
         });
 
-        // 2. İŞ DİNLEYİCİSİ (Şube Filtreli)
         let qJobs;
         if (branchId) {
-            qJobs = query(
-                collection(db, userPath, 'jobs'),
-                where('branchId', '==', branchId)
-            );
+            qJobs = query(collection(db, userPath, 'jobs'), where('branchId', '==', branchId));
         } else {
             qJobs = query(collection(db, userPath, 'jobs'));
         }
@@ -221,7 +217,6 @@ export default function DashboardPage() {
             setStats(prev => ({ ...prev, activeWork: pending, completedWork: completed }));
         });
 
-        // 3. DUYURU DİNLEYİCİSİ (Sadece İşletmeler İçin - Şubeden Bağımsız)
         let unsubAnnounce = () => { };
         if (profileData.accountType !== 'individual') {
             const qAnnounce = query(collection(db, userPath, 'announcements'), orderBy('createdAt', 'desc'));
@@ -233,46 +228,63 @@ export default function DashboardPage() {
         return { unsubTrans, unsubJobs, unsubAnnounce };
     };
 
-    // Duyuru Ekleme (Sadece Patronlar)
     const handlePostAnnouncement = async () => {
         if (!newAnnouncement.trim()) return;
         try {
             const targetUid = (userData.role === 'staff' || userData.role === 'technician') && userData.ownerId ? userData.ownerId : user.uid;
             const userPath = `artifacts/servis-360-live/users/${targetUid}`;
-
             await addDoc(collection(db, userPath, 'announcements'), {
                 text: newAnnouncement,
                 createdAt: serverTimestamp(),
                 author: userData.fullName || 'Yönetici'
             });
             setNewAnnouncement('');
-        } catch (error) {
-            console.error("Duyuru eklenemedi:", error);
-            alert("Yetkiniz yok veya bir hata oluştu.");
-        }
+        } catch (error) { console.error(error); alert("Hata oluştu."); }
     };
 
-    // Duyuru Silme
     const handleDeleteAnnouncement = async (id: string) => {
-        if (!confirm("Duyuruyu silmek istiyor musunuz?")) return;
+        if (!confirm("Silinsin mi?")) return;
         try {
             const targetUid = (userData.role === 'staff' || userData.role === 'technician') && userData.ownerId ? userData.ownerId : user.uid;
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'announcements', id));
-        } catch (error) {
-            console.error(error);
-        }
+        } catch (error) { console.error(error); }
     };
 
     if (!user || !userData) return null;
 
     const isIndividual = userData.accountType === 'individual';
     const isManager = ['corporate', 'esnaf', 'business', 'admin'].includes(userData.role) || ['corporate', 'esnaf', 'business'].includes(userData.accountType);
-
-    // Finans Gizleme Mantığı
     const hideFinance = ['technician', 'technical', 'staff', 'sales', 'personnel', 'employee'].includes(userData.role);
+
+    // 🔥 GLOBAL DUYURU RENGİ VE İKONU BELİRLEME
+    const getBroadcastStyle = () => {
+        switch (systemBroadcast?.type) {
+            case 'error': return { bg: 'bg-red-600', border: 'border-red-700', icon: AlertOctagon, title: 'KRİTİK SİSTEM UYARISI' };
+            case 'warning': return { bg: 'bg-yellow-500', border: 'border-yellow-600', icon: AlertTriangle, title: 'DİKKAT' };
+            default: return { bg: 'bg-blue-600', border: 'border-blue-700', icon: Info, title: 'BİLGİLENDİRME' };
+        }
+    };
+    const bStyle = getBroadcastStyle();
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-24">
+
+            {/* 🔥 GLOBAL DUYURU ALANI (SADECE AKTİFSE GÖRÜNÜR) */}
+            {systemBroadcast && systemBroadcast.isActive && (
+                <div className={`${bStyle.bg} border-b-4 ${bStyle.border} text-white p-4 rounded-xl shadow-lg shadow-black/10 flex items-start gap-4 relative overflow-hidden`}>
+                    <div className="absolute -right-4 -top-4 opacity-20 rotate-12">
+                        <Megaphone className="w-24 h-24 text-white" />
+                    </div>
+                    <div className="bg-white/20 p-2 rounded-lg backdrop-blur-sm">
+                        <bStyle.icon className="w-6 h-6 text-white animate-pulse" />
+                    </div>
+                    <div className="relative z-10">
+                        <h4 className="font-black text-xs uppercase tracking-widest opacity-80 mb-1">{bStyle.title}</h4>
+                        <p className="font-bold text-sm md:text-base leading-snug">{systemBroadcast.message}</p>
+                    </div>
+                </div>
+            )}
+
             {/* BAŞLIK VE FİLTRE */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div>
@@ -294,14 +306,14 @@ export default function DashboardPage() {
                 )}
             </div>
 
-            {/* DUYURU PANOSU */}
+            {/* ŞİRKET İÇİ DUYURU PANOSU (Sadece Patronlar ve Personel) */}
             {!isIndividual && (
                 <div className="bg-gradient-to-r from-blue-900 to-slate-900 rounded-2xl p-6 text-white border border-blue-800 shadow-lg relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-10"><Megaphone className="w-24 h-24" /></div>
 
                     <div className="relative z-10">
                         <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
-                            <Megaphone className="w-5 h-5 text-yellow-400 animate-pulse" /> Duyuru Panosu
+                            <Megaphone className="w-5 h-5 text-yellow-400" /> Şirket Duyuru Panosu
                         </h3>
 
                         {isManager && (
@@ -323,7 +335,7 @@ export default function DashboardPage() {
 
                         <div className="space-y-3 max-h-40 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/20">
                             {announcements.length === 0 ? (
-                                <p className="text-white/50 text-xs italic">Henüz aktif bir duyuru yok.</p>
+                                <p className="text-white/50 text-xs italic">Henüz aktif bir şirket duyurusu yok.</p>
                             ) : (
                                 announcements.map((ann) => (
                                     <div key={ann.id} className="bg-white/10 p-3 rounded-xl border border-white/5 flex justify-between items-start group">
@@ -348,7 +360,6 @@ export default function DashboardPage() {
 
             {/* KARTLAR */}
             <div className={`grid grid-cols-1 ${hideFinance ? 'md:grid-cols-1' : 'min-[480px]:grid-cols-2 lg:grid-cols-4'} gap-4`}>
-
                 {!hideFinance && (
                     <>
                         <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
@@ -388,7 +399,6 @@ export default function DashboardPage() {
 
             {/* GRAFİK VE AKTİVİTE */}
             <div className={`grid grid-cols-1 ${hideFinance ? 'lg:grid-cols-1' : 'lg:grid-cols-3'} gap-6`}>
-
                 {!hideFinance && (
                     <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                         <h3 className="text-base font-bold mb-6 flex items-center gap-2 text-slate-900 dark:text-white">
@@ -433,8 +443,7 @@ export default function DashboardPage() {
                         ) : (
                             activities.map((item, idx) => (
                                 <div key={idx} className="flex gap-3 group">
-                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.type === 'plus' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
-                                        }`}>
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.type === 'plus' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                                         {item.type === 'plus' ? <ArrowDownRight className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
                                     </div>
                                     <div className="min-w-0 flex-1">
@@ -450,11 +459,8 @@ export default function DashboardPage() {
                                         <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
                                             {item.subtitle}
                                         </p>
-
                                         {item.amount > 0 && (
-                                            <p className={`text-xs font-bold mt-1 ${item.type === 'expense' ? 'text-red-600' :
-                                                item.type === 'payment' ? 'text-green-600' : 'text-blue-600'
-                                                }`}>
+                                            <p className={`text-xs font-bold mt-1 ${item.type === 'expense' ? 'text-red-600' : item.type === 'payment' ? 'text-green-600' : 'text-blue-600'}`}>
                                                 {item.type === 'expense' ? '-' : '+'} {item.amount.toLocaleString()} ₺
                                             </p>
                                         )}
@@ -464,7 +470,6 @@ export default function DashboardPage() {
                         )}
                     </div>
                 </div>
-
             </div>
         </div>
     );
