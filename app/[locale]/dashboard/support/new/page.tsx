@@ -1,4 +1,4 @@
-﻿import { getDictionary } from '../../../../lib/dictionary';
+﻿import { getDictionary } from '../../../../../lib/dictionary';
 import NewTicketView from './view';
 
 export default async function NewTicketPage({
