@@ -266,7 +266,7 @@ export default function FinanceView({ dict }: { dict: any }) {
                                     return (
                                         <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                             <td className="p-4 font-medium text-slate-900 dark:text-white">
-                                                {dateObj.toLocaleDateString(currency.locale)}
+                                                {dateObj.toLocaleDateString(currentLocale)}
                                                 {branches.length > 0 && <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1"><Store className="w-3 h-3" /> {t.branchName || 'Merkez'}</div>}
                                             </td>
                                             <td className="p-4"><span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${t.type === 'income' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{t.relatedJobId && <Wrench className="w-3 h-3" />}{t.category}</span></td>
