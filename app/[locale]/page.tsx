@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase'; // Firebase bağlantısı
+import { db } from '../../lib/firebase'; // Firebase bağlantısı
 import {
     CheckCircle2,
     ArrowRight,

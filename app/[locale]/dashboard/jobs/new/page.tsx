@@ -8,4 +8,4 @@ export default async function NewJobPage({
 }) {
     const dict = await getDictionary(locale);
     return <NewJobView dict={dict} />;
-} }
+} 
