@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { formatMoney, getCurrencySettings } from '../../../../../lib/format';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../../../../lib/firebase';
+import { auth, db } from '../../../../../lib/firebase';
 import {
     Save,
     Plus,

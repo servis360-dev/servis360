@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, limit, doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../../lib/firebase';
+import { auth, db } from '../../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
     Save,
@@ -17,7 +17,7 @@ import {
     Store
 } from 'lucide-react';
 import Link from 'next/link';
-import { useBranch } from '../../../../components/providers/branch-context';
+import { useBranch } from '../../../../../components/providers/branch-context';
 
 export default function NewJobView({ dict }: { dict: any }) {
     const router = useRouter();
