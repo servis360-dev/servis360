@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../../lib/firebase';
+import { auth, db } from '../../../../../lib/firebase';
 import { useRouter } from 'next/navigation';
 import {
     ArrowLeft,
@@ -17,8 +17,8 @@ import {
     CreditCard
 } from 'lucide-react';
 import Link from 'next/link';
-import { useBranch } from '../../../../components/providers/branch-context';
-import { formatMoney, getCurrencySettings } from '../../../../lib/format';
+import { useBranch } from '../../../../../components/providers/branch-context';
+import { formatMoney, getCurrencySettings } from '../../../../../lib/format';
 
 export default function JobDetailView({ dict, id, locale }: { dict: any, id: string, locale: string }) {
     const [job, setJob] = useState<any>(null);

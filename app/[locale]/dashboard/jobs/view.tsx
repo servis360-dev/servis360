@@ -18,7 +18,7 @@ import {
     writeBatch,
     getDocs
 } from 'firebase/firestore';
-import { auth, db } from '../../../lib/firebase';
+import { auth, db } from '../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
     Briefcase,
