@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../../lib/firebase';
+import { auth, db } from '../../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ArrowLeft, Send, CheckCircle2, Lock, User, ShieldAlert } from 'lucide-react';
 import Link from 'next/link';

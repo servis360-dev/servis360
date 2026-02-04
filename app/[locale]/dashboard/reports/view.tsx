@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { collection, query, getDocs, where, orderBy, doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../lib/firebase';
-import { useBranch } from '../../../components/providers/branch-context';
+import { auth, db } from '../../../../lib/firebase';
+import { useBranch } from '../../../../components/providers/branch-context';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
@@ -11,7 +11,7 @@ import {
     TrendingUp, TrendingDown, Wallet, Calendar, PieChart as PieIcon, BarChart3, Loader2, Building2
 } from 'lucide-react';
 import { useParams } from 'next/navigation';
-import { getCurrencySettings, formatMoney } from '../../../lib/format';
+import { getCurrencySettings, formatMoney } from '../../../../lib/format';
 
 export default function ReportsView({ dict }: { dict: any }) {
     const [loading, setLoading] = useState(true);

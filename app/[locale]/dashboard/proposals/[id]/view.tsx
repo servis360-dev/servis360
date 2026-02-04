@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../../lib/firebase';
+import { auth, db } from '../../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
     Printer,
@@ -17,7 +17,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { formatMoney, getCurrencySettings } from '../../../../lib/format';
+import { formatMoney, getCurrencySettings } from '../../../../../lib/format';
 
 export default function ProposalView({ dict, id, locale }: { dict: any, id: string, locale: string }) {
     const [proposal, setProposal] = useState<any>(null);

@@ -16,7 +16,7 @@ import {
     getDoc,
     where
 } from 'firebase/firestore';
-import { auth, db } from '../../../lib/firebase';
+import { auth, db } from '../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
     Package,
@@ -33,7 +33,7 @@ import {
     Briefcase,
     Store
 } from 'lucide-react';
-import { useBranch } from '../../../components/providers/branch-context';
+import { useBranch } from '../../../../components/providers/branch-context';
 
 export default function StockView({ dict }: { dict: any }) {
     const [products, setProducts] = useState<any[]>([]);

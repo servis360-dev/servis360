@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { formatMoney, getCurrencySettings } from '../../../lib/format';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '../../lib/firebase';
+import { auth, db } from '../../../lib/firebase';
 import {
     collection,
     query,
@@ -27,7 +27,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import Link from 'next/link';
-import { useBranch } from '../../components/providers/branch-context';
+import { useBranch } from '../../../components/providers/branch-context';
 
 // 🔥 DİKKAT: Buraya 'dict' (sözlük) verisi dışarıdan geliyor.
 export default function DashboardView({ dict }: { dict: any }) {

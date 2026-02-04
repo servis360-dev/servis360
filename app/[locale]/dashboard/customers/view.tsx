@@ -33,7 +33,7 @@ import {
     Trash2,
     Store
 } from 'lucide-react';
-import { useBranch } from '../../../components/providers/branch-context';
+import { useBranch } from '../../../../components/providers/branch-context';
 
 export default function CustomersView({ dict }: { dict: any }) {
     const [allContacts, setAllContacts] = useState<any[]>([]);

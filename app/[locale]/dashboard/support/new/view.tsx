@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { addDoc, collection, serverTimestamp, doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../../lib/firebase';
+import { auth, db } from '../../../../../lib/firebase';
 import { ArrowLeft, Send, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
