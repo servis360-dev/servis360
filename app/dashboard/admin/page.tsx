@@ -27,15 +27,14 @@ import {
     ShieldAlert, Search, Trash2, Users, Save,
     LayoutDashboard, Megaphone, BellRing, Wallet,
     BadgeCheck, X, Building2, Store, User,
-    Mail, Calendar, Eye, Phone, ChevronRight, ChevronDown, Plus, Briefcase, Activity, FileText
+    Mail, Calendar, Eye, Phone, ChevronRight, ChevronDown, Plus, Briefcase, Activity, FileText, Filter
 } from 'lucide-react';
 
 export default function AdminPage() {
     // --- STATE YÖNETİMİ ---
-    const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'users', 'broadcast', 'logs'
+    const [activeTab, setActiveTab] = useState('dashboard');
     const [users, setUsers] = useState<any[]>([]);
-    const [requests, setRequests] = useState<any[]>([]); // Manuel ödeme talepleri (hala varsa)
-    const [logs, setLogs] = useState<any[]>([]); // Sistem logları
+    const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     // İstatistikler
@@ -45,17 +44,19 @@ export default function AdminPage() {
         expiredUsers: 0,
         corporateCount: 0,
         businessCount: 0,
-        individualCount: 0
+        individualCount: 0,
+        staffCount: 0 // Yeni: Personel Sayısı
     });
 
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [filterType, setFilterType] = useState('all'); // all, company, staff
 
     // Duyuru Sistemi
     const [broadcast, setBroadcast] = useState({
         message: '',
         isActive: false,
-        type: 'info' // info, warning, error
+        type: 'info'
     });
 
     // Personel Görüntüleme
@@ -72,13 +73,19 @@ export default function AdminPage() {
     const [userProfileData, setUserProfileData] = useState<any>(null);
 
     // --- YARDIMCI: Personel Rolleri ---
-    const staffRoles = ['staff', 'personnel', 'employee', 'technical', 'technician', 'sales', 'accountant'];
+    // Bu rollerden biri varsa o kişi PERSONEL'dir.
+    const staffRoles = ['staff', 'personnel', 'employee', 'technical', 'technician', 'sales', 'accountant', 'satis', 'muhasebe', 'teknik'];
+
+    const isStaff = (u: any) => {
+        if (!u?.role) return false;
+        return staffRoles.includes(u.role.toLowerCase());
+    };
 
     const isBusinessOwner = (u: any) => {
         if (!u) return false;
-        const isCompanyType = ['corporate', 'business', 'esnaf', 'tradesman', 'company'].includes(u.accountType);
-        const isStaffRole = staffRoles.includes(u.role);
-        return isCompanyType && !isStaffRole;
+        // Eğer personelse işletme sahibi DEĞİLDİR.
+        if (isStaff(u)) return false;
+        return ['corporate', 'company', 'enterprise', 'business', 'esnaf', 'tradesman'].includes(u.accountType);
     };
 
     // --- VERİ ÇEKME ---
@@ -87,7 +94,7 @@ export default function AdminPage() {
         if (!user) return;
         setCurrentUser(user);
 
-        // 1. Duyuru Ayarlarını Çek
+        // 1. Duyuru
         const fetchBroadcast = async () => {
             const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
             const snap = await getDoc(docRef);
@@ -101,10 +108,15 @@ export default function AdminPage() {
             const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             setUsers(userList);
 
-            // İstatistik Hesapla
+            // İstatistik Hesapla (Personelleri Şirketlerden Ayırarak)
             const active = userList.filter((u: any) => u.status === 'active').length;
-            const corporate = userList.filter((u: any) => ['corporate', 'company', 'enterprise'].includes(u.accountType)).length;
-            const business = userList.filter((u: any) => ['esnaf', 'business', 'tradesman'].includes(u.accountType)).length;
+
+            const staff = userList.filter((u: any) => isStaff(u)).length;
+
+            // Şirket sayılarını hesaplarken personelleri hariç tutuyoruz (!isStaff)
+            const corporate = userList.filter((u: any) => ['corporate', 'company', 'enterprise'].includes(u.accountType) && !isStaff(u)).length;
+            const business = userList.filter((u: any) => ['esnaf', 'business', 'tradesman'].includes(u.accountType) && !isStaff(u)).length;
+            const individual = userList.filter((u: any) => (!u.accountType || u.accountType === 'individual') && !isStaff(u)).length;
 
             setStats(prev => ({
                 ...prev,
@@ -112,7 +124,8 @@ export default function AdminPage() {
                 expiredUsers: userList.length - active,
                 corporateCount: corporate,
                 businessCount: business,
-                individualCount: userList.length - (corporate + business)
+                individualCount: individual,
+                staffCount: staff
             }));
             setLoading(false);
         });
@@ -124,7 +137,7 @@ export default function AdminPage() {
             setStats(prev => ({ ...prev, totalRevenue: total }));
         });
 
-        // 4. Son İşlem Logları (Son 20)
+        // 4. Loglar
         const unsubLogs = onSnapshot(query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_logs'), orderBy('createdAt', 'desc'), limit(20)), (snapshot) => {
             setLogs(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
         });
@@ -132,7 +145,7 @@ export default function AdminPage() {
         return () => { unsubUsers(); unsubIncome(); unsubLogs(); };
     }, []);
 
-    // Kullanıcı Detay Verisi
+    // Kullanıcı Detay
     useEffect(() => {
         if (viewUser) {
             const fetchProfile = async () => {
@@ -148,27 +161,15 @@ export default function AdminPage() {
     }, [viewUser]);
 
     // --- FONKSİYONLAR ---
-
-    // 1. Log Kaydetme Fonksiyonu
     const logAction = async (action: string, details: string) => {
         await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_logs'), {
-            action,
-            details,
-            adminEmail: currentUser?.email || 'Unknown',
-            createdAt: serverTimestamp()
+            action, details, adminEmail: currentUser?.email || 'Unknown', createdAt: serverTimestamp()
         });
     };
 
-    // 2. Firma Personeli Çek
     const toggleCompanyStaff = async (companyId: string) => {
-        if (expandedCompanyId === companyId) {
-            setExpandedCompanyId(null);
-            setCompanyStaff([]);
-            return;
-        }
-        setExpandedCompanyId(companyId);
-        setLoadingStaff(true);
-        setCompanyStaff([]);
+        if (expandedCompanyId === companyId) { setExpandedCompanyId(null); setCompanyStaff([]); return; }
+        setExpandedCompanyId(companyId); setLoadingStaff(true); setCompanyStaff([]);
         try {
             const staffRef = collection(db, 'artifacts', 'servis-360-live', 'users', companyId, 'staff');
             const staffSnap = await getDocs(staffRef);
@@ -176,28 +177,19 @@ export default function AdminPage() {
         } catch (error) { console.error(error); } finally { setLoadingStaff(false); }
     };
 
-    // 3. Duyuru Kaydet
     const saveBroadcast = async () => {
         try {
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast'), broadcast);
-            await logAction('BROADCAST_UPDATE', `Duyuru güncellendi: ${broadcast.message}`);
-            alert("✅ Duyuru yayınlandı/güncellendi!");
-        } catch (error) { alert("Hata oluştu"); }
+            await logAction('BROADCAST_UPDATE', `Duyuru: ${broadcast.message}`);
+            alert("✅ Duyuru güncellendi!");
+        } catch (error) { alert("Hata"); }
     };
 
-    // 4. Manuel İşlem & Satış
     const processTransaction = async (userId: string, userName: string, amount: number, months: number, description: string, refCode: string) => {
         const batchDate = serverTimestamp();
-        // Gelir Kaydı
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'saas_income'), {
-            amount: Number(amount), userId, userName, description, type: 'income', refCode, createdAt: batchDate
-        });
-        // Kullanıcı Gider Kaydı
-        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', userId, 'finance'), {
-            amount: Number(amount), type: 'expense', category: 'Lisans', title: 'Servis360', description, date: batchDate, createdAt: batchDate
-        });
+        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'saas_income'), { amount: Number(amount), userId, userName, description, type: 'income', refCode, createdAt: batchDate });
+        await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', userId, 'finance'), { amount: Number(amount), type: 'expense', category: 'Lisans', title: 'Servis360', description, date: batchDate, createdAt: batchDate });
 
-        // Süre Uzatma
         const userProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile');
         const userProfileSnap = await getDoc(userProfileRef);
         let currentEndDate = new Date();
@@ -210,8 +202,7 @@ export default function AdminPage() {
 
         await updateDoc(userProfileRef, { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
         await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
-
-        await logAction('MANUAL_SALE', `${userName} kullanıcısına ${amount}TL tutarında manuel satış yapıldı.`);
+        await logAction('MANUAL_SALE', `${userName} -> ${amount}TL`);
     };
 
     const handleManualSale = async () => {
@@ -221,18 +212,13 @@ export default function AdminPage() {
         alert("Satış eklendi.");
     };
 
-    // Limit Hesaplayıcılar (Admin Görüntüleme için)
     const calculateLimits = (user: any, profile: any) => {
         let baseBranch = 1; let baseStaff = 1;
         if (['corporate', 'company', 'enterprise'].includes(user.accountType)) { baseBranch = 5; baseStaff = 50; }
         else if (['esnaf', 'business', 'tradesman'].includes(user.accountType)) { baseBranch = 1; baseStaff = 5; }
-
         const extraBranch = profile?.customBranchLimit || 0;
         const extraStaff = profile?.customStaffLimit || 0;
-        return {
-            branch: { base: baseBranch, extra: extraBranch, total: baseBranch + extraBranch },
-            staff: { base: baseStaff, extra: extraStaff, total: baseStaff + extraStaff }
-        };
+        return { branch: { base: baseBranch, extra: extraBranch, total: baseBranch + extraBranch }, staff: { base: baseStaff, extra: extraStaff, total: baseStaff + extraStaff } };
     };
 
     const handleBuyLimit = async (type: 'branch' | 'staff') => {
@@ -241,29 +227,23 @@ export default function AdminPage() {
         const limits = calculateLimits(viewUser, userProfileData);
         const currentExtra = type === 'branch' ? limits.branch.extra : limits.staff.extra;
         const newExtra = currentExtra + 1;
-
-        if (!confirm(`${viewUser.fullName} için Ek ${type === 'branch' ? 'Şube' : 'Personel'} Hakkı tanımlanacak (+1).\nÜcret: ${price} TL`)) return;
-
+        if (!confirm(`Ek ${type === 'branch' ? 'Şube' : 'Personel'} Hakkı (+1) ?\nÜcret: ${price} TL`)) return;
         try {
             const field = type === 'branch' ? 'customBranchLimit' : 'customStaffLimit';
-            const logMsg = type === 'branch' ? 'Ek Şube (+1)' : 'Ek Personel (+1)';
-
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { [field]: newExtra });
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { [field]: newExtra });
-
-            await processTransaction(viewUser.id, viewUser.fullName, price, 0, `${logMsg} Satın Alımı`, `${type.toUpperCase()}_UPGRADE`);
-
+            await processTransaction(viewUser.id, viewUser.fullName, price, 0, `Ek ${type} Satışı`, `${type.toUpperCase()}_UPGRADE`);
             setUserProfileData({ ...userProfileData, [field]: newExtra });
             alert("İşlem Başarılı!");
         } catch (err) { alert("Hata"); }
     };
 
     const deleteUser = async (userId: string) => {
-        if (confirm("Kullanıcı silinsin mi? (DİKKAT: Bu işlem geri alınamaz)")) {
+        if (confirm("Kullanıcı silinsin mi?")) {
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId));
             await deleteDoc(doc(db, 'artifacts', 'servis-360-live', 'users', userId, 'users', 'profile'));
-            await logAction('DELETE_USER', `${userId} ID'li kullanıcı silindi.`);
-            alert("Kullanıcı silindi.");
+            await logAction('DELETE_USER', `ID: ${userId}`);
+            alert("Silindi.");
         }
     };
 
@@ -273,11 +253,30 @@ export default function AdminPage() {
         return new Date(timestamp).toLocaleDateString('tr-TR');
     };
 
-    const filteredUsers = users.filter(u =>
-        u.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.email?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredUsers = users.filter(u => {
+        const matchesSearch = u.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            u.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            u.email?.toLowerCase().includes(searchTerm.toLowerCase());
+
+        if (!matchesSearch) return false;
+
+        if (filterType === 'company') return !isStaff(u);
+        if (filterType === 'staff') return isStaff(u);
+
+        return true;
+    });
+
+    const getUserBadge = (u: any) => {
+        if (isStaff(u)) {
+            return <span className="text-slate-300 bg-slate-800 px-2 py-1 rounded font-bold flex items-center gap-1 w-fit border border-slate-700"><Briefcase className="w-3 h-3" /> Personel</span>;
+        } else if (['corporate', 'company', 'enterprise'].includes(u.accountType)) {
+            return <span className="text-purple-400 bg-purple-900/20 px-2 py-1 rounded font-bold w-fit">Kurumsal</span>;
+        } else if (['business', 'esnaf', 'tradesman'].includes(u.accountType)) {
+            return <span className="text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded font-bold w-fit">Esnaf</span>;
+        } else {
+            return <span className="text-blue-400 bg-blue-900/20 px-2 py-1 rounded font-bold w-fit">Bireysel</span>;
+        }
+    };
 
     return (
         <RoleGuard allowedRoles={['super_admin']}>
@@ -289,12 +288,12 @@ export default function AdminPage() {
                         <ShieldAlert className="w-8 h-8 text-blue-600" />
                         <div>
                             <h1 className="text-xl font-black text-white tracking-tight">SERVİS360 KOMUTA MERKEZİ</h1>
-                            <p className="text-xs text-slate-500 font-mono">SİSTEM_VERSİYONU_V3.0</p>
+                            <p className="text-xs text-slate-500 font-mono">SİSTEM_VERSİYONU_V3.1 (STAFF_FIX)</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-6">
                         <div className="text-right">
-                            <span className="text-[10px] text-slate-500 uppercase font-bold">Toplam Ciro</span>
+                            <span className="text-[10px] text-slate-500 uppercase font-bold">Ciro</span>
                             <p className="text-2xl font-black text-green-400 font-mono">{stats.totalRevenue.toLocaleString('tr-TR')} ₺</p>
                         </div>
                         <div className="w-px h-8 bg-slate-800"></div>
@@ -305,85 +304,57 @@ export default function AdminPage() {
                     </div>
                 </div>
 
-                {/* --- NAVİGASYON (TABS) --- */}
+                {/* --- NAVİGASYON --- */}
                 <div className="border-b border-slate-800 bg-slate-900/50 px-6">
                     <div className="flex gap-6 overflow-x-auto">
-                        <button onClick={() => setActiveTab('dashboard')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}>
-                            <LayoutDashboard className="w-4 h-4" /> Özet & Analiz
-                        </button>
-                        <button onClick={() => setActiveTab('users')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'users' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}>
-                            <Users className="w-4 h-4" /> Kullanıcılar
-                        </button>
-                        <button onClick={() => setActiveTab('broadcast')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'broadcast' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}>
-                            <Megaphone className="w-4 h-4" /> Duyurular
-                        </button>
-                        <button onClick={() => setActiveTab('logs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'logs' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}>
-                            <Activity className="w-4 h-4" /> Sistem Logları
-                        </button>
+                        <button onClick={() => setActiveTab('dashboard')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><LayoutDashboard className="w-4 h-4" /> Özet</button>
+                        <button onClick={() => setActiveTab('users')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'users' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Users className="w-4 h-4" /> Kullanıcılar</button>
+                        <button onClick={() => setActiveTab('broadcast')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'broadcast' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Megaphone className="w-4 h-4" /> Duyurular</button>
+                        <button onClick={() => setActiveTab('logs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'logs' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Activity className="w-4 h-4" /> Loglar</button>
                     </div>
                 </div>
 
                 <div className="p-6 max-w-7xl mx-auto">
 
-                    {/* --- TAB 1: DASHBOARD (ÖZET) --- */}
+                    {/* --- TAB: DASHBOARD --- */}
                     {activeTab === 'dashboard' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-in fade-in">
-                            {/* KARTLAR */}
-                            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="p-2 bg-blue-500/10 rounded-lg"><User className="w-6 h-6 text-blue-500" /></div>
-                                    <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-1 rounded">BİREYSEL</span>
-                                </div>
-                                <h3 className="text-3xl font-black text-white">{stats.individualCount}</h3>
-                                <p className="text-xs text-slate-500 mt-1">Tekil kullanıcılar</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 animate-in fade-in">
+                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                                <div className="flex justify-between mb-2"><User className="text-blue-500" /><span className="text-[10px] bg-slate-800 px-2 rounded">BİREYSEL</span></div>
+                                <h3 className="text-2xl font-black text-white">{stats.individualCount}</h3>
                             </div>
-                            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="p-2 bg-yellow-500/10 rounded-lg"><Store className="w-6 h-6 text-yellow-500" /></div>
-                                    <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-1 rounded">ESNAF</span>
-                                </div>
-                                <h3 className="text-3xl font-black text-white">{stats.businessCount}</h3>
-                                <p className="text-xs text-slate-500 mt-1">Küçük işletmeler</p>
+                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                                <div className="flex justify-between mb-2"><Store className="text-yellow-500" /><span className="text-[10px] bg-slate-800 px-2 rounded">ESNAF</span></div>
+                                <h3 className="text-2xl font-black text-white">{stats.businessCount}</h3>
                             </div>
-                            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="p-2 bg-purple-500/10 rounded-lg"><Building2 className="w-6 h-6 text-purple-500" /></div>
-                                    <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-1 rounded">KURUMSAL</span>
-                                </div>
-                                <h3 className="text-3xl font-black text-white">{stats.corporateCount}</h3>
-                                <p className="text-xs text-slate-500 mt-1">Büyük firmalar</p>
+                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                                <div className="flex justify-between mb-2"><Building2 className="text-purple-500" /><span className="text-[10px] bg-slate-800 px-2 rounded">KURUMSAL</span></div>
+                                <h3 className="text-2xl font-black text-white">{stats.corporateCount}</h3>
                             </div>
-                            <div className="bg-slate-900 border border-slate-800 p-5 rounded-xl">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="p-2 bg-red-500/10 rounded-lg"><X className="w-6 h-6 text-red-500" /></div>
-                                    <span className="text-xs font-bold text-slate-500 bg-slate-800 px-2 py-1 rounded">PASİF</span>
-                                </div>
-                                <h3 className="text-3xl font-black text-white">{stats.expiredUsers}</h3>
-                                <p className="text-xs text-slate-500 mt-1">Süresi dolanlar</p>
+                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl bg-slate-800/30">
+                                <div className="flex justify-between mb-2"><Briefcase className="text-slate-400" /><span className="text-[10px] bg-slate-800 px-2 rounded">PERSONEL</span></div>
+                                <h3 className="text-2xl font-black text-slate-300">{stats.staffCount}</h3>
+                                <p className="text-[10px] text-slate-500">Alt Kullanıcılar</p>
                             </div>
-
-                            {/* Görsel Dağılım Çubuğu */}
-                            <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-slate-900 border border-slate-800 p-6 rounded-xl mt-4">
-                                <h3 className="text-sm font-bold text-white mb-4">PAKET DAĞILIMI</h3>
-                                <div className="flex h-6 w-full rounded-full overflow-hidden bg-slate-800">
-                                    <div style={{ width: `${(stats.corporateCount / users.length) * 100}%` }} className="bg-purple-600 h-full"></div>
-                                    <div style={{ width: `${(stats.businessCount / users.length) * 100}%` }} className="bg-yellow-500 h-full"></div>
-                                    <div style={{ width: `${(stats.individualCount / users.length) * 100}%` }} className="bg-blue-500 h-full"></div>
-                                </div>
-                                <div className="flex gap-6 mt-4 text-xs font-bold">
-                                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-purple-600"></div> Kurumsal %{Math.round((stats.corporateCount / users.length) * 100)}</div>
-                                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-500"></div> Esnaf %{Math.round((stats.businessCount / users.length) * 100)}</div>
-                                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500"></div> Bireysel %{Math.round((stats.individualCount / users.length) * 100)}</div>
-                                </div>
+                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                                <div className="flex justify-between mb-2"><X className="text-red-500" /><span className="text-[10px] bg-slate-800 px-2 rounded">PASİF</span></div>
+                                <h3 className="text-2xl font-black text-white">{stats.expiredUsers}</h3>
                             </div>
                         </div>
                     )}
 
-                    {/* --- TAB 2: KULLANICILAR (LİSTE) --- */}
+                    {/* --- TAB: USERS --- */}
                     {activeTab === 'users' && (
                         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden animate-in fade-in">
-                            <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-                                <h3 className="font-bold text-white">KULLANICI DİZİNİ</h3>
+                            <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="font-bold text-white">KULLANICI DİZİNİ</h3>
+                                    <div className="flex bg-black rounded p-1 ml-4 border border-slate-700">
+                                        <button onClick={() => setFilterType('all')} className={`px-3 py-1 text-xs font-bold rounded ${filterType === 'all' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Tümü</button>
+                                        <button onClick={() => setFilterType('company')} className={`px-3 py-1 text-xs font-bold rounded ${filterType === 'company' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Sadece Şirketler</button>
+                                        <button onClick={() => setFilterType('staff')} className={`px-3 py-1 text-xs font-bold rounded ${filterType === 'staff' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Sadece Personel</button>
+                                    </div>
+                                </div>
                                 <div className="relative">
                                     <Search className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
                                     <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Ara..." className="bg-black border border-slate-700 text-white text-sm p-2 pl-9 rounded w-64 focus:border-blue-500 outline-none" />
@@ -395,7 +366,7 @@ export default function AdminPage() {
                                         <tr>
                                             <th className="p-4 w-8"></th>
                                             <th className="p-4">Kullanıcı</th>
-                                            <th className="p-4">Paket</th>
+                                            <th className="p-4">Tip / Paket</th>
                                             <th className="p-4">Lisans</th>
                                             <th className="p-4">Durum</th>
                                             <th className="p-4 text-right">İşlem</th>
@@ -407,7 +378,7 @@ export default function AdminPage() {
                                                 <tr key={u.id} className="hover:bg-slate-800/50 transition-colors">
                                                     <td className="p-4">
                                                         {isBusinessOwner(u) && (
-                                                            <button onClick={() => toggleCompanyStaff(u.id)} className="p-1 hover:bg-slate-700 rounded">
+                                                            <button onClick={() => toggleCompanyStaff(u.id)} className="p-1 hover:bg-slate-700 rounded text-blue-500">
                                                                 {expandedCompanyId === u.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                                             </button>
                                                         )}
@@ -417,9 +388,7 @@ export default function AdminPage() {
                                                         <div className="text-[10px] text-slate-500">{u.companyName || u.email}</div>
                                                     </td>
                                                     <td className="p-4">
-                                                        {['corporate', 'company'].includes(u.accountType) ? <span className="text-purple-400 bg-purple-900/20 px-2 py-1 rounded font-bold">Kurumsal</span> :
-                                                            ['esnaf', 'business'].includes(u.accountType) ? <span className="text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded font-bold">Esnaf</span> :
-                                                                <span className="text-blue-400 bg-blue-900/20 px-2 py-1 rounded font-bold">Bireysel</span>}
+                                                        {getUserBadge(u)}
                                                     </td>
                                                     <td className="p-4">{u.licenseEndsAt ? formatDate(u.licenseEndsAt) : '-'}</td>
                                                     <td className="p-4">{u.status === 'active' ? <span className="text-green-500 font-bold">Aktif</span> : <span className="text-red-500 font-bold">Pasif</span>}</td>
@@ -430,16 +399,20 @@ export default function AdminPage() {
                                                     </td>
                                                 </tr>
                                                 {expandedCompanyId === u.id && (
-                                                    <tr className="bg-slate-900/50">
+                                                    <tr className="bg-slate-900/50 animate-in fade-in">
                                                         <td colSpan={6} className="p-4 pl-12 border-b border-slate-800">
                                                             <p className="text-xs font-bold text-slate-500 mb-2">FİRMA PERSONELİ</p>
                                                             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                                                                 {loadingStaff ? <span>Yükleniyor...</span> : companyStaff.map(s => (
-                                                                    <div key={s.id} className="bg-black border border-slate-700 p-2 rounded flex items-center justify-between">
-                                                                        <span className="text-white text-xs">{s.fullName}</span>
+                                                                    <div key={s.id} className="bg-black border border-slate-700 p-2 rounded flex items-center justify-between group hover:border-blue-500/50 transition-colors">
+                                                                        <div>
+                                                                            <div className="text-white text-xs font-bold">{s.fullName}</div>
+                                                                            <div className="text-[10px] text-slate-500">{s.role === 'technical' ? 'Tekniker' : s.role === 'sales' ? 'Satış' : 'Personel'}</div>
+                                                                        </div>
                                                                         <div className={`w-2 h-2 rounded-full ${s.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`}></div>
                                                                     </div>
                                                                 ))}
+                                                                {companyStaff.length === 0 && <span className="text-xs text-slate-600 italic">Personel yok.</span>}
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -452,69 +425,29 @@ export default function AdminPage() {
                         </div>
                     )}
 
-                    {/* --- TAB 3: BROADCAST (DUYURULAR) --- */}
+                    {/* --- TAB: BROADCAST --- */}
                     {activeTab === 'broadcast' && (
                         <div className="max-w-2xl mx-auto animate-in fade-in">
                             <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
-                                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Megaphone className="w-5 h-5 text-yellow-500" /> GLOBAL DUYURU SİSTEMİ</h3>
-                                <p className="text-sm text-slate-400 mb-6">Buraya yazdığınız mesaj, tüm kullanıcıların panelinde en üstte görünür.</p>
-
+                                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Megaphone className="w-5 h-5 text-yellow-500" /> GLOBAL DUYURU</h3>
                                 <div className="space-y-4">
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 block mb-1">Duyuru Mesajı</label>
-                                        <input
-                                            value={broadcast.message}
-                                            onChange={e => setBroadcast({ ...broadcast, message: e.target.value })}
-                                            className="w-full bg-black border border-slate-700 text-white p-3 rounded focus:border-yellow-500 outline-none"
-                                            placeholder="Örn: Bu gece 03:00'da bakım çalışması yapılacaktır."
-                                        />
-                                    </div>
+                                    <input value={broadcast.message} onChange={e => setBroadcast({ ...broadcast, message: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none" placeholder="Duyuru mesajı..." />
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 block mb-1">Mesaj Tipi</label>
-                                            <select
-                                                value={broadcast.type}
-                                                onChange={e => setBroadcast({ ...broadcast, type: e.target.value })}
-                                                className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none"
-                                            >
-                                                <option value="info">Mavi (Bilgi)</option>
-                                                <option value="warning">Sarı (Uyarı)</option>
-                                                <option value="error">Kırmızı (Kritik)</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 block mb-1">Durum</label>
-                                            <button
-                                                onClick={() => setBroadcast({ ...broadcast, isActive: !broadcast.isActive })}
-                                                className={`w-full p-3 rounded font-bold text-sm transition-colors ${broadcast.isActive ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400'}`}
-                                            >
-                                                {broadcast.isActive ? 'AKTİF (YAYINDA)' : 'PASİF (GİZLİ)'}
-                                            </button>
-                                        </div>
+                                        <select value={broadcast.type} onChange={e => setBroadcast({ ...broadcast, type: e.target.value })} className="bg-black border border-slate-700 text-white p-3 rounded outline-none"><option value="info">Mavi</option><option value="warning">Sarı</option><option value="error">Kırmızı</option></select>
+                                        <button onClick={() => setBroadcast({ ...broadcast, isActive: !broadcast.isActive })} className={`rounded font-bold text-sm ${broadcast.isActive ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400'}`}>{broadcast.isActive ? 'YAYINDA' : 'GİZLİ'}</button>
                                     </div>
-                                    <button onClick={saveBroadcast} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded mt-4 flex items-center justify-center gap-2">
-                                        <Save className="w-4 h-4" /> AYARLARI KAYDET
-                                    </button>
+                                    <button onClick={saveBroadcast} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded flex justify-center gap-2"><Save className="w-4 h-4" /> KAYDET</button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* --- TAB 4: LOGS (İŞLEM GEÇMİŞİ) --- */}
+                    {/* --- TAB: LOGS --- */}
                     {activeTab === 'logs' && (
                         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden animate-in fade-in">
-                            <div className="p-4 border-b border-slate-800">
-                                <h3 className="font-bold text-white flex items-center gap-2"><FileText className="w-4 h-4" /> SON SİSTEM LOGLARI (20)</h3>
-                            </div>
+                            <div className="p-4 border-b border-slate-800"><h3 className="font-bold text-white">SON SİSTEM LOGLARI</h3></div>
                             <table className="w-full text-left text-xs text-slate-400">
-                                <thead className="bg-slate-950 text-slate-500 uppercase">
-                                    <tr>
-                                        <th className="p-3">Zaman</th>
-                                        <th className="p-3">İşlem</th>
-                                        <th className="p-3">Detay</th>
-                                        <th className="p-3">Yapan</th>
-                                    </tr>
-                                </thead>
+                                <thead className="bg-slate-950 text-slate-500 uppercase"><tr><th className="p-3">Zaman</th><th className="p-3">İşlem</th><th className="p-3">Detay</th><th className="p-3">Yapan</th></tr></thead>
                                 <tbody className="divide-y divide-slate-800">
                                     {logs.map(log => (
                                         <tr key={log.id} className="hover:bg-slate-800/30">
@@ -524,17 +457,13 @@ export default function AdminPage() {
                                             <td className="p-3 text-slate-500">{log.adminEmail}</td>
                                         </tr>
                                     ))}
-                                    {logs.length === 0 && <tr><td colSpan={4} className="p-6 text-center italic">Henüz log kaydı yok.</td></tr>}
                                 </tbody>
                             </table>
                         </div>
                     )}
-
                 </div>
 
-                {/* --- MODALLAR (SATIŞ & DETAY) --- */}
-
-                {/* Manuel Satış Modalı */}
+                {/* MODALLAR AYNEN DEVAM EDİYOR... (Manuel Satış & Detay) */}
                 {showSaleModal && (
                     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
                         <div className="bg-slate-900 border border-yellow-600 p-6 rounded w-full max-w-sm shadow-2xl">
@@ -551,7 +480,6 @@ export default function AdminPage() {
                     </div>
                 )}
 
-                {/* Kullanıcı Detay Modalı */}
                 {viewUser && (
                     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4" onClick={() => setViewUser(null)}>
                         <div className="bg-slate-900 border border-slate-700 rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -560,43 +488,31 @@ export default function AdminPage() {
                                 <button onClick={() => setViewUser(null)}><X className="text-slate-500 hover:text-white" /></button>
                             </div>
                             <div className="p-6 space-y-6">
-                                {/* Üst Bilgiler */}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="bg-black/30 p-4 rounded border border-slate-800">
                                         <p className="text-xs text-slate-500 uppercase font-bold">PAKET</p>
-                                        <p className="text-white font-bold">{viewUser.accountType}</p>
+                                        <p className="text-white font-bold">{getUserBadge(viewUser)}</p>
                                     </div>
                                     <div className="bg-black/30 p-4 rounded border border-slate-800">
                                         <p className="text-xs text-slate-500 uppercase font-bold">LİSANS BİTİŞ</p>
                                         <p className="text-white font-bold font-mono">{formatDate(viewUser.licenseEndsAt)}</p>
                                     </div>
                                 </div>
-
-                                {/* Şube & Personel Yönetimi (Sadece İşletme Sahipleri İçin) */}
                                 {isBusinessOwner(viewUser) && userProfileData && (
                                     <div className="space-y-4">
                                         <div className="bg-slate-800/50 p-4 rounded border border-slate-700">
                                             <div className="flex justify-between items-center mb-2">
                                                 <span className="text-white font-bold flex gap-2"><Store className="w-4 h-4" /> Şube Hakkı</span>
-                                                <span className="text-green-400 font-bold text-lg">
-                                                    {calculateLimits(viewUser, userProfileData).branch.total}
-                                                </span>
+                                                <span className="text-green-400 font-bold text-lg">{calculateLimits(viewUser, userProfileData).branch.total}</span>
                                             </div>
-                                            <button onClick={() => handleBuyLimit('branch')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1">
-                                                <Plus className="w-3 h-3" /> Ek Şube Sat (800₺)
-                                            </button>
+                                            <button onClick={() => handleBuyLimit('branch')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Şube Sat (800₺)</button>
                                         </div>
-
                                         <div className="bg-slate-800/50 p-4 rounded border border-slate-700">
                                             <div className="flex justify-between items-center mb-2">
                                                 <span className="text-white font-bold flex gap-2"><Users className="w-4 h-4" /> Personel Hakkı</span>
-                                                <span className="text-green-400 font-bold text-lg">
-                                                    {calculateLimits(viewUser, userProfileData).staff.total}
-                                                </span>
+                                                <span className="text-green-400 font-bold text-lg">{calculateLimits(viewUser, userProfileData).staff.total}</span>
                                             </div>
-                                            <button onClick={() => handleBuyLimit('staff')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1">
-                                                <Plus className="w-3 h-3" /> Ek Personel Sat (800₺)
-                                            </button>
+                                            <button onClick={() => handleBuyLimit('staff')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Personel Sat (800₺)</button>
                                         </div>
                                     </div>
                                 )}
