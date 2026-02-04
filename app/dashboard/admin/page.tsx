@@ -5,7 +5,6 @@ import {
     collection,
     query,
     onSnapshot,
-    orderBy,
     doc,
     updateDoc,
     deleteDoc,
@@ -24,10 +23,9 @@ import RoleGuard from '../../../components/auth/role-guard';
 
 import {
     ShieldAlert, Search, Trash2, Users, Save,
-    CreditCard, Phone, BellRing, RefreshCw, Wallet,
-    BadgeCheck, X, TrendingUp, Building2, Store, User,
-    Mail, Calendar, Eye, Copy, CheckCircle2, ChevronRight, ChevronDown, UserPlus,
-    AlertTriangle, MoreVertical, Plus, Briefcase, MessageCircle
+    CreditCard, BellRing, Wallet,
+    BadgeCheck, X, Building2, Store, User,
+    Mail, Calendar, Eye, Phone, CheckCircle2, ChevronRight, ChevronDown, Plus, Briefcase, MessageCircle, AlertTriangle
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -63,7 +61,7 @@ export default function AdminPage() {
             branchCode: ''
         },
         contact: {
-            whatsapp: '' // 🔥 Yeni İletişim Alanı
+            whatsapp: ''
         },
         pricing: {
             individual: { monthly: 0, sixMonth: 0, yearly: 0 },
@@ -103,11 +101,11 @@ export default function AdminPage() {
                     const data = docSnap.data();
                     setSettings(prev => ({
                         bank: { ...prev.bank, ...data.bank },
-                        contact: { ...prev.contact, ...data.contact }, // 🔥 İletişim verisini çek
+                        contact: { ...prev.contact, ...data.contact },
                         pricing: {
-                            individual: { ...prev.pricing.individual, ...data.pricing?.individual },
-                            business: { ...prev.pricing.business, ...data.pricing?.business },
-                            corporate: { ...prev.pricing.corporate, ...data.pricing?.corporate },
+                            individual: { ...prev.pricing?.individual, ...data.pricing?.individual },
+                            business: { ...prev.pricing?.business, ...data.pricing?.business },
+                            corporate: { ...prev.pricing?.corporate, ...data.pricing?.corporate },
                         }
                     }));
                 }
@@ -258,23 +256,43 @@ export default function AdminPage() {
         await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', userId), { licenseEndsAt: Timestamp.fromDate(newEndDate), status: 'active' });
     };
 
+    // --- YENİ LİMİT HESAPLAYICI (Görüntüleme İçin) ---
+    const calculateLimits = (user: any, profile: any) => {
+        let baseBranch = 1;
+        let baseStaff = 1;
+
+        if (['corporate', 'company', 'enterprise'].includes(user.accountType)) {
+            baseBranch = 5;
+            baseStaff = 50;
+        } else if (['esnaf', 'business', 'tradesman'].includes(user.accountType)) {
+            baseBranch = 1;
+            baseStaff = 5;
+        }
+
+        const extraBranch = profile?.customBranchLimit || 0;
+        const extraStaff = profile?.customStaffLimit || 0;
+
+        return {
+            branch: { base: baseBranch, extra: extraBranch, total: baseBranch + extraBranch },
+            staff: { base: baseStaff, extra: extraStaff, total: baseStaff + extraStaff }
+        };
+    };
+
     const handleBuyBranch = async () => {
         if (!viewUser || !userProfileData) return;
         const price = 800;
 
-        const defaultLimit = (['corporate', 'company'].includes(viewUser.accountType) || viewUser.role === 'corporate') ? 5 : 1;
-        const currentCustom = userProfileData.customBranchLimit || 0;
-        const currentEffective = currentCustom > 0 ? currentCustom : defaultLimit;
+        const limits = calculateLimits(viewUser, userProfileData);
+        // Sadece ekstra limiti artırıyoruz
+        const newExtraLimit = limits.branch.extra + 1;
 
-        const newLimit = currentEffective + 1;
-
-        if (!confirm(`${viewUser.fullName} kullanıcısına 1 Ek Şube Hakkı tanımlanacak.\nÜcret: ${price} TL\nYeni Limit: ${newLimit}\nOnaylıyor musunuz?`)) return;
+        if (!confirm(`${viewUser.fullName} kullanıcısına 1 Ek Şube Hakkı tanımlanacak.\nÜcret: ${price} TL\nYeni Ekstra Hak: ${newExtraLimit}\nToplam Hak: ${limits.branch.base + newExtraLimit}\nOnaylıyor musunuz?`)) return;
 
         try {
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customBranchLimit: newLimit });
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customBranchLimit: newLimit });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customBranchLimit: newExtraLimit });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customBranchLimit: newExtraLimit });
             await processTransaction(viewUser.id, viewUser.fullName, price, 0, 'Ek Şube Hakkı Satın Alımı (+1)', 'BRANCH_UPGRADE');
-            setUserProfileData({ ...userProfileData, customBranchLimit: newLimit });
+            setUserProfileData({ ...userProfileData, customBranchLimit: newExtraLimit });
             alert("İşlem Başarılı! Şube hakkı artırıldı.");
         } catch (err) {
             console.error(err);
@@ -283,7 +301,7 @@ export default function AdminPage() {
     };
 
     const handleUpdateBranchLimit = async (val: number) => {
-        if (!confirm(`Şube limiti manuel olarak ${val} yapılacak. Emin misiniz?`)) return;
+        if (!confirm(`EKSTRA şube limiti manuel olarak ${val} yapılacak. (Paket hariç)\nEmin misiniz?`)) return;
         try {
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customBranchLimit: Number(val) });
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customBranchLimit: Number(val) });
@@ -299,21 +317,17 @@ export default function AdminPage() {
         if (!viewUser || !userProfileData) return;
         const price = 800;
 
-        const isEsnaf = ['esnaf', 'business', 'tradesman'].includes(viewUser.accountType);
-        const defaultLimit = isEsnaf ? 5 : 999;
+        const limits = calculateLimits(viewUser, userProfileData);
+        // Sadece ekstra limiti artırıyoruz
+        const newExtraLimit = limits.staff.extra + 1;
 
-        const currentCustom = userProfileData.customStaffLimit || 0;
-        const currentEffective = currentCustom > 0 ? currentCustom : defaultLimit;
-
-        const newLimit = currentEffective + 1;
-
-        if (!confirm(`${viewUser.fullName} kullanıcısına 1 Ek Personel Hakkı tanımlanacak.\nÜcret: ${price} TL\nYeni Limit: ${newLimit}\nOnaylıyor musunuz?`)) return;
+        if (!confirm(`${viewUser.fullName} kullanıcısına 1 Ek Personel Hakkı tanımlanacak.\nÜcret: ${price} TL\nYeni Ekstra Hak: ${newExtraLimit}\nToplam Hak: ${limits.staff.base + newExtraLimit}\nOnaylıyor musunuz?`)) return;
 
         try {
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customStaffLimit: newLimit });
-            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customStaffLimit: newLimit });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customStaffLimit: newExtraLimit });
+            await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customStaffLimit: newExtraLimit });
             await processTransaction(viewUser.id, viewUser.fullName, price, 0, 'Ek Personel Hakkı Satın Alımı (+1)', 'STAFF_UPGRADE');
-            setUserProfileData({ ...userProfileData, customStaffLimit: newLimit });
+            setUserProfileData({ ...userProfileData, customStaffLimit: newExtraLimit });
             alert("İşlem Başarılı! Personel limiti artırıldı.");
         } catch (err) {
             console.error(err);
@@ -322,7 +336,7 @@ export default function AdminPage() {
     };
 
     const handleUpdateStaffLimit = async (val: number) => {
-        if (!confirm(`Personel limiti manuel olarak ${val} yapılacak. Emin misiniz?`)) return;
+        if (!confirm(`EKSTRA personel limiti manuel olarak ${val} yapılacak. (Paket hariç)\nEmin misiniz?`)) return;
         try {
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'users', 'profile'), { customStaffLimit: Number(val) });
             await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory', viewUser.id), { customStaffLimit: Number(val) });
@@ -375,9 +389,9 @@ export default function AdminPage() {
     const getUserBadge = (u: any) => {
         if (staffRoles.includes(u.role)) {
             return <span className="text-slate-300 bg-slate-800 px-2 py-1 rounded font-bold flex items-center gap-1"><Briefcase className="w-3 h-3" /> Personel</span>;
-        } else if (['corporate', 'company'].includes(u.accountType)) {
+        } else if (['corporate', 'company', 'enterprise'].includes(u.accountType)) {
             return <span className="text-purple-400 bg-purple-900/20 px-2 py-1 rounded font-bold">Kurumsal</span>;
-        } else if (['business', 'esnaf'].includes(u.accountType)) {
+        } else if (['business', 'esnaf', 'tradesman'].includes(u.accountType)) {
             return <span className="text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded font-bold">Esnaf</span>;
         } else {
             return <span className="text-blue-400 bg-blue-900/20 px-2 py-1 rounded font-bold">Bireysel</span>;
@@ -513,86 +527,6 @@ export default function AdminPage() {
                     {users.length === 0 && !loading && (
                         <div className="p-8 text-center text-slate-500">Kullanıcı bulunamadı.</div>
                     )}
-
-                    {/* MOBİL KART GÖRÜNÜMÜ */}
-                    <div className="md:hidden space-y-4 p-4">
-                        {filteredUsers.map(u => (
-                            <div key={u.id} className="bg-black border border-slate-800 rounded-lg p-4 shadow-sm relative overflow-hidden">
-                                {u.status !== 'active' && <div className="absolute top-0 left-0 w-1 h-full bg-red-600"></div>}
-
-                                <div className="flex justify-between items-start mb-3">
-                                    <div>
-                                        <h4 className="text-white font-bold text-lg">{u.fullName}</h4>
-                                        <p className="text-xs text-slate-400">{u.companyName || 'Bireysel Hesap'}</p>
-                                    </div>
-                                    {u.status === 'active' ?
-                                        <BadgeCheck className="text-green-500 w-5 h-5" /> :
-                                        <X className="text-red-500 w-5 h-5" />
-                                    }
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 mb-4">
-                                    <div className="bg-slate-900 p-2 rounded flex flex-col gap-1">
-                                        <span className="font-bold text-slate-400">PAKET</span>
-                                        {getUserBadge(u)}
-                                    </div>
-                                    <div className="bg-slate-900 p-2 rounded flex flex-col gap-1">
-                                        <span className="font-bold text-slate-400">LİSANS</span>
-                                        <span className={!u.licenseEndsAt ? 'text-red-500' : 'text-white'}>
-                                            {u.licenseEndsAt ? formatDate(u.licenseEndsAt) : 'Yok'}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col gap-2 mb-4">
-                                    <div onClick={() => copyToClipboard(u.email)} className="flex items-center gap-2 p-2 rounded bg-slate-900/50 hover:bg-slate-800 active:bg-slate-700 cursor-pointer transition-colors">
-                                        <Mail className="w-4 h-4 text-blue-500" />
-                                        <span className="text-xs text-slate-300 truncate">{u.email}</span>
-                                    </div>
-                                    <div onClick={() => copyToClipboard(u.phone)} className="flex items-center gap-2 p-2 rounded bg-slate-900/50 hover:bg-slate-800 active:bg-slate-700 cursor-pointer transition-colors">
-                                        <Phone className="w-4 h-4 text-green-500" />
-                                        <span className="text-xs text-slate-300">{u.phone || '-'}</span>
-                                    </div>
-                                </div>
-
-                                {/* Alt Aksiyonlar */}
-                                <div className="flex items-center justify-between border-t border-slate-800 pt-3">
-                                    {isBusinessOwner(u) && (
-                                        <button
-                                            onClick={() => toggleCompanyStaff(u.id)}
-                                            className="text-xs font-bold text-slate-400 flex items-center gap-1 bg-slate-900 px-3 py-2 rounded"
-                                        >
-                                            <Users className="w-3 h-3" />
-                                            {expandedCompanyId === u.id ? 'Gizle' : 'Personel'}
-                                        </button>
-                                    )}
-
-                                    <div className="flex gap-2 ml-auto">
-                                        <button onClick={() => setViewUser(u)} className="p-2 bg-blue-900/20 text-blue-500 rounded"><Eye className="w-4 h-4" /></button>
-                                        <button onClick={() => { setSaleTargetUser(u); setShowSaleModal(true); }} className="p-2 bg-yellow-900/20 text-yellow-500 rounded"><Wallet className="w-4 h-4" /></button>
-                                        <button onClick={() => deleteUser(u.id)} className="p-2 bg-red-900/20 text-red-500 rounded"><Trash2 className="w-4 h-4" /></button>
-                                    </div>
-                                </div>
-
-                                {expandedCompanyId === u.id && (
-                                    <div className="mt-3 bg-slate-900 p-3 rounded animate-in slide-in-from-top-2">
-                                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">PERSONEL LİSTESİ</p>
-                                        {loadingStaff ? <div className="text-xs text-slate-500">Yükleniyor...</div> :
-                                            companyStaff.length === 0 ? <div className="text-xs text-slate-500 italic">Kayıt yok.</div> :
-                                                <div className="space-y-2">
-                                                    {companyStaff.map(s => (
-                                                        <div key={s.id} className="flex justify-between items-center text-xs bg-black p-2 rounded border border-slate-800">
-                                                            <span className="text-white">{s.fullName}</span>
-                                                            <span className="text-slate-500">{s.role}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                        }
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
 
                     {/* MASAÜSTÜ TABLO GÖRÜNÜMÜ */}
                     <div className="hidden md:block overflow-x-auto">
@@ -732,7 +666,7 @@ export default function AdminPage() {
                                         </div>
                                     </div>
 
-                                    {/* ŞUBE YÖNETİMİ PANELİ (Sadece Gerçek İşletme Sahipleri Görür) */}
+                                    {/* ŞUBE YÖNETİMİ PANELİ */}
                                     {isBusinessOwner(viewUser) && userProfileData && (
                                         <div className="bg-black/40 p-4 rounded border border-slate-800 animate-pulse-slow">
                                             <p className="text-[10px] text-purple-500 uppercase font-bold mb-2 flex items-center gap-2">
@@ -740,10 +674,18 @@ export default function AdminPage() {
                                             </p>
                                             <div className="space-y-3">
                                                 <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded">
-                                                    <span className="text-xs text-slate-400">Şube Limiti</span>
-                                                    <span className="text-white font-bold text-lg">
-                                                        {userProfileData.customBranchLimit || (['corporate', 'company'].includes(viewUser.accountType) ? 5 : 1)}
-                                                    </span>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xs text-slate-400">Paket + Ekstra</span>
+                                                        <span className="text-white font-bold text-lg">
+                                                            {calculateLimits(viewUser, userProfileData).branch.base} + {calculateLimits(viewUser, userProfileData).branch.extra}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <span className="text-xs text-slate-400">Toplam Hak</span>
+                                                        <span className="block text-white font-bold text-xl text-green-400">
+                                                            {calculateLimits(viewUser, userProfileData).branch.total}
+                                                        </span>
+                                                    </div>
                                                 </div>
 
                                                 <div className="flex gap-2">
@@ -756,11 +698,11 @@ export default function AdminPage() {
                                                 </div>
 
                                                 <div className="pt-2 border-t border-slate-800">
-                                                    <p className="text-[10px] text-slate-500 mb-1">Manuel Limit Ayarla</p>
+                                                    <p className="text-[10px] text-slate-500 mb-1">Manuel EKSTRA Limit Ayarla</p>
                                                     <div className="flex gap-2">
                                                         <input
                                                             type="number"
-                                                            placeholder="Limit"
+                                                            placeholder="Ekstra"
                                                             className="w-16 bg-slate-900 text-white text-xs p-1 rounded border border-slate-700 text-center"
                                                             onChange={(e) => {
                                                                 if (e.target.value) handleUpdateBranchLimit(Number(e.target.value));
@@ -773,7 +715,7 @@ export default function AdminPage() {
                                         </div>
                                     )}
 
-                                    {/* YENİ PERSONEL YÖNETİMİ PANELİ (Sadece Gerçek İşletme Sahipleri Görür) */}
+                                    {/* PERSONEL YÖNETİMİ PANELİ */}
                                     {isBusinessOwner(viewUser) && userProfileData && (
                                         <div className="bg-black/40 p-4 rounded border border-slate-800 animate-pulse-slow mt-4">
                                             <p className="text-[10px] text-blue-500 uppercase font-bold mb-2 flex items-center gap-2">
@@ -781,10 +723,18 @@ export default function AdminPage() {
                                             </p>
                                             <div className="space-y-3">
                                                 <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded">
-                                                    <span className="text-xs text-slate-400">Personel Limiti</span>
-                                                    <span className="text-white font-bold text-lg">
-                                                        {userProfileData.customStaffLimit || (['corporate', 'company'].includes(viewUser.accountType) ? 'Sınırsız' : 5)}
-                                                    </span>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xs text-slate-400">Paket + Ekstra</span>
+                                                        <span className="text-white font-bold text-lg">
+                                                            {calculateLimits(viewUser, userProfileData).staff.base} + {calculateLimits(viewUser, userProfileData).staff.extra}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <span className="text-xs text-slate-400">Toplam Hak</span>
+                                                        <span className="block text-white font-bold text-xl text-green-400">
+                                                            {calculateLimits(viewUser, userProfileData).staff.total}
+                                                        </span>
+                                                    </div>
                                                 </div>
 
                                                 <div className="flex gap-2">
@@ -797,11 +747,11 @@ export default function AdminPage() {
                                                 </div>
 
                                                 <div className="pt-2 border-t border-slate-800">
-                                                    <p className="text-[10px] text-slate-500 mb-1">Manuel Limit Ayarla</p>
+                                                    <p className="text-[10px] text-slate-500 mb-1">Manuel EKSTRA Limit Ayarla</p>
                                                     <div className="flex gap-2">
                                                         <input
                                                             type="number"
-                                                            placeholder="Limit"
+                                                            placeholder="Ekstra"
                                                             className="w-16 bg-slate-900 text-white text-xs p-1 rounded border border-slate-700 text-center"
                                                             onChange={(e) => {
                                                                 if (e.target.value) handleUpdateStaffLimit(Number(e.target.value));

@@ -3,29 +3,45 @@ import crypto from 'crypto';
 import { db } from '../../../../lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
-// 🔥 AYARLAR: Lemon Squeezy Variant ID'leri (YENİ VE FİNAL LİSTE)
+// 🔥 AYARLAR: Lemon Squeezy Variant ID'leri
 const PLAN_IDS = {
-    // BİREYSEL (Individual)
+    // BİREYSEL
     INDIVIDUAL_MONTHLY: '1276140',
     INDIVIDUAL_6MONTH: '1276141',
     INDIVIDUAL_YEARLY: '1276142',
 
-    // ESNAF (Business)
+    // ESNAF
     BUSINESS_MONTHLY: '1276155',
     BUSINESS_6MONTH: '1276152',
     BUSINESS_YEARLY: '1276153',
 
-    // KURUMSAL (Enterprise)
+    // KURUMSAL
     CORPORATE_MONTHLY: '1276158',
     CORPORATE_6MONTH: '1276165',
     CORPORATE_YEARLY: '1276166',
 
-    // EK PAKETLER (Add-ons) - Bunlar değişmedi
+    // EK PAKETLER
     ADDON_BRANCH: '1275989',
     ADDON_STAFF: '1276003'
 };
 
-// 🔥 TELEGRAM GÖNDERME FONKSİYONU
+// ⏳ SÜRE TANIMLARI (Gün Cinsinden)
+const DURATION_MAP: any = {
+    // Bireysel
+    [PLAN_IDS.INDIVIDUAL_MONTHLY]: 30,
+    [PLAN_IDS.INDIVIDUAL_6MONTH]: 180,
+    [PLAN_IDS.INDIVIDUAL_YEARLY]: 365,
+    // Esnaf
+    [PLAN_IDS.BUSINESS_MONTHLY]: 30,
+    [PLAN_IDS.BUSINESS_6MONTH]: 180,
+    [PLAN_IDS.BUSINESS_YEARLY]: 365,
+    // Kurumsal
+    [PLAN_IDS.CORPORATE_MONTHLY]: 30,
+    [PLAN_IDS.CORPORATE_6MONTH]: 180,
+    [PLAN_IDS.CORPORATE_YEARLY]: 365,
+};
+
+// 🔔 TELEGRAM GÖNDERME
 async function sendTelegramNotification(message: string) {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -40,7 +56,7 @@ async function sendTelegramNotification(message: string) {
             body: JSON.stringify({
                 chat_id: chatId,
                 text: message,
-                parse_mode: 'HTML' // Kalın/İtalik yazı için
+                parse_mode: 'HTML'
             })
         });
     } catch (error) {
@@ -73,37 +89,61 @@ export async function POST(req: Request) {
 
         const userRef = db.collection('artifacts').doc('servis-360-live').collection('users').doc(userId).collection('users').doc('profile');
 
-        // Kullanıcı adını çekmeye çalış
-        let userName = "Kullanıcı";
-        try {
-            const userSnap = await userRef.get();
-            if (userSnap.exists) {
-                userName = userSnap.data()?.fullName || "Kullanıcı";
-            }
-        } catch (e) { }
+        // Kullanıcı Verisini Çek
+        const userSnap = await userRef.get();
+        const userData = userSnap.exists ? userSnap.data() : {};
+        const userName = userData?.fullName || "Kullanıcı";
 
-        // --- SENARYO A: ABONELİK OLUŞTURULDU / YENİLENDİ ---
+        // --- SENARYO A: ABONELİK (Satın Alma / Yenileme) ---
         if (eventName === 'subscription_created' || eventName === 'subscription_updated') {
             const variantId = String(data.attributes.variant_id);
-            const renwesAt = new Date(data.attributes.renews_at);
             const price = data.attributes.total_formatted;
 
-            let accountType = 'individual';
-            let planName = 'Bireysel';
+            // 1. Kaç Gün Eklenecek?
+            const daysToAdd = DURATION_MAP[variantId] || 30; // Bulamazsa 30 gün ver
 
-            // Hangi Paket?
-            if ([PLAN_IDS.BUSINESS_MONTHLY, PLAN_IDS.BUSINESS_6MONTH, PLAN_IDS.BUSINESS_YEARLY].includes(variantId)) {
-                accountType = 'business';
-                planName = 'Esnaf (Pro)';
-            } else if ([PLAN_IDS.CORPORATE_MONTHLY, PLAN_IDS.CORPORATE_6MONTH, PLAN_IDS.CORPORATE_YEARLY].includes(variantId)) {
-                accountType = 'corporate';
-                planName = 'Kurumsal (Enterprise)';
+            // 2. Mevcut Bitiş Tarihini Bul
+            let currentEndsAt = new Date(); // Varsayılan: Bugün
+            if (userData?.licenseEndsAt) {
+                // Firebase Timestamp ise Date'e çevir
+                currentEndsAt = userData.licenseEndsAt.toDate();
+            }
+
+            // 3. SÜRE HESAPLAMA MANTIĞI (STACKING)
+            // Eğer mevcut süre geçmişte kaldıysa (bitmişse), Bugünden başlat + ekle
+            // Eğer mevcut süre gelecekteyse (devam ediyorsa), Mevcut sürenin üstüne ekle
+
+            let newEndsAt = new Date();
+            const now = new Date();
+
+            if (currentEndsAt > now) {
+                // Süresi var, üstüne ekle (Örn: 2026 -> 2027 olsun)
+                newEndsAt = new Date(currentEndsAt.setDate(currentEndsAt.getDate() + daysToAdd));
+            } else {
+                // Süresi bitmiş veya yeni başlıyor, bugüne ekle
+                newEndsAt = new Date(now.setDate(now.getDate() + daysToAdd));
+            }
+
+            // 4. PAKET TÜRÜ KORUMASI (Admin Kuralı)
+            // Siteden alımlarda accountType DEĞİŞTİRİLMEZ. Sadece süre uzatılır.
+            // Eğer kullanıcının hiç accountType'ı yoksa (yeni üye), satın aldığı paketi ata.
+            let accountTypeToSave = userData?.accountType;
+
+            if (!accountTypeToSave) {
+                // Yeni üye ise ilk paketini belirle
+                if ([PLAN_IDS.BUSINESS_MONTHLY, PLAN_IDS.BUSINESS_6MONTH, PLAN_IDS.BUSINESS_YEARLY].includes(variantId)) {
+                    accountTypeToSave = 'business';
+                } else if ([PLAN_IDS.CORPORATE_MONTHLY, PLAN_IDS.CORPORATE_6MONTH, PLAN_IDS.CORPORATE_YEARLY].includes(variantId)) {
+                    accountTypeToSave = 'corporate';
+                } else {
+                    accountTypeToSave = 'individual';
+                }
             }
 
             // Veritabanını Güncelle
             await userRef.update({
-                accountType: accountType,
-                licenseEndsAt: renwesAt,
+                accountType: accountTypeToSave, // Mevcut türü korur
+                licenseEndsAt: newEndsAt,       // Yeni hesaplanan tarihi yazar
                 subscriptionStatus: 'active',
                 subscriptionId: data.id,
                 updatedAt: FieldValue.serverTimestamp()
@@ -111,26 +151,11 @@ export async function POST(req: Request) {
 
             // 🔔 TELEGRAM BİLDİRİMİ
             await sendTelegramNotification(
-                `🚀 <b>YENİ ABONELİK!</b>\n\n👤 <b>Müşteri:</b> ${userName}\n📦 <b>Paket:</b> ${planName}\n💰 <b>Tutar:</b> ${price}\n📅 <b>Bitiş:</b> ${renwesAt.toLocaleDateString('tr-TR')}`
+                `✅ <b>SÜRE UZATILDI!</b>\n\n👤 <b>Müşteri:</b> ${userName}\n⏳ <b>Eklenen Süre:</b> ${daysToAdd} Gün\n📅 <b>Yeni Bitiş:</b> ${newEndsAt.toLocaleDateString('tr-TR')}\n💰 <b>Tutar:</b> ${price}`
             );
         }
 
-        // --- SENARYO B: İPTAL EDİLDİ ---
-        else if (eventName === 'subscription_cancelled') {
-            await userRef.update({ subscriptionStatus: 'cancelled_pending' });
-            await sendTelegramNotification(`⚠️ <b>ABONELİK İPTALİ</b>\n👤 ${userName} aboneliğini iptal etti.`);
-        }
-
-        // --- SENARYO C: SÜRE BİTTİ ---
-        else if (eventName === 'subscription_expired') {
-            await userRef.update({
-                subscriptionStatus: 'expired',
-                licenseEndsAt: FieldValue.serverTimestamp()
-            });
-            await sendTelegramNotification(`❌ <b>LİSANS DOLDU</b>\n👤 ${userName} kullanıcısının süresi bitti.`);
-        }
-
-        // --- SENARYO D: EK PAKET (ŞUBE/PERSONEL) ---
+        // --- SENARYO B: EK PAKET (ŞUBE/PERSONEL) ---
         else if (eventName === 'order_created') {
             const firstItemId = String(data.attributes.first_order_item.variant_id);
             const price = data.attributes.total_formatted;
