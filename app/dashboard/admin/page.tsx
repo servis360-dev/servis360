@@ -22,11 +22,13 @@ import {
 import { auth, db } from '../../../lib/firebase';
 import RoleGuard from '../../../components/auth/role-guard';
 
+// 👇 DÜZELTME: Eksik ikonlar eklendi (ChevronDown, ChevronRight, Eye, Plus)
 import {
     ShieldAlert, Search, Trash2, Users, Save,
     LayoutDashboard, Megaphone, Wallet,
     X, Building2, Store, User,
-    Briefcase, Activity, Clock, Moon, ArrowUpDown, AlertTriangle, CheckCircle2
+    Briefcase, Activity, Clock, Moon, ArrowUpDown, AlertTriangle, CheckCircle2,
+    ChevronDown, ChevronRight, Eye, Plus
 } from 'lucide-react';
 
 export default function AdminPage() {
