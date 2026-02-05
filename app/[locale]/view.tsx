@@ -36,28 +36,50 @@ export default function HomeView({ dict, locale }: { dict: any, locale: string }
     useEffect(() => {
         const fetchSettings = async () => {
             try {
+                // Firebase'den veriyi çekiyoruz
                 const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'contact');
                 const docSnap = await getDoc(docRef);
 
                 if (docSnap.exists()) {
                     const data = docSnap.data();
 
+                    // KONSOL KONTROLÜ (Geliştirici aracında F12 -> Console sekmesinde görebilirsin)
+                    console.log("Firebase'den Gelen Veri:", data);
+                    console.log("Mevcut Dil (Locale):", locale);
+
+                    // Yardımcı Fonksiyon: Numarayı temizle ve ülke kodu ekle
+                    const formatPhone = (phone: string, prefix: string) => {
+                        if (!phone) return '';
+                        let clean = phone.replace(/[^0-9]/g, ''); // Sadece rakamları al
+                        // Eğer başında 0 varsa sil (0530 -> 530)
+                        if (clean.startsWith('0')) clean = clean.substring(1);
+                        // Eğer ülke kodu ekli değilse ekle (530 -> 90530)
+                        if (!clean.startsWith(prefix)) clean = prefix + clean;
+                        return clean;
+                    };
+
                     // 🌍 BÖLGESEL MANTIK (Lokalizasyon)
                     if (locale === 'tr') {
-                        // TÜRKİYE ZİYARETÇİSİ
+                        // --- TÜRKİYE SENARYOSU ---
+                        console.log(">> TR Modu Aktif");
                         setContactInfo({
-                            whatsapp: data.whatsappTR ? data.whatsappTR.replace(/[^0-9]/g, '') : '905555555555',
+                            // Admin panelinden 'whatsappTR' alanını oku, yoksa varsayılanı kullan
+                            whatsapp: formatPhone(data.whatsappTR || '905555555555', '90'),
                             address: data.addressTR || 'Teknopark İstanbul, Pendik/İstanbul',
-                            phoneDisplay: data.whatsappTR || '+90 555 555 55 55'
+                            phoneDisplay: data.whatsappTR ? `+90 ${data.whatsappTR}` : '+90 850 123 45 67'
                         });
                     } else {
-                        // ALMANYA / GLOBAL ZİYARETÇİ
+                        // --- GLOBAL / ALMANYA SENARYOSU ---
+                        console.log(">> GLOBAL Modu Aktif");
                         setContactInfo({
-                            whatsapp: data.whatsappDE ? data.whatsappDE.replace(/[^0-9]/g, '') : '4915112345678',
+                            // Admin panelinden 'whatsappDE' alanını oku, yoksa varsayılanı kullan
+                            whatsapp: formatPhone(data.whatsappDE || '4915112345678', '49'),
                             address: data.addressDE || 'Friedrichstraße 123, 10117 Berlin, Germany',
-                            phoneDisplay: data.whatsappDE || '+49 151 1234 5678'
+                            phoneDisplay: data.whatsappDE ? `+49 ${data.whatsappDE}` : '+49 151 1234 5678'
                         });
                     }
+                } else {
+                    console.log("Veri tabanı dokümanı bulunamadı!");
                 }
             } catch (error) {
                 console.error("İletişim bilgisi çekilemedi", error);
@@ -65,7 +87,7 @@ export default function HomeView({ dict, locale }: { dict: any, locale: string }
         };
 
         fetchSettings();
-    }, [locale]);
+    }, [locale]); // Locale değişirse tekrar çalış
 
     const features = [
         {
@@ -206,7 +228,7 @@ export default function HomeView({ dict, locale }: { dict: any, locale: string }
 
                     <div className="mt-6 flex justify-center animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-500">
                         <a
-                            href={`https://wa.me/${contactInfo.whatsapp}?text=Merhaba, Servis360 hakkında bilgi almak istiyorum...`}
+                            href={`https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(dict.landing.hero.whatsapp_msg)}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="group flex items-center gap-3 px-5 py-2 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 hover:text-green-300 transition-all cursor-pointer"

@@ -744,7 +744,9 @@
             "f1": "No Credit Card Required",
             "f2": "24/7 Support",
             "f3": "Cloud Based",
-            "contact_sales": "Contact our sales and support team immediately"
+            "contact_sales": "Contact our sales and support team immediately",
+            "contact_sales": "Contact our sales and support team immediately",
+            "whatsapp_msg": "Hello, I would like to get information about Servis360."
         },
         "features": {
             "title": "Complete Solution for Every Business",
