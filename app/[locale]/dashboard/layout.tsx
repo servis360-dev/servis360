@@ -1,4 +1,4 @@
-﻿import { getDictionary } from '../../../dictionaries'; // Sözlük yolunu doğru ayarladığından emin ol
+﻿import { getDictionary } from '../../../lib/dictionary'; // ✅ DÜZELTİLDİ: Artık doğru adrese bakıyor
 import DashboardShell from './shell';
 
 export default async function DashboardLayout({
