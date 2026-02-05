@@ -154,7 +154,7 @@ export default function DashboardView({ dict }: { dict: any }) {
                 const d = new Date();
                 d.setDate(d.getDate() - i);
                 // Tarih formatı dinamik locale
-                const k = d.toLocaleDateString(currency.locale, { day: 'numeric', month: 'short' });
+                const k = d.toLocaleDateString(currentLocale, { day: 'numeric', month: 'short' });
                 // 🔥 GRAFİK ETİKETLERİ ÇEVRİLDİ
                 dailyMap.set(k, { name: k, [dict.dashboard.income]: 0, [dict.dashboard.expense]: 0 });
             }
@@ -166,7 +166,7 @@ export default function DashboardView({ dict }: { dict: any }) {
                 if (data.type === 'income') totalInc += val; else totalExp += val;
                 if (itemDate >= limitDate) {
                     if (data.type === 'income') periodInc += val; else periodExp += val;
-                    const dateKey = itemDate.toLocaleDateString(currency.locale, { day: 'numeric', month: 'short' });
+                    const dateKey = itemDate.toLocaleDateString(currentLocale, { day: 'numeric', month: 'short' });
                     if (dailyMap.has(dateKey)) {
                         const current = dailyMap.get(dateKey);
                         // 🔥 VERİLER DOĞRU ETİKETE İŞLENİYOR
@@ -327,7 +327,7 @@ export default function DashboardView({ dict }: { dict: any }) {
                                         <div>
                                             <p className="text-sm font-medium">{ann.text}</p>
                                             <p className="text-[10px] text-white/40 mt-1">
-                                                {ann.author} • {ann.createdAt?.toDate ? ann.createdAt.toDate().toLocaleDateString(currency.locale) : 'Bugün'}
+                                                {ann.author} • {ann.createdAt?.toDate ? ann.createdAt.toDate().toLocaleDateString(currentLocale) : 'Bugün'}
                                             </p>
                                         </div>
                                         {isManager && (
@@ -438,7 +438,7 @@ export default function DashboardView({ dict }: { dict: any }) {
                                             </p>
                                             <p className="text-[10px] text-slate-400 whitespace-nowrap ml-2 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                                                 <Clock className="w-3 h-3" />
-                                                {item.date.toLocaleTimeString(currency.locale, { hour: '2-digit', minute: '2-digit' })}
+                                                {item.date.toLocaleTimeString(currentLocale, { hour: '2-digit', minute: '2-digit' })}
                                             </p>
                                         </div>
                                         <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
