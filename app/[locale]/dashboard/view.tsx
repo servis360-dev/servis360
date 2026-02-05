@@ -116,7 +116,7 @@ export default function DashboardView({ dict }: { dict: any }) {
             if (unsubAnnounce) unsubAnnounce();
             if (unsubBroadcast) unsubBroadcast();
         };
-    }, [router, timeFilter, selectedBranch, currency.locale]); // Dil değişince yeniden çalışsın
+    }, [router, timeFilter, selectedBranch, currentLocale]); // Dil değişince yeniden çalışsın
 
     const configureSector = (sector: string) => {
         // 🔥 BURADAKİ METİNLERİ DE ÇEVİRDİK
