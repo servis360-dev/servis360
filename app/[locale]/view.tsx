@@ -204,6 +204,24 @@ export default function HomeView({ dict, locale }: { dict: any, locale: string }
                         </Link>
                     </div>
 
+                    <div className="mt-6 flex justify-center animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-500">
+                        <a
+                            href={`https://wa.me/${contactInfo.whatsapp}?text=Merhaba, Servis360 hakkında bilgi almak istiyorum...`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group flex items-center gap-3 px-5 py-2 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 hover:text-green-300 transition-all cursor-pointer"
+                        >
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                            </span>
+                            <span className="text-sm font-semibold tracking-wide">
+                                {dict.landing.hero.contact_sales}
+                            </span>
+                            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        </a>
+                    </div>
+
                     <div className="mt-12 flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 text-slate-500 text-sm font-medium animate-in fade-in duration-1000 delay-500">
                         <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-green-500" /> {dict.landing.hero.f1}</span>
                         <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-green-500" /> {dict.landing.hero.f2}</span>
