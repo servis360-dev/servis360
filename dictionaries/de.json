@@ -24,6 +24,59 @@
         "logout": "Abmelden"
     },
     "dashboard": {
+        "menu": {
+            "header_overview": "ÜBERSICHT",
+            "overview": "Dashboard",
+            "header_operation": "BETRIEB",
+            "jobs": "Auftragsverfolgung",
+            "calendar": "Kalender",
+            "customers": "Kundenliste",
+            "stock": "Lagerverwaltung",
+            "branches": "Filialen",
+            "personnel": "Personalverwaltung",
+            "header_finance": "FINANZSTATUS",
+            "income_expense": "Einnahmen / Ausgaben",
+            "offers": "Angebote",
+            "subscriptions": "Abonnements",
+            "header_system": "SYSTEM",
+            "settings": "Einstellungen",
+            "logout": "Abmelden",
+            "header_saas": "SaaS-Verwaltung",
+            "admin_panel": "Admin-Panel",
+            "header_service": "Service-Operationen",
+            "new_request": "Neue Anfrage",
+            "service_history": "Serviceverlauf"
+        },
+        "roles": {
+            "super_admin": "ENTWICKLER",
+            "corporate": "UNTERNEHMEN",
+            "esnaf": "GESCHÄFT",
+            "business": "GESCHÄFT",
+            "accounting": "BUCHHALTUNG",
+            "technician": "TECHNIKER",
+            "technical": "TECHNIKER",
+            "sales": "VERKAUF / KASSE",
+            "staff": "PERSONAL",
+            "individual": "INDIVIDUELL"
+        }
+    },
+        "layout": {
+            "profile_error_title": "Anmeldung Eingeschränkt!",
+            "profile_error_desc": "Um das System zu nutzen, müssen Sie die folgenden Informationen vervollständigen:",
+            "missing_phone": "Telefonnummer",
+            "missing_company": "Firmenname",
+            "lock_title": "Abonnement Erforderlich",
+            "lock_desc": "Bitte wählen Sie ein Abonnement, um auf Ihre Daten zuzugreifen und das System weiter zu nutzen.",
+            "btn_packages": "Pakete Ansehen"
+        },
+        "widgets": {
+            "total": "GESAMT",
+            "general": "Allgemein",
+            "pieces": "Stk.",
+            "system_version": "SYSTEMVERSION",
+            "command_center": "SERVIS360 KOMMANDOZENTRALE",
+            "all_branches": "Alle Filialen"
+        },
         "welcome": "Hallo",
         "summary_individual": "Finanzstatus und Kontoübersicht.",
         "summary_company": "Allgemeiner Leistungsstatus Ihres Unternehmens.",
@@ -741,10 +794,9 @@
             "desc": "Serviceverfolgung, Lagerverwaltung, Girokonten und Personalmanagement auf einer einzigen Plattform. Werden Sie komplexe Excel-Dateien los, konzentrieren Sie sich auf Ihr Geschäft.",
             "btn_start": "Jetzt starten",
             "btn_login": "Anmelden",
-            "f1": "Keine Kreditkarte erforderlich",
+            "f1": "Schnelle Einrichtung",
             "f2": "24/7 Support",
             "f3": "Cloud-basiert",
-            "contact_sales": "Kontaktieren Sie sofort unser Vertriebs- und Support-Team",
             "contact_sales": "Kontaktieren Sie sofort unser Vertriebs- und Support-Team",
             "whatsapp_msg": "Hallo, ich möchte Informationen über Servis360 erhalten."
         },
@@ -819,4 +871,5 @@
             "support_btn": "Live-Support"
         }
     }
+}
 }

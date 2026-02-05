@@ -303,13 +303,16 @@ export default function HomeView({ dict, locale }: { dict: any, locale: string }
                                         <div className="w-3 h-3 rounded-full bg-green-500"></div>
                                         <span className="ml-auto text-xs text-slate-500">{dict.landing.sectors.preview}</span>
                                     </div>
-                                    <div className="space-y-4">
-                                        <div className="flex gap-4">
-                                            <div className="flex-1 h-24 bg-slate-800 rounded-xl animate-pulse"></div>
-                                            <div className="flex-1 h-24 bg-slate-800 rounded-xl animate-pulse delay-75"></div>
-                                        </div>
-                                        <div className="h-40 bg-slate-800 rounded-xl animate-pulse delay-150"></div>
-                                        <div className="h-12 bg-slate-800 rounded-xl animate-pulse delay-200"></div>
+                                    <div className="relative overflow-hidden rounded-xl border border-slate-700 shadow-2xl">
+                                        <Image
+                                            src="/dashboard-preview.png"
+                                            alt="Servis360 Dashboard"
+                                            width={600}
+                                            height={400}
+                                            className="w-full h-auto object-cover transform hover:scale-105 transition-transform duration-700"
+                                        />
+                                        {/* Üzerine hafif bir mavi parlama efekti ekleyelim */}
+                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent pointer-events-none"></div>
                                     </div>
                                 </div>
                             </div>

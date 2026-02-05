@@ -24,6 +24,59 @@
         "logout": "Logout"
     },
     "dashboard": {
+        "menu": {
+            "header_overview": "OVERVIEW",
+            "overview": "Dashboard",
+            "header_operation": "OPERATIONS",
+            "jobs": "Job Tracking",
+            "calendar": "Calendar",
+            "customers": "Customer List",
+            "stock": "Inventory",
+            "branches": "Branches",
+            "personnel": "Staff Management",
+            "header_finance": "FINANCIAL STATUS",
+            "income_expense": "Income / Expense",
+            "offers": "Proposals",
+            "subscriptions": "Subscription Packages",
+            "header_system": "SYSTEM",
+            "settings": "Settings",
+            "logout": "Logout",
+            "header_saas": "SaaS Management",
+            "admin_panel": "Admin Panel",
+            "header_service": "Service Operations",
+            "new_request": "Create New Request",
+            "service_history": "My Service History"
+        },
+        "roles": {
+            "super_admin": "DEVELOPER",
+            "corporate": "CORPORATE",
+            "esnaf": "BUSINESS",
+            "business": "BUSINESS",
+            "accounting": "ACCOUNTING",
+            "technician": "TECHNICIAN",
+            "technical": "TECHNICIAN",
+            "sales": "SALES / POS",
+            "staff": "STAFF",
+            "individual": "INDIVIDUAL"
+        }
+    },
+        "layout": {
+            "profile_error_title": "Login Restricted!",
+            "profile_error_desc": "To start using the system, you must complete the following information:",
+            "missing_phone": "Phone Number",
+            "missing_company": "Company Name",
+            "lock_title": "Subscription Required",
+            "lock_desc": "Please select a subscription plan to access your data and continue using the system.",
+            "btn_packages": "View Packages"
+        },
+        "widgets": {
+            "total": "TOTAL",
+            "general": "General",
+            "pieces": "pcs",
+            "system_version": "SYSTEM VERSION",
+            "command_center": "SERVIS360 COMMAND CENTER",
+            "all_branches": "All Branches"
+        },
         "welcome": "Hello",
         "summary_individual": "Financial status and account summary.",
         "summary_company": "General instant performance status of your business.",
@@ -741,10 +794,9 @@
             "desc": "Service tracking, stock management, current accounts, and staff management in a single platform. Get rid of complex Excel files, focus on your business.",
             "btn_start": "Start Now",
             "btn_login": "Login",
-            "f1": "No Credit Card Required",
+            "f1": "Fast Setup & Start",
             "f2": "24/7 Support",
             "f3": "Cloud Based",
-            "contact_sales": "Contact our sales and support team immediately",
             "contact_sales": "Contact our sales and support team immediately",
             "whatsapp_msg": "Hello, I would like to get information about Servis360."
         },
@@ -819,4 +871,5 @@
             "support_btn": "Live Support"
         }
     }
+}
 }

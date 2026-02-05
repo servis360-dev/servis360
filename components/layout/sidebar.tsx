@@ -29,101 +29,87 @@ interface SidebarProps {
     userProfile?: any;
     isOpen: boolean;
     onClose: () => void;
+    dict: any;   // 🌍 EKLENDİ
+    locale: string; // 🌍 EKLENDİ
 }
 
 // ---------------------------------------------------------------------------
-// 🛠️ ROL NORMALLEŞTİRME (KESİN ÇÖZÜM)
+// 🛠️ ROL NORMALLEŞTİRME
 // ---------------------------------------------------------------------------
 const getNormalizedRole = (role?: string, accountType?: string): string => {
-    // 🛑 KRİTİK KONTROL: Eğer hesap türü BİREYSEL ise, rolü ne olursa olsun (owner vb.) yetkisini 'individual' yap.
     if (accountType === 'individual') return 'individual';
-
     if (!role) return 'individual';
 
     const r = role.toLowerCase();
 
-    // 1. ÜST YÖNETİM
     if (r === 'super_admin' || r === 'developer') return 'super_admin';
     if (r === 'corporate') return 'corporate';
-
-    // 2. ESNAF / KOBİ
     if (['esnaf', 'admin', 'business', 'tradesman', 'boss', 'owner'].includes(r)) return 'esnaf';
-
-    // 3. PERSONEL ROLLERİ
     if (['accounting', 'muhasebe', 'finans', 'on_muhasebe'].includes(r)) return 'accounting';
-    if (['technician', 'technical', 'teknik', 'usta', 'ustam', 'field_agent'].includes(r)) return 'technician'; // "technical" eklendi
-    if (['sales', 'satis', 'kasa', 'tezgahtar'].includes(r)) return 'sales'; // 🔥 SATIŞ ROLÜ EKLENDİ
+    if (['technician', 'technical', 'teknik', 'usta', 'ustam', 'field_agent'].includes(r)) return 'technician';
+    if (['sales', 'satis', 'kasa', 'tezgahtar'].includes(r)) return 'sales';
     if (['staff', 'personnel', 'employee', 'worker', 'sekreter', 'danisma'].includes(r)) return 'staff';
 
-    // 4. VARSAYILAN
     return 'individual';
 };
 
-// ---------------------------------------------------------------------------
-// 📋 MENÜ YAPILANDIRMASI
-// ---------------------------------------------------------------------------
-const MENU_ITEMS = [
-    {
-        title: 'SaaS Yönetimi',
-        items: [
-            { label: 'Admin Paneli', href: '/dashboard/admin', icon: ShieldAlert, allowedRoles: ['super_admin'] },
-        ]
-    },
-    {
-        title: 'Genel Bakış',
-        items: [
-            // Satış, Muhasebe ve Tekniker de özeti görmeli
-            { label: 'Özet Paneli', href: '/dashboard', icon: LayoutDashboard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'sales', 'staff', 'individual'] },
-        ]
-    },
-    {
-        title: 'Hizmet İşlemleri',
-        items: [
-            // Bireysel Kullanıcı Sadece Burayı ve Ayarları/Finansı Görebilir
-            { label: 'Yeni Talep Oluştur', href: '/dashboard/jobs/new', icon: PlusCircle, allowedRoles: ['individual'] },
-            { label: 'Servis Geçmişim', href: '/dashboard/jobs', icon: History, allowedRoles: ['individual'] },
-        ]
-    },
-    {
-        title: 'Operasyon',
-        items: [
-            // Satış personeli de işleri ve müşterileri görmeli
-            { label: 'İş Takibi', href: '/dashboard/jobs', icon: Briefcase, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician', 'sales'] },
-            { label: 'Randevu Takvimi', href: '/dashboard/appointments', icon: CalendarDays, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician', 'sales'] },
-            { label: 'Müşteri Listesi', href: '/dashboard/customers', icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'accounting', 'technician', 'sales'] },
-            { label: 'Stok Takibi', href: '/dashboard/stock', icon: Package, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'technician', 'sales', 'staff'] },
-            // Şubeler ve Personel Yönetimi sadece Patronlara özel
-            { label: 'Şubeler', href: '/dashboard/branches', icon: Store, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
-            { label: 'Personel Yönetimi', href: '/dashboard/staff', icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
-        ]
-    },
-    {
-        title: 'Finansal Durum',
-        items: [
-            // Satış personeli kasayı ve teklifleri görebilir
-            { label: 'Gelir / Gider', href: '/dashboard/finance', icon: Wallet, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'sales', 'individual'] },
-            { label: 'Teklifler', href: '/dashboard/proposals', icon: FileText, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'sales'] },
-            // Abonelik sadece patron ve bireysel için
-            { label: 'Abonelik Paketleri', href: '/dashboard/subscription', icon: CreditCard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'individual'] },
-        ]
-    },
-    {
-        title: 'Sistem',
-        items: [
-            { label: 'Ayarlar', href: '/dashboard/settings', icon: Settings, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'sales', 'staff', 'individual'] },
-        ]
-    }
-];
-
-export function Sidebar({ userRole, userProfile, isOpen, onClose }: SidebarProps) {
+export function Sidebar({ userRole, userProfile, isOpen, onClose, dict, locale }: SidebarProps) {
     const pathname = usePathname();
-
-    // 🔥 DÜZELTME: Sadece role değil, accountType'a da bakarak yetki belirliyoruz.
     const normalizedRole = getNormalizedRole(userRole, userProfile?.accountType);
 
     const handleLogout = async () => {
         await signOut(auth);
     };
+
+    // ---------------------------------------------------------------------------
+    // 📋 MENÜ YAPILANDIRMASI (ARTIK DİNAMİK VE BİLEŞEN İÇİNDE)
+    // ---------------------------------------------------------------------------
+    const MENU_ITEMS = [
+        {
+            title: dict.dashboard.menu.header_saas, // 🌍 Dinamik Başlık
+            items: [
+                { label: dict.dashboard.menu.admin_panel, href: `/${locale}/dashboard/admin`, icon: ShieldAlert, allowedRoles: ['super_admin'] },
+            ]
+        },
+        {
+            title: dict.dashboard.menu.header_overview,
+            items: [
+                { label: dict.dashboard.menu.overview, href: `/${locale}/dashboard`, icon: LayoutDashboard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'sales', 'staff', 'individual'] },
+            ]
+        },
+        {
+            title: dict.dashboard.menu.header_service,
+            items: [
+                { label: dict.dashboard.menu.new_request, href: `/${locale}/dashboard/jobs/new`, icon: PlusCircle, allowedRoles: ['individual'] },
+                { label: dict.dashboard.menu.service_history, href: `/${locale}/dashboard/jobs`, icon: History, allowedRoles: ['individual'] },
+            ]
+        },
+        {
+            title: dict.dashboard.menu.header_operation,
+            items: [
+                { label: dict.dashboard.menu.jobs, href: `/${locale}/dashboard/jobs`, icon: Briefcase, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician', 'sales'] },
+                { label: dict.dashboard.menu.calendar, href: `/${locale}/dashboard/appointments`, icon: CalendarDays, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'technician', 'sales'] },
+                { label: dict.dashboard.menu.customers, href: `/${locale}/dashboard/customers`, icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'staff', 'accounting', 'technician', 'sales'] },
+                { label: dict.dashboard.menu.stock, href: `/${locale}/dashboard/stock`, icon: Package, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'technician', 'sales', 'staff'] },
+                { label: dict.dashboard.menu.branches, href: `/${locale}/dashboard/branches`, icon: Store, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
+                { label: dict.dashboard.menu.personnel, href: `/${locale}/dashboard/staff`, icon: Users, allowedRoles: ['super_admin', 'corporate', 'esnaf'] },
+            ]
+        },
+        {
+            title: dict.dashboard.menu.header_finance,
+            items: [
+                { label: dict.dashboard.menu.income_expense, href: `/${locale}/dashboard/finance`, icon: Wallet, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'sales', 'individual'] },
+                { label: dict.dashboard.menu.offers, href: `/${locale}/dashboard/proposals`, icon: FileText, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'sales'] },
+                { label: dict.dashboard.menu.subscriptions, href: `/${locale}/dashboard/subscription`, icon: CreditCard, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'individual'] },
+            ]
+        },
+        {
+            title: dict.dashboard.menu.header_system,
+            items: [
+                { label: dict.dashboard.menu.settings, href: `/${locale}/dashboard/settings`, icon: Settings, allowedRoles: ['super_admin', 'corporate', 'esnaf', 'accounting', 'technician', 'sales', 'staff', 'individual'] },
+            ]
+        }
+    ];
 
     return (
         <>
@@ -213,7 +199,7 @@ export function Sidebar({ userRole, userProfile, isOpen, onClose }: SidebarProps
                 <div className="flex-shrink-0 p-4 border-t border-white/5 md:border-slate-200 md:dark:border-slate-800 bg-[#0B1121]/50 md:bg-transparent backdrop-blur-xl">
                     <button onClick={handleLogout} className="flex items-center justify-center gap-2 w-full px-4 py-3 text-sm font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20">
                         <LogOut className="w-4 h-4" />
-                        Çıkış Yap
+                        {dict.dashboard.menu.logout}
                     </button>
 
                     <div className="mt-4 text-center">
@@ -227,14 +213,8 @@ export function Sidebar({ userRole, userProfile, isOpen, onClose }: SidebarProps
                                                 ['staff'].includes(normalizedRole) ? 'border-orange-500/30 text-orange-400 bg-orange-500/10 shadow-orange-900/20' :
                                                     'border-blue-500/30 text-blue-400 bg-blue-500/10 shadow-blue-900/20'}
                         `}>
-                            {normalizedRole === 'super_admin' ? 'YAZILIMCI' :
-                                normalizedRole === 'corporate' ? 'KURUMSAL' :
-                                    normalizedRole === 'esnaf' ? 'İŞLETME' :
-                                        normalizedRole === 'accounting' ? 'MUHASEBE' :
-                                            (normalizedRole === 'technician' || normalizedRole === 'technical') ? 'TEKNİSYEN' :
-                                                normalizedRole === 'sales' ? 'SATIŞ / KASA' :
-                                                    normalizedRole === 'staff' ? 'PERSONEL' :
-                                                        'BİREYSEL'}
+                            {/* 🌍 DİNAMİK ROL İSMİ */}
+                            {dict.dashboard.roles[normalizedRole] || normalizedRole.toUpperCase()}
                         </span>
                     </div>
                 </div>
