@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { getCurrencySettings } from '../../../../lib/format';
 import { doc, onSnapshot, collection, getDocs, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../lib/firebase';
+import { auth, db } from '../../../../lib/firebase';
 import {
     ShieldCheck,
     Zap,
