@@ -22,13 +22,13 @@ import {
 import { auth, db } from '../../../../lib/firebase';
 import RoleGuard from '../../../../components/auth/role-guard';
 
-// 👇 DÜZELTME: Eksik ikonlar eklendi (ChevronDown, ChevronRight, Eye, Plus)
+// 👇 DÜZELTME: Eksik ikonlar eklendi
 import {
     ShieldAlert, Search, Trash2, Users, Save,
     LayoutDashboard, Megaphone, Wallet,
     X, Building2, Store, User,
     Briefcase, Activity, Clock, Moon, ArrowUpDown, AlertTriangle, CheckCircle2,
-    ChevronDown, ChevronRight, Eye, Plus
+    ChevronDown, ChevronRight, Eye, Plus, Settings, Globe, Phone, MapPin
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -64,6 +64,14 @@ export default function AdminPage() {
         type: 'info'
     });
 
+    // 🔥 İLETİŞİM AYARLARI (YENİ)
+    const [contactConfig, setContactConfig] = useState({
+        whatsappTR: '',
+        whatsappDE: '',
+        addressTR: '',
+        addressDE: ''
+    });
+
     // Personel Görüntüleme
     const [expandedCompanyId, setExpandedCompanyId] = useState<string | null>(null);
     const [companyStaff, setCompanyStaff] = useState<any[]>([]);
@@ -91,12 +99,12 @@ export default function AdminPage() {
         return ['corporate', 'company', 'enterprise', 'business', 'esnaf', 'tradesman'].includes(u.accountType);
     };
 
-    // 💤 GÜN HESAPLAYICI (GÜVENLİ HALE GETİRİLDİ)
+    // 💤 GÜN HESAPLAYICI
     const getDaysSinceLogin = (lastLoginAt: any) => {
-        if (!lastLoginAt) return -999; // Veri Yok kodu
+        if (!lastLoginAt) return -999;
         try {
             const date = lastLoginAt.toDate ? lastLoginAt.toDate() : new Date(lastLoginAt);
-            if (isNaN(date.getTime())) return -999; // Geçersiz tarih
+            if (isNaN(date.getTime())) return -999;
             const diff = new Date().getTime() - date.getTime();
             return Math.floor(diff / (1000 * 3600 * 24));
         } catch (e) {
@@ -110,15 +118,22 @@ export default function AdminPage() {
         if (!user) return;
         setCurrentUser(user);
 
-        // 1. Duyuru Çek
-        const fetchBroadcast = async () => {
+        // 1. Duyuru ve İletişim Ayarlarını Çek
+        const fetchSettings = async () => {
             try {
-                const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
-                const snap = await getDoc(docRef);
-                if (snap.exists()) setBroadcast(snap.data() as any);
-            } catch (e) { console.error("Duyuru çekme hatası", e); }
+                // Duyuru
+                const broadcastRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
+                const broadcastSnap = await getDoc(broadcastRef);
+                if (broadcastSnap.exists()) setBroadcast(broadcastSnap.data() as any);
+
+                // 🔥 İletişim (Contact)
+                const contactRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'contact');
+                const contactSnap = await getDoc(contactRef);
+                if (contactSnap.exists()) setContactConfig(contactSnap.data() as any);
+
+            } catch (e) { console.error("Ayar çekme hatası", e); }
         };
-        fetchBroadcast();
+        fetchSettings();
 
         // 2. Kullanıcılar ve İstatistikler
         const q = query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory'));
@@ -135,7 +150,7 @@ export default function AdminPage() {
 
             const sleepy = userList.filter((u: any) => {
                 const days = getDaysSinceLogin(u.lastLoginAt);
-                return days > 2; // -999 (veri yok) olanları sleepy saymıyoruz, sadece gerçekten 2 günden fazla girmeyenler
+                return days > 2;
             }).length;
 
             setStats(prev => ({
@@ -210,9 +225,20 @@ export default function AdminPage() {
                 updatedAt: serverTimestamp()
             }, { merge: true });
             await logAction('BROADCAST_UPDATE', `Duyuru: ${broadcast.message}`);
-            alert("✅ Duyuru veritabanına kaydedildi. (Kullanıcı tarafında gösterim bileşeni olduğundan emin olun)");
+            alert("✅ Duyuru güncellendi.");
         } catch (error: any) {
-            console.error("Broadcast Error:", error);
+            alert(`HATA: ${error.message}`);
+        }
+    };
+
+    // 🔥 İLETİŞİM AYARLARINI KAYDET
+    const saveContactSettings = async () => {
+        try {
+            const contactRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'contact');
+            await setDoc(contactRef, contactConfig, { merge: true });
+            await logAction('CONTACT_UPDATE', `İletişim bilgileri güncellendi.`);
+            alert("✅ İletişim bilgileri başarıyla kaydedildi!");
+        } catch (error: any) {
             alert(`HATA: ${error.message}`);
         }
     };
@@ -384,6 +410,8 @@ export default function AdminPage() {
                         <button onClick={() => setActiveTab('users')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'users' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Users className="w-4 h-4" /> Kullanıcılar</button>
                         <button onClick={() => setActiveTab('broadcast')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'broadcast' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Megaphone className="w-4 h-4" /> Duyurular</button>
                         <button onClick={() => setActiveTab('logs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'logs' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Activity className="w-4 h-4" /> Loglar</button>
+                        {/* 🔥 YENİ TAB: AYARLAR */}
+                        <button onClick={() => setActiveTab('settings')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'settings' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Settings className="w-4 h-4" /> Ayarlar</button>
                     </div>
                 </div>
 
@@ -533,6 +561,77 @@ export default function AdminPage() {
                                     </div>
                                     <button onClick={saveBroadcast} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded flex justify-center gap-2"><Save className="w-4 h-4" /> KAYDET</button>
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 🔥 TAB: AYARLAR (YENİ) */}
+                    {activeTab === 'settings' && (
+                        <div className="max-w-3xl mx-auto animate-in fade-in">
+                            <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                                <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                                    <Globe className="w-5 h-5 text-blue-500" /> BÖLGESEL AYARLAR & İLETİŞİM
+                                </h3>
+
+                                {/* Türkiye Ayarları */}
+                                <div className="mb-8 p-4 bg-slate-950/50 rounded-lg border border-slate-800">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <span className="text-2xl">🇹🇷</span>
+                                        <h4 className="font-bold text-white">TÜRKİYE BÖLGESİ</h4>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><Phone className="w-3 h-3" /> WhatsApp Numarası (+90...)</label>
+                                            <input
+                                                value={contactConfig.whatsappTR}
+                                                onChange={e => setContactConfig({ ...contactConfig, whatsappTR: e.target.value })}
+                                                className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500"
+                                                placeholder="90555..."
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> Adres (Görünen)</label>
+                                            <input
+                                                value={contactConfig.addressTR}
+                                                onChange={e => setContactConfig({ ...contactConfig, addressTR: e.target.value })}
+                                                className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500"
+                                                placeholder="Örn: Teknopark İstanbul, Pendik/İstanbul"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Almanya Ayarları */}
+                                <div className="mb-8 p-4 bg-slate-950/50 rounded-lg border border-slate-800">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <span className="text-2xl">🇩🇪</span>
+                                        <h4 className="font-bold text-white">ALMANYA & GLOBAL</h4>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><Phone className="w-3 h-3" /> WhatsApp Numarası (+49...)</label>
+                                            <input
+                                                value={contactConfig.whatsappDE}
+                                                onChange={e => setContactConfig({ ...contactConfig, whatsappDE: e.target.value })}
+                                                className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500"
+                                                placeholder="4915..."
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> Adres (Görünen)</label>
+                                            <input
+                                                value={contactConfig.addressDE}
+                                                onChange={e => setContactConfig({ ...contactConfig, addressDE: e.target.value })}
+                                                className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500"
+                                                placeholder="Örn: Friedrichstraße 123, 10117 Berlin"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button onClick={saveContactSettings} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl flex justify-center gap-2 transition-all transform hover:scale-[1.02]">
+                                    <Save className="w-5 h-5" /> AYARLARI KAYDET
+                                </button>
                             </div>
                         </div>
                     )}

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { getCurrencySettings } from '../../../../lib/format';
 import { doc, onSnapshot, collection, getDocs, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../../../lib/firebase';
+import { auth, db } from '../../../lib/firebase';
 import {
     ShieldCheck,
     Zap,
@@ -98,7 +98,7 @@ export default function SubscriptionView({ dict }: { dict: any }) {
             return () => unsubUser();
         });
         return () => unsubscribe && unsubscribe();
-    }, []);
+    }, [currentLocale]); // Dil değişince tekrar çalışsın
 
     const fetchUsageStats = async (uid: string) => {
         try {
@@ -108,12 +108,20 @@ export default function SubscriptionView({ dict }: { dict: any }) {
         } catch (e) { console.error(e); } finally { setLoading(false); }
     };
 
+    // 🔥 SİSTEM AYARLARINI ÇEK (GÜNCELLENDİ)
     const fetchSystemSettings = async () => {
         try {
-            const snap = await getDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'config'));
+            // 'config' değil 'contact' dokümanından çekiyoruz
+            const snap = await getDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'contact'));
             if (snap.exists()) {
                 const data = snap.data();
-                if (data.contact?.whatsapp) setSupportPhone(data.contact.whatsapp);
+
+                // Bölgesel Numara Mantığı
+                if (currentLocale === 'tr') {
+                    setSupportPhone(data.whatsappTR || '905555555555');
+                } else {
+                    setSupportPhone(data.whatsappDE || '4915112345678');
+                }
             }
         } catch (e) { console.error(e); }
     };
@@ -133,9 +141,14 @@ export default function SubscriptionView({ dict }: { dict: any }) {
         window.open(finalUrl, '_blank');
     };
 
+    // 🔥 WHATSAPP BUTONU (GÜNCELLENDİ)
     const openWhatsApp = () => {
         const cleanNumber = supportPhone.replace(/[^0-9]/g, '');
-        window.open(`https://wa.me/${cleanNumber}?text=Merhaba, abonelik paketleri hakkında bilgi almak istiyorum.`, '_blank');
+        const message = currentLocale === 'tr'
+            ? 'Merhaba, abonelik paketleri hakkında bilgi almak istiyorum.'
+            : 'Hello, I would like to get information about subscription packages.';
+
+        window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`, '_blank');
     };
 
     const getDaysLeft = () => {
@@ -182,7 +195,6 @@ export default function SubscriptionView({ dict }: { dict: any }) {
         typeIcon = <Store className="w-4 h-4 text-yellow-400" />;
     }
 
-    // 🔥 DÜZELTME BURADA YAPILDI: "as any" ile TS hatası engellendi
     const currentPrices = DISPLAY_PRICES[accountTypeKey as keyof typeof DISPLAY_PRICES] as any;
     const currentLinks = PRODUCT_LINKS[accountTypeKey as keyof typeof PRODUCT_LINKS];
 
