@@ -29,20 +29,17 @@ import {
 import Link from 'next/link';
 import { useBranch } from '../../../components/providers/branch-context';
 
-// 🔥 DİKKAT: Buraya 'dict' (sözlük) verisi dışarıdan geliyor.
 export default function DashboardView({ dict }: { dict: any }) {
     const [user, setUser] = useState<any>(null);
     const [userData, setUserData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [timeFilter, setTimeFilter] = useState<'week' | 'month'>('week');
 
+    // 🔥 Şube bilgisini Context'ten alıyoruz
     const { selectedBranch } = useBranch();
 
-    // Şirket İçi Duyurular
     const [announcements, setAnnouncements] = useState<any[]>([]);
     const [newAnnouncement, setNewAnnouncement] = useState('');
-
-    // Global Duyuru
     const [systemBroadcast, setSystemBroadcast] = useState<any>(null);
 
     const [stats, setStats] = useState({
@@ -54,7 +51,7 @@ export default function DashboardView({ dict }: { dict: any }) {
     });
 
     const [sectorConfig, setSectorConfig] = useState({
-        title: dict.dashboard.active_jobs, // Çeviri
+        title: dict.dashboard.active_jobs,
         unit: 'adet',
         icon: Briefcase,
         path: '/dashboard/jobs'
@@ -63,18 +60,11 @@ export default function DashboardView({ dict }: { dict: any }) {
     const [chartData, setChartData] = useState<any[]>([]);
     const [activities, setActivities] = useState<any[]>([]);
     const router = useRouter();
-
-    // Dil ve Para Ayarları
     const params = useParams();
     const currentLocale = params?.locale as string || 'en';
-    const currency = getCurrencySettings(currentLocale);
 
+    // 1. ADIM: SADECE KULLANICIYI DOĞRULA (Şube değişiminden etkilenmez)
     useEffect(() => {
-        let unsubTrans: () => void;
-        let unsubJobs: () => void;
-        let unsubAnnounce: () => void;
-        let unsubBroadcast: () => void;
-
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (!currentUser) {
                 router.push('/login');
@@ -86,58 +76,35 @@ export default function DashboardView({ dict }: { dict: any }) {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     setUserData(data);
-
                     if (data.accountType !== 'individual') {
                         configureSector(data.sectorType || 'technical_service');
                     }
-
-                    const listeners = setupRealtimeListeners(currentUser.uid, timeFilter, data, selectedBranch);
-                    unsubTrans = listeners.unsubTrans;
-                    unsubJobs = listeners.unsubJobs;
-                    unsubAnnounce = listeners.unsubAnnounce;
                 }
             }
         });
+        return () => unsubscribeAuth();
+    }, [router]);
 
-        // Global Duyuru Dinleyicisi
-        const broadcastRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
-        unsubBroadcast = onSnapshot(broadcastRef, (doc) => {
-            if (doc.exists()) {
-                setSystemBroadcast(doc.data());
-            } else {
-                setSystemBroadcast(null);
-            }
-        });
+    // 2. ADIM: VERİLERİ DİNLE (Şube veya Filtre değişince burası çalışır)
+    useEffect(() => {
+        if (!user || !userData) return;
 
-        return () => {
-            unsubscribeAuth();
-            if (unsubTrans) unsubTrans();
-            if (unsubJobs) unsubJobs();
-            if (unsubAnnounce) unsubAnnounce();
-            if (unsubBroadcast) unsubBroadcast();
-        };
-    }, [router, timeFilter, selectedBranch, currentLocale]); // Dil değişince yeniden çalışsın
+        console.log("Veriler yenileniyor... Şube:", selectedBranch || "TÜMÜ");
+        setLoading(true);
 
-    const configureSector = (sector: string) => {
-        // 🔥 BURADAKİ METİNLERİ DE ÇEVİRDİK
-        let config = { title: dict.dashboard.active_jobs, unit: 'adet', icon: Briefcase, path: '/dashboard/jobs' };
-        if (sector === 'retail_wholesale') config = { title: dict.dashboard.pending_orders, unit: 'sipariş', icon: ShoppingBag, path: '/dashboard/jobs' };
-        else if (sector === 'beauty_health') config = { title: dict.dashboard.appointments, unit: 'randevu', icon: Scissors, path: '/dashboard/appointments' };
-        else if (sector === 'auto_rental') config = { title: dict.dashboard.rented_cars, unit: 'araç', icon: Car, path: '/dashboard/jobs' };
-        setSectorConfig(config);
-    };
-
-    const setupRealtimeListeners = (uid: string, filter: 'week' | 'month', profileData: any, branchId: string | null) => {
-        const targetUid = (profileData.role === 'staff' || profileData.role === 'technician' || profileData.role === 'sales' || profileData.role === 'accounting') && profileData.ownerId
-            ? profileData.ownerId
-            : uid;
+        const targetUid = (userData.role === 'staff' || userData.role === 'technician' || userData.role === 'sales' || userData.role === 'accounting') && userData.ownerId
+            ? userData.ownerId
+            : user.uid;
 
         const userPath = `artifacts/servis-360-live/users/${targetUid}`;
 
+        // --- FİNANS SORGUSU ---
         let qTrans;
-        if (branchId) {
-            qTrans = query(collection(db, userPath, 'finance'), where('branchId', '==', branchId), orderBy('date', 'asc'));
+        // Eğer bir şube seçiliyse SADECE o şubenin verisini çek
+        if (selectedBranch) {
+            qTrans = query(collection(db, userPath, 'finance'), where('branchId', '==', selectedBranch), orderBy('date', 'asc'));
         } else {
+            // Şube seçili değilse HEPSİNİ çek
             qTrans = query(collection(db, userPath, 'finance'), orderBy('date', 'asc'));
         }
 
@@ -147,15 +114,14 @@ export default function DashboardView({ dict }: { dict: any }) {
             const dailyMap = new Map();
             const now = new Date();
             const limitDate = new Date();
-            const daysToLookBack = filter === 'week' ? 7 : 30;
+            const daysToLookBack = timeFilter === 'week' ? 7 : 30;
             limitDate.setDate(now.getDate() - daysToLookBack);
 
+            // Boş günleri oluştur
             for (let i = daysToLookBack - 1; i >= 0; i--) {
                 const d = new Date();
                 d.setDate(d.getDate() - i);
-                // Tarih formatı dinamik locale
                 const k = d.toLocaleDateString(currentLocale, { day: 'numeric', month: 'short' });
-                // 🔥 GRAFİK ETİKETLERİ ÇEVRİLDİ
                 dailyMap.set(k, { name: k, [dict.dashboard.income]: 0, [dict.dashboard.expense]: 0 });
             }
 
@@ -163,13 +129,14 @@ export default function DashboardView({ dict }: { dict: any }) {
                 const data = doc.data();
                 const itemDate = data.date?.toDate ? data.date.toDate() : new Date(data.date);
                 const val = Number(data.amount) || 0;
+
                 if (data.type === 'income') totalInc += val; else totalExp += val;
+
                 if (itemDate >= limitDate) {
                     if (data.type === 'income') periodInc += val; else periodExp += val;
                     const dateKey = itemDate.toLocaleDateString(currentLocale, { day: 'numeric', month: 'short' });
                     if (dailyMap.has(dateKey)) {
                         const current = dailyMap.get(dateKey);
-                        // 🔥 VERİLER DOĞRU ETİKETE İŞLENİYOR
                         if (data.type === 'income') current[dict.dashboard.income] += val; else current[dict.dashboard.expense] += val;
                     }
                 }
@@ -178,6 +145,7 @@ export default function DashboardView({ dict }: { dict: any }) {
             setStats(prev => ({ ...prev, periodIncome: periodInc, periodExpense: periodExp, netBalance: totalInc - totalExp }));
             setChartData(Array.from(dailyMap.values()));
 
+            // Son Hareketler
             const recentTrans = snapshot.docs.reverse().slice(0, 5).map(d => ({
                 id: d.id,
                 type: d.data().type === 'income' ? 'plus' : 'minus',
@@ -188,11 +156,15 @@ export default function DashboardView({ dict }: { dict: any }) {
             }));
             setActivities(recentTrans);
             setLoading(false);
+        }, (error) => {
+            console.error("FİNANS VERİSİ HATASI:", error);
+            // Eğer indeks hatası alırsan konsolda link çıkar, ona tıkla.
         });
 
+        // --- İŞ TAKİBİ SORGUSU ---
         let qJobs;
-        if (branchId) {
-            qJobs = query(collection(db, userPath, 'jobs'), where('branchId', '==', branchId));
+        if (selectedBranch) {
+            qJobs = query(collection(db, userPath, 'jobs'), where('branchId', '==', selectedBranch));
         } else {
             qJobs = query(collection(db, userPath, 'jobs'));
         }
@@ -203,15 +175,40 @@ export default function DashboardView({ dict }: { dict: any }) {
             setStats(prev => ({ ...prev, activeWork: pending, completedWork: completed }));
         });
 
+        // --- DUYURULAR ---
         let unsubAnnounce = () => { };
-        if (profileData.accountType !== 'individual') {
+        if (userData.accountType !== 'individual') {
             const qAnnounce = query(collection(db, userPath, 'announcements'), orderBy('createdAt', 'desc'));
             unsubAnnounce = onSnapshot(qAnnounce, (snapshot) => {
                 setAnnouncements(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
             });
         }
 
-        return { unsubTrans, unsubJobs, unsubAnnounce };
+        // --- GLOBAL BROADCAST ---
+        const broadcastRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
+        const unsubBroadcast = onSnapshot(broadcastRef, (doc) => {
+            if (doc.exists()) {
+                setSystemBroadcast(doc.data());
+            } else {
+                setSystemBroadcast(null);
+            }
+        });
+
+        return () => {
+            unsubTrans();
+            unsubJobs();
+            unsubAnnounce();
+            unsubBroadcast();
+        };
+
+    }, [user, userData, selectedBranch, timeFilter, currentLocale]); // 🔥 selectedBranch değişince bu blok yeniden çalışır
+
+    const configureSector = (sector: string) => {
+        let config = { title: dict.dashboard.active_jobs, unit: 'adet', icon: Briefcase, path: '/dashboard/jobs' };
+        if (sector === 'retail_wholesale') config = { title: dict.dashboard.pending_orders, unit: 'sipariş', icon: ShoppingBag, path: '/dashboard/jobs' };
+        else if (sector === 'beauty_health') config = { title: dict.dashboard.appointments, unit: 'randevu', icon: Scissors, path: '/dashboard/appointments' };
+        else if (sector === 'auto_rental') config = { title: dict.dashboard.rented_cars, unit: 'araç', icon: Car, path: '/dashboard/jobs' };
+        setSectorConfig(config);
     };
 
     const handlePostAnnouncement = async () => {
@@ -253,8 +250,8 @@ export default function DashboardView({ dict }: { dict: any }) {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-24">
-
-            {/* GLOBAL DUYURU */}
+            {/* ... HTML KISMI AYNI KALIYOR ... */}
+            {/* Kodun geri kalanı görsel olarak aynı, sadece veri kaynağı artık dinamik */}
             {systemBroadcast && systemBroadcast.isActive && (
                 <div className={`${bStyle.bg} border-b-4 ${bStyle.border} text-white p-4 rounded-xl shadow-lg shadow-black/10 flex items-start gap-4 relative overflow-hidden`}>
                     <div className="absolute -right-4 -top-4 opacity-20 rotate-12">
@@ -270,7 +267,6 @@ export default function DashboardView({ dict }: { dict: any }) {
                 </div>
             )}
 
-            {/* BAŞLIK VE FİLTRE */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -291,7 +287,6 @@ export default function DashboardView({ dict }: { dict: any }) {
                 )}
             </div>
 
-            {/* ŞİRKET İÇİ DUYURU */}
             {!isIndividual && (
                 <div className="bg-gradient-to-r from-blue-900 to-slate-900 rounded-2xl p-6 text-white border border-blue-800 shadow-lg relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-10"><Megaphone className="w-24 h-24" /></div>
@@ -343,7 +338,6 @@ export default function DashboardView({ dict }: { dict: any }) {
                 </div>
             )}
 
-            {/* KARTLAR */}
             <div className={`grid grid-cols-1 ${hideFinance ? 'md:grid-cols-1' : 'min-[480px]:grid-cols-2 lg:grid-cols-4'} gap-4`}>
                 {!hideFinance && (
                     <>
@@ -382,7 +376,6 @@ export default function DashboardView({ dict }: { dict: any }) {
                 )}
             </div>
 
-            {/* GRAFİK VE AKTİVİTE */}
             <div className={`grid grid-cols-1 ${hideFinance ? 'lg:grid-cols-1' : 'lg:grid-cols-3'} gap-6`}>
                 {!hideFinance && (
                     <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">

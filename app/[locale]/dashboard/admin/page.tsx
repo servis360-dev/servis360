@@ -15,20 +15,20 @@ import {
     setDoc,
     orderBy,
     limit,
-    getDocs
+    getDocs,
+    writeBatch
 } from 'firebase/firestore';
 
-// 👇 PROJE İÇİ IMPORTLAR
 import { auth, db } from '../../../../lib/firebase';
 import RoleGuard from '../../../../components/auth/role-guard';
 
-// 👇 DÜZELTME: Eksik ikonlar eklendi
 import {
     ShieldAlert, Search, Trash2, Users, Save,
     LayoutDashboard, Megaphone, Wallet,
     X, Building2, Store, User,
     Briefcase, Activity, Clock, Moon, ArrowUpDown, AlertTriangle, CheckCircle2,
-    ChevronDown, ChevronRight, Eye, Plus, Settings, Globe, Phone, MapPin
+    ChevronDown, ChevronRight, Eye, Plus, Settings, Globe, Phone, MapPin,
+    Bell, Send, Loader2
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -55,16 +55,24 @@ export default function AdminPage() {
 
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filterType, setFilterType] = useState('all'); // all, company, staff
+    const [filterType, setFilterType] = useState('all');
 
-    // Duyuru Sistemi
+    // Duyuru & Bildirim Sistemi
     const [broadcast, setBroadcast] = useState({
         message: '',
         isActive: false,
         type: 'info'
     });
 
-    // 🔥 İLETİŞİM AYARLARI (YENİ)
+    // 🔥 YENİ: BİLDİRİM GÖNDERME FORMU
+    const [notificationForm, setNotificationForm] = useState({
+        title: '',
+        message: '',
+        target: 'all', // all, staff, corporate, business, individual
+        sending: false
+    });
+
+    // İletişim Ayarları
     const [contactConfig, setContactConfig] = useState({
         whatsappTR: '',
         whatsappDE: '',
@@ -99,7 +107,6 @@ export default function AdminPage() {
         return ['corporate', 'company', 'enterprise', 'business', 'esnaf', 'tradesman'].includes(u.accountType);
     };
 
-    // 💤 GÜN HESAPLAYICI
     const getDaysSinceLogin = (lastLoginAt: any) => {
         if (!lastLoginAt) return -999;
         try {
@@ -118,15 +125,12 @@ export default function AdminPage() {
         if (!user) return;
         setCurrentUser(user);
 
-        // 1. Duyuru ve İletişim Ayarlarını Çek
         const fetchSettings = async () => {
             try {
-                // Duyuru
                 const broadcastRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'broadcast');
                 const broadcastSnap = await getDoc(broadcastRef);
                 if (broadcastSnap.exists()) setBroadcast(broadcastSnap.data() as any);
 
-                // 🔥 İletişim (Contact)
                 const contactRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'contact');
                 const contactSnap = await getDoc(contactRef);
                 if (contactSnap.exists()) setContactConfig(contactSnap.data() as any);
@@ -135,13 +139,11 @@ export default function AdminPage() {
         };
         fetchSettings();
 
-        // 2. Kullanıcılar ve İstatistikler
         const q = query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'user_directory'));
         const unsubUsers = onSnapshot(q, (snapshot) => {
             const userList = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             setUsers(userList);
 
-            // İstatistik Hesapla
             const active = userList.filter((u: any) => u.status === 'active').length;
             const staff = userList.filter((u: any) => isStaff(u)).length;
             const corporate = userList.filter((u: any) => ['corporate', 'company', 'enterprise'].includes(u.accountType) && !isStaff(u)).length;
@@ -166,14 +168,12 @@ export default function AdminPage() {
             setLoading(false);
         });
 
-        // 3. Gelir (SaaS Income)
         const unsubIncome = onSnapshot(query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'saas_income')), (snapshot) => {
             let total = 0;
             snapshot.docs.forEach(d => total += Number(d.data().amount || 0));
             setStats(prev => ({ ...prev, totalRevenue: total }));
         });
 
-        // 4. Loglar
         const unsubLogs = onSnapshot(query(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_logs'), orderBy('createdAt', 'desc'), limit(20)), (snapshot) => {
             setLogs(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
         });
@@ -181,7 +181,6 @@ export default function AdminPage() {
         return () => { unsubUsers(); unsubIncome(); unsubLogs(); };
     }, []);
 
-    // Kullanıcı Detay
     useEffect(() => {
         if (viewUser) {
             const fetchProfile = async () => {
@@ -196,7 +195,6 @@ export default function AdminPage() {
         }
     }, [viewUser]);
 
-    // --- FONKSİYONLAR ---
     const logAction = async (action: string, details: string) => {
         try {
             await addDoc(collection(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_logs'), {
@@ -231,7 +229,69 @@ export default function AdminPage() {
         }
     };
 
-    // 🔥 İLETİŞİM AYARLARINI KAYDET
+    // 🔥 TOPLU BİLDİRİM GÖNDERME
+    const sendBulkNotification = async () => {
+        if (!notificationForm.title || !notificationForm.message) return alert("Başlık ve mesaj giriniz.");
+        if (!confirm(`Bu bildirimi ${notificationForm.target === 'all' ? 'HERKESE' : notificationForm.target.toUpperCase()} göndermek istediğinize emin misiniz?`)) return;
+
+        setNotificationForm(prev => ({ ...prev, sending: true }));
+
+        try {
+            // Hedef kitleyi filtrele
+            const targets = users.filter(u => {
+                if (notificationForm.target === 'all') return true;
+                if (notificationForm.target === 'staff') return isStaff(u);
+                if (notificationForm.target === 'corporate') return ['corporate', 'company', 'enterprise'].includes(u.accountType);
+                if (notificationForm.target === 'business') return ['esnaf', 'business', 'tradesman'].includes(u.accountType);
+                if (notificationForm.target === 'individual') return u.accountType === 'individual';
+                return false;
+            });
+
+            // Batch işlemi (Firebase limiti 500, bu yüzden döngü ile tek tek veya küçük gruplarla atmak daha güvenli client tarafında)
+            // Client tarafında batch limitine takılmamak için promise.all kullanıyoruz (basit versiyon)
+            const promises = targets.map(u => {
+                return addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', u.id, 'notifications'), {
+                    title: notificationForm.title,
+                    message: notificationForm.message,
+                    type: 'admin',
+                    isRead: false,
+                    createdAt: serverTimestamp()
+                });
+            });
+
+            await Promise.all(promises);
+            await logAction('BULK_NOTIFICATION', `${targets.length} kişiye bildirim gönderildi: ${notificationForm.title}`);
+            alert(`✅ ${targets.length} kişiye bildirim gönderildi!`);
+            setNotificationForm({ title: '', message: '', target: 'all', sending: false });
+
+        } catch (error: any) {
+            console.error(error);
+            alert("Gönderim sırasında hata oluştu.");
+            setNotificationForm(prev => ({ ...prev, sending: false }));
+        }
+    };
+
+    // 🔥 TEKİL BİLDİRİM GÖNDERME
+    const sendSingleNotification = async () => {
+        if (!viewUser) return;
+        const msg = prompt(`${viewUser.fullName} kullanıcısına gönderilecek mesaj:`);
+        if (!msg) return;
+
+        try {
+            await addDoc(collection(db, 'artifacts', 'servis-360-live', 'users', viewUser.id, 'notifications'), {
+                title: 'Yönetici Mesajı',
+                message: msg,
+                type: 'admin',
+                isRead: false,
+                createdAt: serverTimestamp()
+            });
+            alert("Bildirim gönderildi.");
+        } catch (error) {
+            console.error(error);
+            alert("Hata oluştu.");
+        }
+    };
+
     const saveContactSettings = async () => {
         try {
             const contactRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'contact');
@@ -356,7 +416,6 @@ export default function AdminPage() {
             let valA = a[sortConfig.key] || '';
             let valB = b[sortConfig.key] || '';
 
-            // Tarih kontrolü
             if (sortConfig.key === 'lastLoginAt' || sortConfig.key === 'licenseEndsAt') {
                 valA = valA?.toDate ? valA.toDate().getTime() : 0;
                 valB = valB?.toDate ? valB.toDate().getTime() : 0;
@@ -387,10 +446,10 @@ export default function AdminPage() {
                         <ShieldAlert className="w-8 h-8 text-blue-600" />
                         <div>
                             <h1 className="text-xl font-black text-white tracking-tight">SERVİS360 KOMUTA MERKEZİ</h1>
-                            <p className="text-xs text-slate-500 font-mono">SİSTEM_VERSİYONU_V5.1 (PATCHED)</p>
+                            <p className="text-xs text-slate-500 font-mono">SİSTEM_VERSİYONU_V5.2 (MOBILE_PATCH)</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end">
                         <div className="text-right">
                             <span className="text-[10px] text-slate-500 uppercase font-bold">Toplam Ciro</span>
                             <p className="text-2xl font-black text-green-400 font-mono">${stats.totalRevenue.toLocaleString()}</p>
@@ -403,19 +462,18 @@ export default function AdminPage() {
                     </div>
                 </div>
 
-                {/* --- NAVİGASYON --- */}
-                <div className="border-b border-slate-800 bg-slate-900/50 px-6">
-                    <div className="flex gap-6 overflow-x-auto">
-                        <button onClick={() => setActiveTab('dashboard')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><LayoutDashboard className="w-4 h-4" /> Özet</button>
-                        <button onClick={() => setActiveTab('users')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'users' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Users className="w-4 h-4" /> Kullanıcılar</button>
-                        <button onClick={() => setActiveTab('broadcast')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'broadcast' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Megaphone className="w-4 h-4" /> Duyurular</button>
-                        <button onClick={() => setActiveTab('logs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'logs' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Activity className="w-4 h-4" /> Loglar</button>
-                        {/* 🔥 YENİ TAB: AYARLAR */}
-                        <button onClick={() => setActiveTab('settings')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'settings' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Settings className="w-4 h-4" /> Ayarlar</button>
+                {/* --- MOBİL NAVİGASYON (Scrollable) --- */}
+                <div className="border-b border-slate-800 bg-slate-900/50 px-4 md:px-6 sticky top-[88px] md:top-[90px] z-20 backdrop-blur-md">
+                    <div className="flex gap-4 md:gap-6 overflow-x-auto scrollbar-hide pb-1">
+                        <button onClick={() => setActiveTab('dashboard')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex-shrink-0 flex items-center gap-2 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><LayoutDashboard className="w-4 h-4" /> Özet</button>
+                        <button onClick={() => setActiveTab('users')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex-shrink-0 flex items-center gap-2 ${activeTab === 'users' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Users className="w-4 h-4" /> Kullanıcılar</button>
+                        <button onClick={() => setActiveTab('broadcast')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex-shrink-0 flex items-center gap-2 ${activeTab === 'broadcast' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Megaphone className="w-4 h-4" /> İletişim</button>
+                        <button onClick={() => setActiveTab('logs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex-shrink-0 flex items-center gap-2 ${activeTab === 'logs' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Activity className="w-4 h-4" /> Loglar</button>
+                        <button onClick={() => setActiveTab('settings')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex-shrink-0 flex items-center gap-2 ${activeTab === 'settings' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-500 hover:text-white'}`}><Settings className="w-4 h-4" /> Ayarlar</button>
                     </div>
                 </div>
 
-                <div className="p-6 max-w-7xl mx-auto">
+                <div className="p-4 md:p-6 max-w-7xl mx-auto">
                     {/* --- TAB: DASHBOARD --- */}
                     {activeTab === 'dashboard' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 animate-in fade-in">
@@ -448,36 +506,34 @@ export default function AdminPage() {
                     {/* --- TAB: USERS --- */}
                     {activeTab === 'users' && (
                         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden animate-in fade-in">
-                            <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
-                                <div className="flex items-center gap-2">
-                                    <h3 className="font-bold text-white">KULLANICI DİZİNİ</h3>
-                                    <div className="flex bg-black rounded p-1 ml-4 border border-slate-700">
-                                        <button onClick={() => setFilterType('all')} className={`px-3 py-1 text-xs font-bold rounded ${filterType === 'all' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Tümü</button>
-                                        <button onClick={() => setFilterType('company')} className={`px-3 py-1 text-xs font-bold rounded ${filterType === 'company' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Sadece Şirketler</button>
-                                        <button onClick={() => setFilterType('staff')} className={`px-3 py-1 text-xs font-bold rounded ${filterType === 'staff' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Sadece Personel</button>
+                            <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div className="flex flex-col md:flex-row items-start md:items-center gap-2 w-full md:w-auto">
+                                    <h3 className="font-bold text-white whitespace-nowrap">KULLANICI DİZİNİ</h3>
+                                    <div className="flex bg-black rounded p-1 md:ml-4 border border-slate-700 w-full md:w-auto">
+                                        <button onClick={() => setFilterType('all')} className={`flex-1 md:flex-none px-3 py-1 text-xs font-bold rounded ${filterType === 'all' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Tümü</button>
+                                        <button onClick={() => setFilterType('company')} className={`flex-1 md:flex-none px-3 py-1 text-xs font-bold rounded ${filterType === 'company' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Şirket</button>
+                                        <button onClick={() => setFilterType('staff')} className={`flex-1 md:flex-none px-3 py-1 text-xs font-bold rounded ${filterType === 'staff' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Personel</button>
                                     </div>
                                 </div>
-                                <div className="relative">
+                                <div className="relative w-full md:w-auto">
                                     <Search className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
-                                    <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Ara..." className="bg-black border border-slate-700 text-white text-sm p-2 pl-9 rounded w-64 focus:border-blue-500 outline-none" />
+                                    <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Ara..." className="bg-black border border-slate-700 text-white text-sm p-2 pl-9 rounded w-full md:w-64 focus:border-blue-500 outline-none" />
                                 </div>
                             </div>
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left text-xs text-slate-400">
+                                <table className="w-full text-left text-xs text-slate-400 whitespace-nowrap">
                                     <thead className="text-slate-500 bg-slate-950 uppercase border-b border-slate-800">
                                         <tr>
                                             <th className="p-4 w-8"></th>
-                                            <th onClick={() => requestSort('fullName')} className="p-4 cursor-pointer hover:text-white transition-colors"><div className="flex items-center gap-1">Kullanıcı <ArrowUpDown className="w-3 h-3" /></div></th>
-                                            <th className="p-4">Tip / Paket</th>
-                                            <th onClick={() => requestSort('licenseEndsAt')} className="p-4 cursor-pointer hover:text-white transition-colors"><div className="flex items-center gap-1">Lisans <ArrowUpDown className="w-3 h-3" /></div></th>
+                                            <th onClick={() => requestSort('fullName')} className="p-4 cursor-pointer hover:text-white"><div className="flex items-center gap-1">Kullanıcı <ArrowUpDown className="w-3 h-3" /></div></th>
+                                            <th className="p-4">Tip</th>
+                                            <th onClick={() => requestSort('licenseEndsAt')} className="p-4 cursor-pointer hover:text-white"><div className="flex items-center gap-1">Lisans <ArrowUpDown className="w-3 h-3" /></div></th>
                                             <th className="p-4">Durum</th>
-                                            <th onClick={() => requestSort('lastLoginAt')} className="p-4 cursor-pointer hover:text-white transition-colors"><div className="flex items-center gap-1">Son Görülme <ArrowUpDown className="w-3 h-3" /></div></th>
                                             <th className="p-4 text-right">İşlem</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-800">
                                         {filteredUsers.map(u => {
-                                            const daysOffline = getDaysSinceLogin(u.lastLoginAt);
                                             return (
                                                 <>
                                                     <tr key={u.id} className="hover:bg-slate-800/50 transition-colors">
@@ -495,21 +551,6 @@ export default function AdminPage() {
                                                         <td className="p-4">{getUserBadge(u)}</td>
                                                         <td className="p-4">{u.licenseEndsAt ? formatDate(u.licenseEndsAt) : '-'}</td>
                                                         <td className="p-4">{u.status === 'active' ? <span className="text-green-500 font-bold">Aktif</span> : <span className="text-red-500 font-bold">Pasif</span>}</td>
-                                                        <td className="p-4">
-                                                            {daysOffline === -999 ? (
-                                                                <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded flex items-center gap-1 w-fit cursor-help" title="Kullanıcı giriş yapıyor olabilir ancak DB'ye yazılmıyor. Login kodunu kontrol et.">
-                                                                    <AlertTriangle className="w-3 h-3 text-yellow-500" /> Veri Yok
-                                                                </span>
-                                                            ) : daysOffline === -1 || daysOffline === 0 ? (
-                                                                <span className="text-[10px] text-green-400 bg-green-900/20 px-2 py-0.5 rounded flex items-center gap-1 w-fit">
-                                                                    <CheckCircle2 className="w-3 h-3" /> Online
-                                                                </span>
-                                                            ) : (
-                                                                <span className="text-[10px] text-red-400 bg-red-900/20 px-2 py-0.5 rounded flex items-center gap-1 w-fit">
-                                                                    <Moon className="w-3 h-3" /> {daysOffline} gün yok
-                                                                </span>
-                                                            )}
-                                                        </td>
                                                         <td className="p-4 text-right flex justify-end gap-2">
                                                             <button onClick={() => setViewUser(u)} className="p-2 hover:bg-slate-700 rounded text-blue-400"><Eye className="w-4 h-4" /></button>
                                                             <button onClick={() => { setSaleTargetUser(u); setShowSaleModal(true); }} className="p-2 hover:bg-slate-700 rounded text-yellow-500"><Wallet className="w-4 h-4" /></button>
@@ -518,9 +559,9 @@ export default function AdminPage() {
                                                     </tr>
                                                     {expandedCompanyId === u.id && (
                                                         <tr className="bg-slate-900/50 animate-in fade-in">
-                                                            <td colSpan={7} className="p-4 pl-12 border-b border-slate-800">
+                                                            <td colSpan={7} className="p-4 pl-4 md:pl-12 border-b border-slate-800">
                                                                 <p className="text-xs font-bold text-slate-500 mb-2">FİRMA PERSONELİ</p>
-                                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                                                                     {loadingStaff ? <span>Yükleniyor...</span> : companyStaff.map(s => (
                                                                         <div key={s.id} className="bg-black border border-slate-700 p-2 rounded flex items-center justify-between">
                                                                             <div>
@@ -544,28 +585,66 @@ export default function AdminPage() {
                         </div>
                     )}
 
-                    {/* --- TAB: BROADCAST --- */}
+                    {/* --- TAB: BROADCAST & BİLDİRİM (GÜNCELLENDİ) --- */}
                     {activeTab === 'broadcast' && (
-                        <div className="max-w-2xl mx-auto animate-in fade-in">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in">
+                            {/* SOL: GLOBAL DUYURU (Banner) */}
                             <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
-                                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Megaphone className="w-5 h-5 text-yellow-500" /> GLOBAL DUYURU</h3>
+                                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Megaphone className="w-5 h-5 text-yellow-500" /> GLOBAL DUYURU (BANNER)</h3>
                                 <div className="bg-blue-900/20 p-4 rounded border border-blue-900/50 mb-4 text-xs text-blue-200">
                                     <p className="font-bold">💡 BİLGİ:</p>
-                                    <p>Buradan yayınlanan duyuru <code>public/data/system_settings/broadcast</code> yoluna yazılır. Kullanıcı dashboard'unda bu veriyi okuyan bir Alert bileşeni olduğundan emin olun.</p>
+                                    <p>Bu duyuru tüm kullanıcıların panelinin en tepesinde renkli bir şerit olarak görünür.</p>
                                 </div>
                                 <div className="space-y-4">
-                                    <input value={broadcast.message} onChange={e => setBroadcast({ ...broadcast, message: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none" placeholder="Duyuru mesajı..." />
+                                    <input value={broadcast.message} onChange={e => setBroadcast({ ...broadcast, message: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500" placeholder="Duyuru mesajı..." />
                                     <div className="grid grid-cols-2 gap-4">
                                         <select value={broadcast.type} onChange={e => setBroadcast({ ...broadcast, type: e.target.value })} className="bg-black border border-slate-700 text-white p-3 rounded outline-none"><option value="info">Mavi (Bilgi)</option><option value="warning">Sarı (Uyarı)</option><option value="error">Kırmızı (Kritik)</option></select>
                                         <button onClick={() => setBroadcast({ ...broadcast, isActive: !broadcast.isActive })} className={`rounded font-bold text-sm ${broadcast.isActive ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400'}`}>{broadcast.isActive ? 'YAYINDA' : 'GİZLİ'}</button>
                                     </div>
-                                    <button onClick={saveBroadcast} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded flex justify-center gap-2"><Save className="w-4 h-4" /> KAYDET</button>
+                                    <button onClick={saveBroadcast} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded flex justify-center items-center gap-2"><Save className="w-4 h-4" /> KAYDET</button>
+                                </div>
+                            </div>
+
+                            {/* SAĞ: TOPLU BİLDİRİM (Notification) - 🔥 YENİ */}
+                            <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
+                                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Bell className="w-5 h-5 text-red-500" /> ANLIK BİLDİRİM GÖNDER</h3>
+                                <div className="bg-purple-900/20 p-4 rounded border border-purple-900/50 mb-4 text-xs text-purple-200">
+                                    <p className="font-bold">💡 BİLGİ:</p>
+                                    <p>Bu işlem seçilen kullanıcı grubunun "Zil" ikonuna kalıcı bildirim gönderir.</p>
+                                </div>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Bildirim Başlığı</label>
+                                        <input value={notificationForm.title} onChange={e => setNotificationForm({ ...notificationForm, title: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500" placeholder="Örn: Bakım Çalışması" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Bildirim Mesajı</label>
+                                        <textarea value={notificationForm.message} onChange={e => setNotificationForm({ ...notificationForm, message: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500 h-20 resize-none" placeholder="Mesajınız..." />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 mb-1 block">Hedef Kitle</label>
+                                        <select value={notificationForm.target} onChange={e => setNotificationForm({ ...notificationForm, target: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none">
+                                            <option value="all">📢 Herkes (Tüm Kullanıcılar)</option>
+                                            <option value="staff">💼 Sadece Personeller</option>
+                                            <option value="corporate">🏢 Sadece Kurumsal Firmalar</option>
+                                            <option value="business">🏪 Sadece Esnaflar</option>
+                                            <option value="individual">👤 Sadece Bireysel Kullanıcılar</option>
+                                        </select>
+                                    </div>
+                                    <button
+                                        onClick={sendBulkNotification}
+                                        disabled={notificationForm.sending}
+                                        className={`w-full font-bold py-3 rounded flex justify-center items-center gap-2 ${notificationForm.sending ? 'bg-slate-700 cursor-wait' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
+                                    >
+                                        {notificationForm.sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                        {notificationForm.sending ? 'GÖNDERİLİYOR...' : 'BİLDİRİMİ GÖNDER'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* 🔥 TAB: AYARLAR (YENİ) */}
+                    {/* --- TAB: AYARLAR --- */}
                     {activeTab === 'settings' && (
                         <div className="max-w-3xl mx-auto animate-in fade-in">
                             <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
@@ -582,21 +661,11 @@ export default function AdminPage() {
                                     <div className="space-y-4">
                                         <div>
                                             <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><Phone className="w-3 h-3" /> WhatsApp Numarası (+90...)</label>
-                                            <input
-                                                value={contactConfig.whatsappTR}
-                                                onChange={e => setContactConfig({ ...contactConfig, whatsappTR: e.target.value })}
-                                                className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500"
-                                                placeholder="90555..."
-                                            />
+                                            <input value={contactConfig.whatsappTR} onChange={e => setContactConfig({ ...contactConfig, whatsappTR: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500" placeholder="90555..." />
                                         </div>
                                         <div>
                                             <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> Adres (Görünen)</label>
-                                            <input
-                                                value={contactConfig.addressTR}
-                                                onChange={e => setContactConfig({ ...contactConfig, addressTR: e.target.value })}
-                                                className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500"
-                                                placeholder="Örn: Teknopark İstanbul, Pendik/İstanbul"
-                                            />
+                                            <input value={contactConfig.addressTR} onChange={e => setContactConfig({ ...contactConfig, addressTR: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500" placeholder="Örn: Teknopark İstanbul, Pendik/İstanbul" />
                                         </div>
                                     </div>
                                 </div>
@@ -610,26 +679,16 @@ export default function AdminPage() {
                                     <div className="space-y-4">
                                         <div>
                                             <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><Phone className="w-3 h-3" /> WhatsApp Numarası (+49...)</label>
-                                            <input
-                                                value={contactConfig.whatsappDE}
-                                                onChange={e => setContactConfig({ ...contactConfig, whatsappDE: e.target.value })}
-                                                className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500"
-                                                placeholder="4915..."
-                                            />
+                                            <input value={contactConfig.whatsappDE} onChange={e => setContactConfig({ ...contactConfig, whatsappDE: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500" placeholder="4915..." />
                                         </div>
                                         <div>
                                             <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> Adres (Görünen)</label>
-                                            <input
-                                                value={contactConfig.addressDE}
-                                                onChange={e => setContactConfig({ ...contactConfig, addressDE: e.target.value })}
-                                                className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500"
-                                                placeholder="Örn: Friedrichstraße 123, 10117 Berlin"
-                                            />
+                                            <input value={contactConfig.addressDE} onChange={e => setContactConfig({ ...contactConfig, addressDE: e.target.value })} className="w-full bg-black border border-slate-700 text-white p-3 rounded outline-none focus:border-blue-500" placeholder="Örn: Friedrichstraße 123, 10117 Berlin" />
                                         </div>
                                     </div>
                                 </div>
 
-                                <button onClick={saveContactSettings} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl flex justify-center gap-2 transition-all transform hover:scale-[1.02]">
+                                <button onClick={saveContactSettings} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl flex justify-center items-center gap-2 transition-all transform hover:scale-[1.02]">
                                     <Save className="w-5 h-5" /> AYARLARI KAYDET
                                 </button>
                             </div>
@@ -640,19 +699,21 @@ export default function AdminPage() {
                     {activeTab === 'logs' && (
                         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden animate-in fade-in">
                             <div className="p-4 border-b border-slate-800"><h3 className="font-bold text-white">SON SİSTEM LOGLARI</h3></div>
-                            <table className="w-full text-left text-xs text-slate-400">
-                                <thead className="bg-slate-950 text-slate-500 uppercase"><tr><th className="p-3">Zaman</th><th className="p-3">İşlem</th><th className="p-3">Detay</th><th className="p-3">Yapan</th></tr></thead>
-                                <tbody className="divide-y divide-slate-800">
-                                    {logs.map(log => (
-                                        <tr key={log.id} className="hover:bg-slate-800/30">
-                                            <td className="p-3 font-mono text-slate-500">{formatDate(log.createdAt)}</td>
-                                            <td className="p-3 font-bold text-blue-400">{log.action}</td>
-                                            <td className="p-3 text-white">{log.details}</td>
-                                            <td className="p-3 text-slate-500">{log.adminEmail}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs text-slate-400 whitespace-nowrap">
+                                    <thead className="bg-slate-950 text-slate-500 uppercase"><tr><th className="p-3">Zaman</th><th className="p-3">İşlem</th><th className="p-3">Detay</th><th className="p-3">Yapan</th></tr></thead>
+                                    <tbody className="divide-y divide-slate-800">
+                                        {logs.map(log => (
+                                            <tr key={log.id} className="hover:bg-slate-800/30">
+                                                <td className="p-3 font-mono text-slate-500">{formatDate(log.createdAt)}</td>
+                                                <td className="p-3 font-bold text-blue-400">{log.action}</td>
+                                                <td className="p-3 text-white">{log.details}</td>
+                                                <td className="p-3 text-slate-500">{log.adminEmail}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -660,30 +721,30 @@ export default function AdminPage() {
                 {/* MODAL: MANUEL SATIŞ */}
                 {showSaleModal && (
                     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-                        <div className="bg-slate-900 border border-yellow-600 p-6 rounded w-full max-w-sm shadow-2xl">
+                        <div className="bg-slate-900 border border-yellow-600 p-6 rounded-xl w-full max-w-sm shadow-2xl animate-in zoom-in-95">
                             <h3 className="text-white font-bold mb-4">Manuel Satış Ekle</h3>
                             <p className="text-xs text-slate-400 mb-4 bg-black p-2 rounded">Kullanıcı: {saleTargetUser?.fullName}</p>
-                            <input type="number" placeholder="Tutar ($)" className="w-full bg-black border border-slate-700 p-3 mb-2 text-white rounded" value={saleForm.amount} onChange={e => setSaleForm({ ...saleForm, amount: e.target.value })} />
-                            <input type="number" placeholder="Süre (Ay)" className="w-full bg-black border border-slate-700 p-3 mb-2 text-white rounded" value={saleForm.months} onChange={e => setSaleForm({ ...saleForm, months: e.target.value })} />
-                            <input type="text" placeholder="Açıklama" className="w-full bg-black border border-slate-700 p-3 mb-4 text-white rounded" value={saleForm.description} onChange={e => setSaleForm({ ...saleForm, description: e.target.value })} />
+                            <input type="number" placeholder="Tutar ($)" className="w-full bg-black border border-slate-700 p-3 mb-2 text-white rounded focus:border-yellow-500 outline-none" value={saleForm.amount} onChange={e => setSaleForm({ ...saleForm, amount: e.target.value })} />
+                            <input type="number" placeholder="Süre (Ay)" className="w-full bg-black border border-slate-700 p-3 mb-2 text-white rounded focus:border-yellow-500 outline-none" value={saleForm.months} onChange={e => setSaleForm({ ...saleForm, months: e.target.value })} />
+                            <input type="text" placeholder="Açıklama" className="w-full bg-black border border-slate-700 p-3 mb-4 text-white rounded focus:border-yellow-500 outline-none" value={saleForm.description} onChange={e => setSaleForm({ ...saleForm, description: e.target.value })} />
                             <div className="flex gap-2">
-                                <button onClick={handleManualSale} className="flex-1 bg-yellow-600 text-black font-bold p-3 rounded">ONAYLA VE KAYDET</button>
-                                <button onClick={() => setShowSaleModal(false)} className="flex-1 bg-slate-800 text-white p-3 rounded">İPTAL</button>
+                                <button onClick={handleManualSale} className="flex-1 bg-yellow-600 text-black font-bold p-3 rounded hover:bg-yellow-500 transition-colors">ONAYLA</button>
+                                <button onClick={() => setShowSaleModal(false)} className="flex-1 bg-slate-800 text-white p-3 rounded hover:bg-slate-700 transition-colors">İPTAL</button>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* MODAL: KULLANICI DETAY */}
+                {/* MODAL: KULLANICI DETAY (Mobilde Tam Ekran Gibi) */}
                 {viewUser && (
                     <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4" onClick={() => setViewUser(null)}>
-                        <div className="bg-slate-900 border border-slate-700 rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                            <div className="p-4 border-b border-slate-800 flex justify-between items-center sticky top-0 bg-slate-900">
-                                <h3 className="font-bold text-white flex gap-2"><User className="w-5 h-5 text-blue-500" /> {viewUser.fullName}</h3>
-                                <button onClick={() => setViewUser(null)}><X className="text-slate-500 hover:text-white" /></button>
+                        <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in slide-in-from-bottom-4" onClick={e => e.stopPropagation()}>
+                            <div className="p-4 border-b border-slate-800 flex justify-between items-center sticky top-0 bg-slate-900 z-10">
+                                <h3 className="font-bold text-white flex items-center gap-2"><User className="w-5 h-5 text-blue-500" /> {viewUser.fullName}</h3>
+                                <button onClick={() => setViewUser(null)} className="p-2 hover:bg-slate-800 rounded-full"><X className="text-slate-500 hover:text-white" /></button>
                             </div>
                             <div className="p-6 space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="bg-black/30 p-4 rounded border border-slate-800">
                                         <p className="text-xs text-slate-500 uppercase font-bold">PAKET</p>
                                         <p className="text-white font-bold">{getUserBadge(viewUser)}</p>
@@ -693,6 +754,9 @@ export default function AdminPage() {
                                         <p className="text-white font-bold font-mono">{formatDate(viewUser.licenseEndsAt)}</p>
                                     </div>
                                 </div>
+                                <div className="flex gap-2">
+                                    <button onClick={sendSingleNotification} className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold p-3 rounded flex justify-center gap-2"><Bell className="w-4 h-4" /> Bildirim At</button>
+                                </div>
                                 {isBusinessOwner(viewUser) && userProfileData && (
                                     <div className="space-y-4">
                                         <div className="bg-slate-800/50 p-4 rounded border border-slate-700">
@@ -700,14 +764,14 @@ export default function AdminPage() {
                                                 <span className="text-white font-bold flex gap-2"><Store className="w-4 h-4" /> Şube Hakkı</span>
                                                 <span className="text-green-400 font-bold text-lg">{calculateLimits(viewUser, userProfileData).branch.total}</span>
                                             </div>
-                                            <button onClick={() => handleBuyLimit('branch')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Şube Sat (Fiyat Belirle)</button>
+                                            <button onClick={() => handleBuyLimit('branch')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Şube Sat</button>
                                         </div>
                                         <div className="bg-slate-800/50 p-4 rounded border border-slate-700">
                                             <div className="flex justify-between items-center mb-2">
                                                 <span className="text-white font-bold flex gap-2"><Users className="w-4 h-4" /> Personel Hakkı</span>
                                                 <span className="text-green-400 font-bold text-lg">{calculateLimits(viewUser, userProfileData).staff.total}</span>
                                             </div>
-                                            <button onClick={() => handleBuyLimit('staff')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Personel Sat (Fiyat Belirle)</button>
+                                            <button onClick={() => handleBuyLimit('staff')} className="w-full bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold p-2 rounded flex items-center justify-center gap-1"><Plus className="w-3 h-3" /> Ek Personel Sat</button>
                                         </div>
                                     </div>
                                 )}
