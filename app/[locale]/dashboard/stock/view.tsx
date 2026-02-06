@@ -12,7 +12,6 @@ import {
     deleteDoc,
     doc,
     serverTimestamp,
-    orderBy,
     getDoc,
     where
 } from 'firebase/firestore';
@@ -31,7 +30,8 @@ import {
     Scissors,
     Car,
     Briefcase,
-    Store
+    Store,
+    Loader2
 } from 'lucide-react';
 import { useBranch } from '../../../../components/providers/branch-context';
 
@@ -46,11 +46,13 @@ export default function StockView({ dict }: { dict: any }) {
     const currentLocale = params?.locale as string || 'en';
     const currency = getCurrencySettings(currentLocale);
 
+    // 🔥 Şube Context
     const { selectedBranch, branches } = useBranch();
+
     const [user, setUser] = useState<any>(null);
     const [targetUid, setTargetUid] = useState<string | null>(null);
 
-    // Dinamik Sektör Ayarları (Başlangıçta Varsayılan)
+    // Dinamik Sektör Ayarları
     const [sectorConfig, setSectorConfig] = useState({
         title: dict.stock.title_default,
         description: dict.stock.desc_default,
@@ -69,83 +71,87 @@ export default function StockView({ dict }: { dict: any }) {
         branchId: ''
     });
 
+    // 1. ADIM: KULLANICIYI VE HEDEF ID'Yİ BUL (Sadece 1 Kere Çalışır)
     useEffect(() => {
-        let unsubInventory: () => void;
-
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
                 setUser(currentUser);
                 try {
+                    // Profilini çekip kime bağlı olduğunu bulalım
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
 
                     let ownerId = currentUser.uid;
                     if (profileSnap.exists()) {
                         const data = profileSnap.data();
+                        // Eğer personel ise Patronun ID'sini al
                         if (data.ownerId && data.ownerId !== currentUser.uid) {
                             ownerId = data.ownerId;
                         }
-                    }
-                    setTargetUid(ownerId);
-
-                    const ownerProfileRef = doc(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'users', 'profile');
-                    const ownerProfileSnap = await getDoc(ownerProfileRef);
-                    if (ownerProfileSnap.exists()) {
-                        const sector = ownerProfileSnap.data().sectorType || 'technical_service';
+                        // Sektör ayarını yap
+                        const sector = data.sectorType || 'technical_service';
                         determineSectorConfig(sector);
                     }
-
-                    let q = query(
-                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'inventory'),
-                        orderBy('name')
-                    );
-
-                    if (selectedBranch) {
-                        q = query(
-                            collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'inventory'),
-                            where('branchId', '==', selectedBranch),
-                            orderBy('name')
-                        );
-                    }
-
-                    unsubInventory = onSnapshot(q, (snapshot) => {
-                        setProducts(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-                        setLoading(false);
-                    });
-
+                    setTargetUid(ownerId);
                 } catch (error) {
-                    console.error("Veri çekme hatası:", error);
+                    console.error("Profil hatası:", error);
                     setLoading(false);
                 }
             } else {
                 setLoading(false);
             }
         });
+        return () => unsubscribeAuth();
+    }, []);
 
-        return () => {
-            unsubscribeAuth();
-            if (unsubInventory) unsubInventory();
-        };
-    }, [selectedBranch]);
+    // 2. ADIM: STOKLARI DİNLE (Şube Değişince Burası Çalışır)
+    useEffect(() => {
+        if (!targetUid) return;
+
+        setLoading(true);
+        console.log("Stok verisi çekiliyor... Hedef:", targetUid, "Şube:", selectedBranch || "TÜMÜ");
+
+        // 🔥 KRİTİK DÜZELTME: orderBy('name') komutunu kaldırdık. 
+        // Çünkü 'where(branchId)' ile 'orderBy(name)' aynı anda kullanılırsa Firebase Composite Index ister.
+        // Sıralamayı aşağıda JavaScript ile yapacağız (Client-Side Sorting). Hata riskini sıfırlar.
+
+        let q;
+        const inventoryRef = collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'inventory');
+
+        if (selectedBranch) {
+            // Sadece seçili şube
+            q = query(inventoryRef, where('branchId', '==', selectedBranch));
+        } else {
+            // Tüm şubeler
+            q = query(inventoryRef);
+        }
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // 🔥 Sıralamayı burada yapıyoruz (Veritabanı yerine işlemcide)
+            items.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+
+            setProducts(items);
+            setLoading(false);
+        }, (error) => {
+            console.error("🔥 STOK VERİSİ HATASI:", error);
+            // İndeks hatası olsa bile loading'i kapat ki sonsuz dönmesin
+            setLoading(false);
+            alert("Veri çekilirken bağlantı sorunu oluştu. Lütfen konsolu kontrol edin.");
+        });
+
+        return () => unsubscribe();
+
+    }, [targetUid, selectedBranch]); // targetUid veya şube değişirse yeniden çalış
 
     const determineSectorConfig = (sector: string) => {
-        // Sektöre göre sözlükten ilgili metinleri çekiyoruz
         switch (sector) {
-            case 'beauty_health':
-                setSectorConfig({ title: dict.stock.title_beauty, description: dict.stock.desc_beauty, itemName: dict.stock.item_beauty, addButton: dict.stock.add_beauty, icon: Scissors });
-                break;
-            case 'retail_wholesale':
-                setSectorConfig({ title: dict.stock.title_retail, description: dict.stock.desc_retail, itemName: dict.stock.item_retail, addButton: dict.stock.add_retail, icon: Tag });
-                break;
-            case 'auto_rental':
-                setSectorConfig({ title: dict.stock.title_auto, description: dict.stock.desc_auto, itemName: dict.stock.item_auto, addButton: dict.stock.add_auto, icon: Car });
-                break;
-            case 'other':
-                setSectorConfig({ title: dict.stock.title_other, description: dict.stock.desc_other, itemName: dict.stock.item_other, addButton: dict.stock.add_other, icon: Briefcase });
-                break;
-            default:
-                setSectorConfig({ title: dict.stock.title_default, description: dict.stock.desc_default, itemName: dict.stock.item_default, addButton: dict.stock.add_default, icon: Package });
-                break;
+            case 'beauty_health': setSectorConfig({ title: dict.stock.title_beauty, description: dict.stock.desc_beauty, itemName: dict.stock.item_beauty, addButton: dict.stock.add_beauty, icon: Scissors }); break;
+            case 'retail_wholesale': setSectorConfig({ title: dict.stock.title_retail, description: dict.stock.desc_retail, itemName: dict.stock.item_retail, addButton: dict.stock.add_retail, icon: Tag }); break;
+            case 'auto_rental': setSectorConfig({ title: dict.stock.title_auto, description: dict.stock.desc_auto, itemName: dict.stock.item_auto, addButton: dict.stock.add_auto, icon: Car }); break;
+            case 'other': setSectorConfig({ title: dict.stock.title_other, description: dict.stock.desc_other, itemName: dict.stock.item_other, addButton: dict.stock.add_other, icon: Briefcase }); break;
+            default: setSectorConfig({ title: dict.stock.title_default, description: dict.stock.desc_default, itemName: dict.stock.item_default, addButton: dict.stock.add_default, icon: Package }); break;
         }
     };
 
@@ -205,7 +211,7 @@ export default function StockView({ dict }: { dict: any }) {
     const getBranchName = () => selectedBranch ? branches.find(b => b.id === selectedBranch)?.name : null;
 
     return (
-        <div className="space-y-6 pb-20">
+        <div className="space-y-6 pb-20 animate-in fade-in duration-500">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2"><Icon className="w-8 h-8 text-blue-600" /> {sectorConfig.title}</h1>
@@ -225,7 +231,10 @@ export default function StockView({ dict }: { dict: any }) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {loading ? (
-                    <div className="col-span-full text-center py-10 text-slate-500">{dict.common.loading}</div>
+                    <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-500">
+                        <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
+                        <p>{dict.common.loading}</p>
+                    </div>
                 ) : filteredProducts.length === 0 ? (
                     <div className="col-span-full text-center py-16 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 border-dashed">
                         <Package className="w-12 h-12 text-slate-300 mx-auto mb-3" />
@@ -236,7 +245,13 @@ export default function StockView({ dict }: { dict: any }) {
                     filteredProducts.map(p => (
                         <div key={p.id} className={`bg-white dark:bg-slate-800 p-5 rounded-xl border transition-all hover:shadow-md relative group ${p.quantity <= p.criticalLevel ? 'border-red-500 shadow-red-500/10' : 'border-slate-200 dark:border-slate-700'}`}>
                             {p.quantity <= p.criticalLevel && (<div className="absolute top-3 right-3 flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-full animate-pulse"><AlertTriangle className="w-3 h-3" /> {dict.stock.critical_badge}</div>)}
-                            {branches.length > 0 && !selectedBranch && (<div className={`absolute top-3 ${p.quantity <= p.criticalLevel ? 'right-20' : 'right-3'} text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1`}><Store className="w-3 h-3" /> {p.branchName || 'Merkez'}</div>)}
+
+                            {/* Eğer "Tüm Şubeler" seçiliyse, ürünün hangi şubede olduğunu göster */}
+                            {branches.length > 0 && !selectedBranch && (
+                                <div className={`absolute top-3 ${p.quantity <= p.criticalLevel ? 'right-24' : 'right-3'} text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1`}>
+                                    <Store className="w-3 h-3" /> {p.branchName || 'Merkez'}
+                                </div>
+                            )}
 
                             <div className="flex items-start gap-4 mb-4 mt-2">
                                 <div className={`p-3 rounded-lg ${p.quantity <= p.criticalLevel ? 'bg-red-50 dark:bg-red-900/20 text-red-600' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}><Icon className="w-6 h-6" /></div>
