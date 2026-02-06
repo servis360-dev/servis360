@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { useBranch } from '../../../../components/providers/branch-context'; // 🔥 Context Bağlantısı
 import {
     Users,
     UserPlus,
@@ -15,13 +16,16 @@ import {
     Loader2,
     Crown,
     Store,
-    Phone
+    Phone,
+    Info
 } from 'lucide-react';
 
 // 🔥 dict (sözlük) prop olarak geliyor
 export default function StaffView({ dict }: { dict: any }) {
+    // 🔥 Şubeleri veritabanından değil, global hafızadan (Context) çekiyoruz. Hız kazandırır.
+    const { branches } = useBranch();
+
     const [staff, setStaff] = useState<any[]>([]);
-    const [branches, setBranches] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<any>(null);
     const [userData, setUserData] = useState<any>(null);
@@ -37,7 +41,6 @@ export default function StaffView({ dict }: { dict: any }) {
 
     useEffect(() => {
         let unsubSnap: () => void;
-        let unsubBranches: () => void;
 
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
@@ -48,15 +51,11 @@ export default function StaffView({ dict }: { dict: any }) {
                     setUserData(profileSnap.data());
                 }
 
+                // Sadece Personel Listesini Dinle (Şubeler Context'ten geliyor)
                 const q = query(collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'staff'));
                 unsubSnap = onSnapshot(q, (snapshot) => {
                     setStaff(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                     setLoading(false);
-                });
-
-                const qBranches = query(collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'branches'));
-                unsubBranches = onSnapshot(qBranches, (snapshot) => {
-                    setBranches(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 });
             }
         });
@@ -64,7 +63,6 @@ export default function StaffView({ dict }: { dict: any }) {
         return () => {
             unsubscribe();
             if (unsubSnap) unsubSnap();
-            if (unsubBranches) unsubBranches();
         };
     }, []);
 
@@ -85,40 +83,41 @@ export default function StaffView({ dict }: { dict: any }) {
         if (!user || !userData) return;
 
         if (branches.length > 0 && !formData.branchId) {
-            alert("Lütfen bir şube seçiniz."); // Burası opsiyonel çevrilebilir
+            alert("Lütfen personelin çalışacağı şubeyi seçiniz.");
             return;
         }
 
         if (staff.length >= limits.total) {
-            alert(
-                `⚠️ ${dict.staff.limit_reached}!\n\n` +
-                `${dict.staff.limit_alert}`
-            );
+            alert(`⚠️ ${dict.staff.limit_reached}!\n\n${dict.staff.limit_alert}`);
             return;
         }
 
         try {
+            // Şube ismini bul (Görsel amaçlı kaydet, ama asıl olay ID'de)
             const selectedBranchName = branches.find(b => b.id === formData.branchId)?.name || 'Merkez';
 
+            // 1. Kendi listene ekle (Görüntülemek için)
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'staff', formData.email), {
                 ...formData,
-                branchName: selectedBranchName,
+                branchName: selectedBranchName, // Yedek bilgi
+                branchId: formData.branchId,    // 🔥 ASIL BAĞLANTI BU
                 status: 'invited',
                 invitedAt: serverTimestamp()
             });
 
+            // 2. Global Davetiye Oluştur (Giriş yapabilmesi için)
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', formData.email), {
                 email: formData.email,
                 targetCompanyId: user.uid,
                 targetCompanyName: userData.companyName || 'Şirket',
                 targetSector: userData.sectorType || 'technical_service',
                 assignedRole: formData.role,
-                assignedBranchId: formData.branchId,
+                assignedBranchId: formData.branchId, // Personel bu şubeye kilitlenir
                 invitedBy: userData.fullName,
                 createdAt: serverTimestamp()
             });
 
-            alert(`✅ ${dict.common.save}`);
+            alert(`✅ ${dict.common.save} - Personel davet edildi!`);
             setShowModal(false);
             setFormData({ fullName: '', email: '', role: 'technical', phone: '', branchId: '' });
 
@@ -135,11 +134,16 @@ export default function StaffView({ dict }: { dict: any }) {
         }
     };
 
-    // 🔥 Rol İsimlerini Sözlükten Çekiyoruz
     const getRoleName = (role: string) => {
-        // dict.staff.roles içindeki keylere bakıyoruz
         const roles: any = dict.staff.roles;
         return roles[role] || role;
+    };
+
+    // Dinamik Şube İsmi Bulucu (ID'den bulur)
+    const getBranchName = (branchId: string) => {
+        if (!branchId) return '-';
+        const branch = branches.find(b => b.id === branchId);
+        return branch ? branch.name : 'Silinmiş Şube';
     };
 
     return (
@@ -237,12 +241,13 @@ export default function StaffView({ dict }: { dict: any }) {
                                         </span>
                                     </td>
                                     <td className="p-4">
-                                        {p.branchName ? (
-                                            <div className="flex items-center gap-1.5">
-                                                <Store className="w-4 h-4 text-purple-500" />
-                                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{p.branchName}</span>
-                                            </div>
-                                        ) : <span className="text-slate-400 text-xs">-</span>}
+                                        <div className="flex items-center gap-1.5">
+                                            <Store className="w-4 h-4 text-purple-500" />
+                                            {/* 🔥 DİNAMİK ŞUBE İSMİ */}
+                                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                                {getBranchName(p.branchId)}
+                                            </span>
+                                        </div>
                                     </td>
                                     <td className="p-4">
                                         {p.status === 'active' ? (
@@ -251,7 +256,7 @@ export default function StaffView({ dict }: { dict: any }) {
                                             </span>
                                         ) : (
                                             <span className="text-amber-600 font-bold text-xs flex items-center gap-1 bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded-full w-fit animate-pulse">
-                                                <Loader2 className="w-3 h-3" /> {dict.common.loading}
+                                                <Loader2 className="w-3 h-3" /> Davet Edildi
                                             </span>
                                         )}
                                     </td>
@@ -288,8 +293,7 @@ export default function StaffView({ dict }: { dict: any }) {
                                 </div>
                                 <div className="text-xs text-blue-900 dark:text-blue-200">
                                     <p className="font-bold mb-1">{dict.staff.limit_status}</p>
-                                    {/* {remaining} değerini dinamik olarak metne gömüyoruz */}
-                                    <p>{dict.staff.limit_desc.replace('{remaining}', remaining)}</p>
+                                    <p>{dict.staff.limit_desc.replace('{remaining}', remaining.toString())}</p>
                                 </div>
                             </div>
 
@@ -334,7 +338,15 @@ export default function StaffView({ dict }: { dict: any }) {
                                     </div>
                                 )}
 
-                                <button className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 mt-4">
+                                {/* BİLGİLENDİRME NOTU */}
+                                <div className="bg-blue-50 dark:bg-blue-900/10 p-3 rounded-lg border border-blue-100 dark:border-blue-900/30 flex gap-2">
+                                    <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                                    <p className="text-xs text-blue-800 dark:text-blue-300">
+                                        Davet gönderildiğinde, bu kişi "Kayıt Ol" sayfasından kendi şifresini belirleyerek sisteme giriş yapabilecektir.
+                                    </p>
+                                </div>
+
+                                <button className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 mt-2">
                                     <Mail className="w-5 h-5" /> {dict.staff.btn_invite}
                                 </button>
                             </form>

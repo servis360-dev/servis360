@@ -3,8 +3,6 @@
 import { useEffect, useState } from 'react';
 import {
     collection,
-    query,
-    onSnapshot,
     addDoc,
     deleteDoc,
     doc,
@@ -14,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { useBranch } from '../../../../components/providers/branch-context'; // 🔥 Context Bağlantısı
 import {
     Store,
     Plus,
@@ -27,15 +26,17 @@ import {
     Loader2,
     Lock,
     Crown,
-    CheckCircle2
+    CheckCircle2,
+    Info // İkon eklendi
 } from 'lucide-react';
 
-// 🔥 Sözlük (dict) prop olarak geliyor
 export default function BranchesView({ dict }: { dict: any }) {
-    const [branches, setBranches] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    // 🔥 ARTIK VERİYİ TEKRAR ÇEKMİYORUZ, HAZIR VERİYİ KULLANIYORUZ
+    const { branches, loading: branchesLoading } = useBranch();
+
     const [user, setUser] = useState<any>(null);
     const [profile, setProfile] = useState<any>(null);
+    const [loadingProfile, setLoadingProfile] = useState(true);
 
     // Modal & Form
     const [showAddModal, setShowAddModal] = useState(false);
@@ -54,25 +55,13 @@ export default function BranchesView({ dict }: { dict: any }) {
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
                 setUser(currentUser);
-
-                // 1. Profil Bilgisini Çek (Limitleri öğrenmek için)
+                // Sadece profil limitlerini öğrenmek için istek atıyoruz
                 const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                 const profileSnap = await getDoc(profileRef);
                 if (profileSnap.exists()) {
                     setProfile(profileSnap.data());
                 }
-
-                // 2. Şubeleri Listele
-                const q = query(collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'branches'));
-                const unsub = onSnapshot(q, (snapshot) => {
-                    const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    // Merkez şubeyi en başa al
-                    data.sort((a: any, b: any) => (b.isHeadquarters === true ? 1 : 0) - (a.isHeadquarters === true ? 1 : 0));
-                    setBranches(data);
-                    setLoading(false);
-                });
-
-                return () => unsub();
+                setLoadingProfile(false);
             }
         });
         return () => unsubscribeAuth();
@@ -92,17 +81,14 @@ export default function BranchesView({ dict }: { dict: any }) {
     const limits = getLimits();
     const usage = branches.length;
     const isLimitReached = usage >= limits.total;
-    const remaining = limits.total - usage; // Görüntüleme için
+    const remaining = limits.total - usage;
 
     const handleAddBranch = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user) return;
 
         if (isLimitReached) {
-            alert(
-                `⚠️ ${dict.branches.limit_alert_title}!\n\n` +
-                `${dict.branches.limit_alert_desc}`
-            );
+            alert(dict.branches.limit_alert_title);
             return;
         }
 
@@ -111,6 +97,7 @@ export default function BranchesView({ dict }: { dict: any }) {
             const isFirst = branches.length === 0;
             const finalHeadquarters = isFirst ? true : newBranch.isHeadquarters;
 
+            // Eğer yeni şube merkez yapılacaksa, eskisini düşür
             if (finalHeadquarters && !isFirst) {
                 const currentHq = branches.find(b => b.isHeadquarters);
                 if (currentHq) {
@@ -137,7 +124,7 @@ export default function BranchesView({ dict }: { dict: any }) {
 
     const handleDelete = async (id: string, isHq: boolean) => {
         if (isHq && branches.length > 1) {
-            alert("🛑 " + dict.common.error + ": Merkez şube silinemez."); // Basit çeviri
+            alert("🛑 Merkez şube silinemez. Önce başka bir şubeyi merkez yapın.");
             return;
         }
         if (confirm(`⚠️ ${dict.common.delete}?`)) {
@@ -156,7 +143,8 @@ export default function BranchesView({ dict }: { dict: any }) {
         await updateDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'branches', branch.id), { isHeadquarters: true });
     };
 
-    if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8" /></div>;
+    // Yükleniyor durumu: Hem şubeler (Context) hem profil (Auth) hazır olmalı
+    if (branchesLoading || loadingProfile) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-blue-600 w-8 h-8" /></div>;
 
     return (
         <div className="space-y-6 pb-20 animate-in fade-in duration-500">
@@ -174,7 +162,6 @@ export default function BranchesView({ dict }: { dict: any }) {
                         <div className={`px-4 py-2 rounded-xl border flex items-center gap-3 ${remaining <= 0 ? 'bg-red-50 border-red-200 text-red-600' : 'bg-blue-50 border-blue-200 text-blue-600'}`}>
                             <Crown className="w-5 h-5" />
                             <div>
-                                {/* "Toplam Hak" kavramını burada da kullanıyoruz */}
                                 <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">{dict.staff.total_right}</p>
                                 <div className="text-sm font-bold flex items-center gap-1">
                                     <span>{usage} / {limits.total}</span>
@@ -202,7 +189,7 @@ export default function BranchesView({ dict }: { dict: any }) {
                 </div>
             </div>
 
-            {/* UYARI MESAJI */}
+            {/* UYARI MESAJI (LİMİT) */}
             {isLimitReached && (
                 <div className="bg-gradient-to-r from-red-50 to-white dark:from-red-900/10 dark:to-slate-900 border border-red-200 dark:border-red-900/30 p-4 rounded-xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
                     <ShieldAlert className="w-5 h-5 text-red-600 dark:text-red-500 shrink-0 mt-0.5" />
@@ -333,6 +320,14 @@ export default function BranchesView({ dict }: { dict: any }) {
                                         <label className="text-xs font-bold text-slate-500 uppercase ml-1 mb-1 block">{dict.branches.form_manager_email}</label>
                                         <input type="email" required className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-blue-500 transition-all font-medium" placeholder="yonetici@sirket.com" value={newBranch.managerEmail} onChange={e => setNewBranch({ ...newBranch, managerEmail: e.target.value })} />
                                     </div>
+                                </div>
+
+                                {/* 🔥 YENİ: BİLGİ NOTU (Kullanıcının kafasındaki soru işareti için) */}
+                                <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-900/30 p-3 rounded-lg flex gap-3">
+                                    <Info className="w-5 h-5 text-yellow-600 dark:text-yellow-500 shrink-0" />
+                                    <p className="text-xs text-yellow-700 dark:text-yellow-400 leading-relaxed">
+                                        <strong>Not:</strong> Buraya girdiğiniz e-posta adresi sadece iletişim bilgisi olarak kaydedilir. İlgili kişiye sistem yetkisi vermek için lütfen <strong>Personel Yönetimi</strong> menüsünü kullanın.
+                                    </p>
                                 </div>
 
                                 <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors" onClick={() => setNewBranch(p => ({ ...p, isHeadquarters: !p.isHeadquarters }))}>
