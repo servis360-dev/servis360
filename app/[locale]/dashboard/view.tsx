@@ -63,7 +63,7 @@ export default function DashboardView({ dict }: { dict: any }) {
     const params = useParams();
     const currentLocale = params?.locale as string || 'en';
 
-    // 1. ADIM: SADECE KULLANICIYI DOĞRULA (Şube değişiminden etkilenmez)
+    // 1. ADIM: SADECE KULLANICIYI DOĞRULA
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (!currentUser) {
@@ -100,15 +100,26 @@ export default function DashboardView({ dict }: { dict: any }) {
 
         // --- FİNANS SORGUSU ---
         let qTrans;
-        // Eğer bir şube seçiliyse SADECE o şubenin verisini çek
+        const financeRef = collection(db, userPath, 'finance');
+
+        // 🔥 DÜZELTME YAPILDI: 'orderBy' kaldırıldı. İndeks hatası artık oluşmaz.
         if (selectedBranch) {
-            qTrans = query(collection(db, userPath, 'finance'), where('branchId', '==', selectedBranch), orderBy('date', 'asc'));
+            qTrans = query(financeRef, where('branchId', '==', selectedBranch));
         } else {
-            // Şube seçili değilse HEPSİNİ çek
-            qTrans = query(collection(db, userPath, 'finance'), orderBy('date', 'asc'));
+            qTrans = query(financeRef);
         }
 
         const unsubTrans = onSnapshot(qTrans, (snapshot) => {
+            // ⚡ 1. Veriyi Ham Olarak Al
+            const rawData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // ⚡ 2. Cihazda Sırala (Eskiden Yeniye) - Grafik için
+            rawData.sort((a: any, b: any) => {
+                const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
+                const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
+                return dateA - dateB;
+            });
+
             let periodInc = 0, periodExp = 0;
             let totalInc = 0, totalExp = 0;
             const dailyMap = new Map();
@@ -125,8 +136,7 @@ export default function DashboardView({ dict }: { dict: any }) {
                 dailyMap.set(k, { name: k, [dict.dashboard.income]: 0, [dict.dashboard.expense]: 0 });
             }
 
-            snapshot.docs.forEach(doc => {
-                const data = doc.data();
+            rawData.forEach((data: any) => {
                 const itemDate = data.date?.toDate ? data.date.toDate() : new Date(data.date);
                 const val = Number(data.amount) || 0;
 
@@ -145,20 +155,21 @@ export default function DashboardView({ dict }: { dict: any }) {
             setStats(prev => ({ ...prev, periodIncome: periodInc, periodExpense: periodExp, netBalance: totalInc - totalExp }));
             setChartData(Array.from(dailyMap.values()));
 
-            // Son Hareketler
-            const recentTrans = snapshot.docs.reverse().slice(0, 5).map(d => ({
+            // ⚡ 3. Son Hareketler için Tersine Çevir (Yeniden Eskiye) ve İlk 5'i Al
+            const recentTrans = [...rawData].reverse().slice(0, 5).map(d => ({
                 id: d.id,
-                type: d.data().type === 'income' ? 'plus' : 'minus',
-                title: d.data().description || (d.data().type === 'income' ? dict.dashboard.income : dict.dashboard.expense),
-                subtitle: d.data().category || 'Genel',
-                amount: d.data().amount,
-                date: d.data().date?.toDate ? d.data().date.toDate() : new Date(d.data().date)
+                type: d.type === 'income' ? 'plus' : 'minus',
+                title: d.description || (d.type === 'income' ? dict.dashboard.income : dict.dashboard.expense),
+                subtitle: d.category || 'Genel',
+                amount: d.amount,
+                date: d.date?.toDate ? d.date.toDate() : new Date(d.date)
             }));
+
             setActivities(recentTrans);
             setLoading(false);
         }, (error) => {
             console.error("FİNANS VERİSİ HATASI:", error);
-            // Eğer indeks hatası alırsan konsolda link çıkar, ona tıkla.
+            setLoading(false);
         });
 
         // --- İŞ TAKİBİ SORGUSU ---
@@ -201,7 +212,7 @@ export default function DashboardView({ dict }: { dict: any }) {
             unsubBroadcast();
         };
 
-    }, [user, userData, selectedBranch, timeFilter, currentLocale]); // 🔥 selectedBranch değişince bu blok yeniden çalışır
+    }, [user, userData, selectedBranch, timeFilter, currentLocale]);
 
     const configureSector = (sector: string) => {
         let config = { title: dict.dashboard.active_jobs, unit: 'adet', icon: Briefcase, path: '/dashboard/jobs' };
@@ -250,8 +261,6 @@ export default function DashboardView({ dict }: { dict: any }) {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-24">
-            {/* ... HTML KISMI AYNI KALIYOR ... */}
-            {/* Kodun geri kalanı görsel olarak aynı, sadece veri kaynağı artık dinamik */}
             {systemBroadcast && systemBroadcast.isActive && (
                 <div className={`${bStyle.bg} border-b-4 ${bStyle.border} text-white p-4 rounded-xl shadow-lg shadow-black/10 flex items-start gap-4 relative overflow-hidden`}>
                     <div className="absolute -right-4 -top-4 opacity-20 rotate-12">
