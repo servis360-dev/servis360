@@ -12,7 +12,6 @@ import {
     deleteDoc,
     doc,
     serverTimestamp,
-    orderBy,
     getDoc,
     where
 } from 'firebase/firestore';
@@ -31,7 +30,8 @@ import {
     UserCog,
     BookUser,
     Trash2,
-    Store
+    Store,
+    Loader2 // Loader ikonu eklendi
 } from 'lucide-react';
 import { useBranch } from '../../../../components/providers/branch-context';
 
@@ -69,6 +69,7 @@ export default function CustomersView({ dict }: { dict: any }) {
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
                 setUser(currentUser);
+                setLoading(true); // Yükleniyor başlat
                 try {
                     const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
                     const profileSnap = await getDoc(profileRef);
@@ -85,17 +86,17 @@ export default function CustomersView({ dict }: { dict: any }) {
                     setTargetUid(ownerId);
                     setAccountType(accType);
 
-                    let q = query(
-                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'customers'),
-                        orderBy('name')
-                    );
+                    // 🔥 KRİTİK DÜZELTME: orderBy('name') kaldırıldı.
+                    // Firebase'de 'where' ve 'orderBy' aynı anda kullanılırsa Composite Index gerekir.
+                    // Sıralamayı aşağıda JavaScript ile yapacağız.
+
+                    let q;
+                    const customersRef = collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'customers');
 
                     if (selectedBranch) {
-                        q = query(
-                            collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'customers'),
-                            where('branchId', '==', selectedBranch),
-                            orderBy('name')
-                        );
+                        q = query(customersRef, where('branchId', '==', selectedBranch));
+                    } else {
+                        q = query(customersRef);
                     }
 
                     unsubSnapshot = onSnapshot(q, (snapshot) => {
@@ -104,13 +105,22 @@ export default function CustomersView({ dict }: { dict: any }) {
                             type: 'customer',
                             ...d.data()
                         }));
+
+                        // ⚡ Client-Side Sıralama (Alfabetik)
+                        data.sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
+
                         setAllContacts(data);
                         setLoading(false);
+                    }, (error) => {
+                        console.error("Müşteri verisi hatası:", error);
+                        setLoading(false); // Hata olsa bile yükleniyor'u kapat
                     });
                 } catch (error) {
                     console.error("Veri çekme hatası", error);
                     setLoading(false);
                 }
+            } else {
+                setLoading(false);
             }
         });
         return () => {
@@ -232,7 +242,6 @@ export default function CustomersView({ dict }: { dict: any }) {
         } else if (accountType === 'individual') {
             msg = `Merhaba ${name}, nasılsın?`;
         } else {
-            // Dil desteği eklenebilir ama mesaj içeriği şimdilik sabit
             if (balance > 0) msg = `Sayın ${name}, işletmemize olan ${formatMoney(balance, currentLocale)} bakiyeniz bulunmaktadır.`;
             else msg = `Sayın ${name}, iyi günler dileriz.`;
         }
@@ -257,7 +266,7 @@ export default function CustomersView({ dict }: { dict: any }) {
     }
 
     return (
-        <div className="space-y-6 pb-20">
+        <div className="space-y-6 pb-20 animate-in fade-in duration-500">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -287,7 +296,12 @@ export default function CustomersView({ dict }: { dict: any }) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {loading ? <p className="text-slate-500 text-center col-span-full">{dict.common.loading}</p> : filteredContacts.length === 0 ? (
+                {loading ? (
+                    <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-500">
+                        <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
+                        <p>{dict.common.loading}</p>
+                    </div>
+                ) : filteredContacts.length === 0 ? (
                     <div className="col-span-full text-center py-10 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
                         <BookUser className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                         <p className="text-slate-500">{viewMode === 'personnel' ? dict.customers.empty_personnel : dict.customers.empty_customers}</p>
@@ -295,7 +309,7 @@ export default function CustomersView({ dict }: { dict: any }) {
                 ) : filteredContacts.map(c => (
                     <div key={c.id} className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all relative group">
                         <button onClick={(e) => { e.stopPropagation(); handleDelete(c.id, c.name); }} className="absolute top-3 right-3 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors z-10" title={dict.common.delete}><Trash2 className="w-4 h-4" /></button>
-                        {branches.length > 0 && (
+                        {branches.length > 0 && !selectedBranch && (
                             <div className="absolute top-3 right-12 text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded flex items-center gap-1"><Store className="w-3 h-3" /> {c.branchName || 'Merkez'}</div>
                         )}
                         <div className="flex justify-between items-start mb-4 mt-2">

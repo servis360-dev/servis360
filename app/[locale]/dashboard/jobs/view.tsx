@@ -12,7 +12,6 @@ import {
     updateDoc,
     deleteDoc,
     serverTimestamp,
-    orderBy,
     where,
     getDoc,
     writeBatch,
@@ -40,7 +39,7 @@ import {
 import { useBranch } from '../../../../components/providers/branch-context';
 
 export default function JobsView({ dict }: { dict: any }) {
-    // Statik config yerine dinamik (sözlükten gelen) config kullanacağız
+    // Statik config yerine dinamik (sözlükten gelen) config
     const statusConfig: any = {
         pending: { label: dict.jobs.status.pending, color: 'text-yellow-600 bg-yellow-50 border-yellow-200' },
         in_progress: { label: dict.jobs.status.in_progress, color: 'text-blue-600 bg-blue-50 border-blue-200' },
@@ -75,48 +74,77 @@ export default function JobsView({ dict }: { dict: any }) {
     const [selectedJobForPayment, setSelectedJobForPayment] = useState<any>(null);
     const [whatsappTemplate, setWhatsappTemplate] = useState('Sayın müşterimiz, cihazınızın işlemleri tamamlanmıştır. Ücret: {tutar}');
 
+    // 1. ADIM: KULLANICI VE PROFİL BİLGİSİNİ AL (Sadece 1 kere çalışır)
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
                 setUser(currentUser);
-                const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
-                const profileSnap = await getDoc(profileRef);
+                try {
+                    const profileRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
+                    const profileSnap = await getDoc(profileRef);
 
-                let ownerId = currentUser.uid;
-                if (profileSnap.exists()) {
-                    const data = profileSnap.data();
-                    if (data.ownerId && data.ownerId !== currentUser.uid) {
-                        ownerId = data.ownerId;
+                    let ownerId = currentUser.uid;
+                    if (profileSnap.exists()) {
+                        const data = profileSnap.data();
+                        if (data.ownerId && data.ownerId !== currentUser.uid) {
+                            ownerId = data.ownerId;
+                        }
+                        if (data.whatsappTemplates?.deviceCompleted) {
+                            setWhatsappTemplate(data.whatsappTemplates.deviceCompleted);
+                        }
                     }
-                    if (data.whatsappTemplates?.deviceCompleted) {
-                        setWhatsappTemplate(data.whatsappTemplates.deviceCompleted);
-                    }
-                }
-                setTargetUid(ownerId);
-
-                let q = query(
-                    collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'jobs'),
-                    orderBy('createdAt', 'desc')
-                );
-
-                if (selectedBranch) {
-                    q = query(
-                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'jobs'),
-                        where('branchId', '==', selectedBranch),
-                        orderBy('createdAt', 'desc')
-                    );
-                }
-
-                const unsub = onSnapshot(q, (snapshot) => {
-                    const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    setJobs(data);
+                    setTargetUid(ownerId);
+                } catch (error) {
+                    console.error("Profil yükleme hatası:", error);
                     setLoading(false);
-                });
-                return () => unsub();
+                }
+            } else {
+                setLoading(false);
             }
         });
         return () => unsubscribeAuth();
-    }, [selectedBranch]);
+    }, []);
+
+    // 2. ADIM: İŞ LİSTESİNİ CANLI DİNLE (Şube değişince burası çalışır)
+    useEffect(() => {
+        if (!targetUid) return;
+
+        setLoading(true);
+        console.log("İşler çekiliyor... Hedef:", targetUid, "Şube:", selectedBranch || "TÜMÜ");
+
+        let q;
+        const jobsRef = collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'jobs');
+
+        // 🔥 KRİTİK DÜZELTME: orderBy('createdAt', 'desc') Veritabanından kaldırıldı.
+        // Firebase İndeks hatasını engellemek için.
+
+        if (selectedBranch) {
+            // Şube seçiliyse sadece o şubeyi getir (Sıralama yok)
+            q = query(jobsRef, where('branchId', '==', selectedBranch));
+        } else {
+            // Hepsi seçiliyse hepsini getir (Sıralama yok)
+            q = query(jobsRef);
+        }
+
+        const unsub = onSnapshot(q, (snapshot) => {
+            const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // ⚡ Client-Side Sıralama (En yeniden en eskiye)
+            data.sort((a: any, b: any) => {
+                const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+                const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+                return dateB - dateA; // Yeni tarih en üstte
+            });
+
+            setJobs(data);
+            setLoading(false);
+        }, (error) => {
+            console.error("İş verisi çekme hatası:", error);
+            setLoading(false);
+        });
+
+        return () => unsub();
+    }, [targetUid, selectedBranch]); // targetUid veya selectedBranch değişirse yeniden çalış
 
     const handleAddJob = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -140,7 +168,7 @@ export default function JobsView({ dict }: { dict: any }) {
             });
             setShowModal(false);
             setNewJob({ customerName: '', phone: '', device: '', problem: '', price: '', note: '', branchId: '' });
-            alert(dict.common.save); // Opsiyonel
+            alert(`✅ ${dict.common.save}`);
         } catch (error) {
             console.error("Hata:", error);
             alert(dict.common.error);
@@ -212,7 +240,6 @@ export default function JobsView({ dict }: { dict: any }) {
         let message = whatsappTemplate.replace('{tutar}', formatMoney(Number(job.price || 0), currentLocale)).replace('{musteri}', job.customerName || 'Müşteri');
         let phone = job.phone.replace(/\D/g, '');
         if (phone.startsWith('0')) phone = phone.substring(1);
-        // Uluslararası numara kontrolü (basit) - Türkiye varsayılan
         if (currentLocale === 'tr' && !phone.startsWith('90')) phone = '90' + phone;
 
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
@@ -233,7 +260,7 @@ export default function JobsView({ dict }: { dict: any }) {
     const getBranchName = (id: string) => branches.find(b => b.id === id)?.name || 'Merkez';
 
     return (
-        <div className="space-y-6 pb-20">
+        <div className="space-y-6 pb-20 animate-in fade-in duration-500">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -272,7 +299,12 @@ export default function JobsView({ dict }: { dict: any }) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {loading ? <p className="col-span-full text-center py-10 text-slate-500">{dict.common.loading}</p> :
+                {loading ? (
+                    <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-500">
+                        <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
+                        <p>{dict.common.loading}</p>
+                    </div>
+                ) :
                     filteredJobs.length === 0 ? (
                         <div className="col-span-full text-center py-16 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
                             <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-3" />

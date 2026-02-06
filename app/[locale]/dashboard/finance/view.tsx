@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { formatMoney, getCurrencySettings } from '../../../../lib/format';
 import {
-    collection, query, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, orderBy, getDoc, where
+    collection, query, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, getDoc, where
 } from 'firebase/firestore';
 import { auth, db } from '../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
-    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search, Calendar, Store
+    Wallet, TrendingUp, TrendingDown, Plus, Minus, Trash2, History, X, Wrench, Search, Calendar, Store, Loader2
 } from 'lucide-react';
 import { useBranch } from '../../../../components/providers/branch-context';
 
@@ -38,8 +38,8 @@ export default function FinanceView({ dict }: { dict: any }) {
         branchId: ''
     });
 
+    // 1. ADIM: KULLANICI VE HEDEF ID'Yİ BUL (Sadece 1 kere çalışır)
     useEffect(() => {
-        let unsubSnapshot: () => void;
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
                 setUser(currentUser);
@@ -54,51 +54,64 @@ export default function FinanceView({ dict }: { dict: any }) {
                         }
                     }
                     setTargetUid(ownerId);
-
-                    let q = query(
-                        collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'finance'),
-                        orderBy('date', 'desc')
-                    );
-
-                    if (selectedBranch) {
-                        q = query(
-                            collection(db, 'artifacts', 'servis-360-live', 'users', ownerId, 'finance'),
-                            where('branchId', '==', selectedBranch),
-                            orderBy('date', 'desc')
-                        );
-                    }
-
-                    unsubSnapshot = onSnapshot(q, (snapshot) => {
-                        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        // Tarih sıralaması
-                        data.sort((a: any, b: any) => {
-                            const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
-                            const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
-                            return dateB - dateA;
-                        });
-                        setTransactions(data);
-
-                        let inc = 0, exp = 0;
-                        data.forEach((t: any) => {
-                            const val = parseFloat(t.amount) || 0;
-                            if (t.type === 'income') inc += val; else exp += val;
-                        });
-                        setStats({ income: inc, expense: exp, profit: inc - exp });
-                        setLoading(false);
-                    });
                 } catch (error) {
-                    console.error("Veri çekme hatası", error);
+                    console.error("Profil hatası:", error);
                     setLoading(false);
                 }
             } else {
                 setLoading(false);
             }
         });
-        return () => {
-            unsubscribeAuth();
-            if (unsubSnapshot) unsubSnapshot();
-        };
-    }, [selectedBranch]);
+        return () => unsubscribeAuth();
+    }, []);
+
+    // 2. ADIM: FİNANS VERİSİNİ DİNLE (Şube değişince burası çalışır)
+    useEffect(() => {
+        if (!targetUid) return;
+
+        setLoading(true);
+        console.log("Finans verisi çekiliyor... Hedef:", targetUid, "Şube:", selectedBranch || "TÜMÜ");
+
+        // 🔥 KRİTİK DÜZELTME: orderBy('date') veritabanı sorgusundan kaldırıldı.
+        // İndeks hatasını önlemek için sıralamayı aşağıda JavaScript ile yapacağız.
+
+        let q;
+        const financeRef = collection(db, 'artifacts', 'servis-360-live', 'users', targetUid, 'finance');
+
+        if (selectedBranch) {
+            q = query(financeRef, where('branchId', '==', selectedBranch));
+        } else {
+            q = query(financeRef);
+        }
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // ⚡ Client-Side Sıralama (En yeniden en eskiye)
+            data.sort((a: any, b: any) => {
+                const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
+                const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
+                return dateB - dateA;
+            });
+
+            setTransactions(data);
+
+            // İstatistik Hesaplama
+            let inc = 0, exp = 0;
+            data.forEach((t: any) => {
+                const val = parseFloat(t.amount) || 0;
+                if (t.type === 'income') inc += val; else exp += val;
+            });
+            setStats({ income: inc, expense: exp, profit: inc - exp });
+
+            setLoading(false);
+        }, (error) => {
+            console.error("Finans verisi hatası:", error);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [targetUid, selectedBranch]); // targetUid veya selectedBranch değişirse tetiklenir
 
     const handleAddTransaction = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -165,7 +178,7 @@ export default function FinanceView({ dict }: { dict: any }) {
     const getBranchName = () => selectedBranch ? branches.find(b => b.id === selectedBranch)?.name : null;
 
     return (
-        <div className="space-y-6 pb-20">
+        <div className="space-y-6 pb-20 animate-in fade-in duration-500">
             {/* BAŞLIK */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
@@ -220,7 +233,12 @@ export default function FinanceView({ dict }: { dict: any }) {
 
                 {/* MOBİL */}
                 <div className="grid grid-cols-1 gap-3 md:hidden">
-                    {loading ? <p className="text-center py-10 text-slate-500">{dict.common.loading}</p> : filteredTransactions.length === 0 ? (
+                    {loading ? (
+                        <div className="text-center py-10 text-slate-500 flex flex-col items-center">
+                            <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-600" />
+                            <p>{dict.common.loading}</p>
+                        </div>
+                    ) : filteredTransactions.length === 0 ? (
                         <div className="text-center py-10 bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
                             <History className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                             <p className="text-slate-400">{dict.finance.empty_list}</p>
@@ -259,7 +277,7 @@ export default function FinanceView({ dict }: { dict: any }) {
                                 <tr><th className="p-4">{dict.finance.table_date}</th><th className="p-4">{dict.finance.table_category}</th><th className="p-4">{dict.finance.table_desc}</th><th className="p-4 text-right">{dict.finance.table_amount}</th><th className="p-4 text-right">{dict.common.delete}</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {loading ? <tr><td colSpan={5} className="p-8 text-center">{dict.common.loading}</td></tr> : filteredTransactions.length === 0 ? (
+                                {loading ? <tr><td colSpan={5} className="p-8 text-center text-slate-500"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />{dict.common.loading}</td></tr> : filteredTransactions.length === 0 ? (
                                     <tr><td colSpan={5} className="p-8 text-center text-slate-500">{searchTerm ? dict.finance.no_results : dict.finance.empty_list}</td></tr>
                                 ) : filteredTransactions.map((t) => {
                                     const dateObj = t.date?.toDate ? t.date.toDate() : new Date(t.date);
