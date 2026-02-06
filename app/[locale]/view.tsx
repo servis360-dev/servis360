@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+// 👇 getDoc yerine onSnapshot geldi (Canlı Dinleme)
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import {
     CheckCircle2,
@@ -27,68 +28,62 @@ import {
 export default function HomeView({ dict, locale }: { dict: any, locale: string }) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-    // Varsayılan Değerler
+    // Varsayılan Değerler (Yüklenene kadar boş görünsün diye boş bıraktık)
     const [contactInfo, setContactInfo] = useState({
-        whatsapp: '905555555555',
-        address: 'Teknopark İstanbul, Pendik/İstanbul',
-        phoneDisplay: '+90 850 123 45 67'
+        whatsapp: '',
+        address: '',
+        phoneDisplay: ''
     });
 
+    // 🔥 CANLI BAĞLANTI HATTI (REAL-TIME LISTENER)
     useEffect(() => {
-        const fetchSettings = async () => {
-            try {
-                // Firebase'den veriyi çekiyoruz
-                const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'contact');
-                const docSnap = await getDoc(docRef);
+        // Hangi dokümanı dinleyeceğimizi seçiyoruz
+        const docRef = doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'system_settings', 'contact');
 
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
+        // onSnapshot: Veritabanında yaprak kımıldasa haberi olur
+        const unsubscribe = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
 
-                    // KONSOL KONTROLÜ (Geliştirici aracında F12 -> Console sekmesinde görebilirsin)
-                    console.log("Firebase'den Gelen Veri:", data);
-                    console.log("Mevcut Dil (Locale):", locale);
+                // Konsoldan kontrol edebilirsin
+                console.log("🔥 CANLI VERİ GELDİ:", data);
 
-                    // Yardımcı Fonksiyon: Numarayı temizle ve ülke kodu ekle
-                    const formatPhone = (phone: string, prefix: string) => {
-                        if (!phone) return '';
-                        let clean = phone.replace(/[^0-9]/g, ''); // Sadece rakamları al
-                        // Eğer başında 0 varsa sil (0530 -> 530)
-                        if (clean.startsWith('0')) clean = clean.substring(1);
-                        // Eğer ülke kodu ekli değilse ekle (530 -> 90530)
-                        if (!clean.startsWith(prefix)) clean = prefix + clean;
-                        return clean;
-                    };
+                // Yardımcı Fonksiyon: Numarayı temizle ve ülke kodu ekle
+                const formatPhone = (phone: string, prefix: string) => {
+                    if (!phone) return '';
+                    let clean = phone.replace(/[^0-9]/g, '');
+                    if (clean.startsWith('0')) clean = clean.substring(1);
+                    if (!clean.startsWith(prefix)) clean = prefix + clean;
+                    return clean;
+                };
 
-                    // 🌍 BÖLGESEL MANTIK (Lokalizasyon)
-                    if (locale === 'tr') {
-                        // --- TÜRKİYE SENARYOSU ---
-                        console.log(">> TR Modu Aktif");
-                        setContactInfo({
-                            // Admin panelinden 'whatsappTR' alanını oku, yoksa varsayılanı kullan
-                            whatsapp: formatPhone(data.whatsappTR || '905555555555', '90'),
-                            address: data.addressTR || 'Teknopark İstanbul, Pendik/İstanbul',
-                            phoneDisplay: data.whatsappTR ? `+90 ${data.whatsappTR}` : '+90 850 123 45 67'
-                        });
-                    } else {
-                        // --- GLOBAL / ALMANYA SENARYOSU ---
-                        console.log(">> GLOBAL Modu Aktif");
-                        setContactInfo({
-                            // Admin panelinden 'whatsappDE' alanını oku, yoksa varsayılanı kullan
-                            whatsapp: formatPhone(data.whatsappDE || '4915112345678', '49'),
-                            address: data.addressDE || 'Friedrichstraße 123, 10117 Berlin, Germany',
-                            phoneDisplay: data.whatsappDE ? `+49 ${data.whatsappDE}` : '+49 151 1234 5678'
-                        });
-                    }
+                // 🌍 BÖLGESEL MANTIK (Lokalizasyon)
+                if (locale === 'tr') {
+                    // --- TÜRKİYE SENARYOSU ---
+                    setContactInfo({
+                        whatsapp: formatPhone(data.whatsappTR || '905555555555', '90'),
+                        address: data.addressTR || 'Teknopark İstanbul, Pendik/İstanbul',
+                        phoneDisplay: data.whatsappTR ? `+90 ${data.whatsappTR}` : '+90 850 123 45 67'
+                    });
                 } else {
-                    console.log("Veri tabanı dokümanı bulunamadı!");
+                    // --- GLOBAL / ALMANYA SENARYOSU ---
+                    setContactInfo({
+                        whatsapp: formatPhone(data.whatsappDE || '4915112345678', '49'),
+                        address: data.addressDE || 'Friedrichstraße 123, 10117 Berlin, Germany',
+                        phoneDisplay: data.whatsappDE ? `+49 ${data.whatsappDE}` : '+49 151 1234 5678'
+                    });
                 }
-            } catch (error) {
-                console.error("İletişim bilgisi çekilemedi", error);
+            } else {
+                console.log("⚠️ Ayar dosyası bulunamadı, varsayılanlar kullanılacak.");
             }
-        };
+        }, (error) => {
+            console.error("❌ Bağlantı Hatası:", error);
+        });
 
-        fetchSettings();
-    }, [locale]); // Locale değişirse tekrar çalış
+        // Sayfadan çıkınca dinlemeyi durdur (Performans için şart)
+        return () => unsubscribe();
+
+    }, [locale]); // Dil değişirse dinleyiciyi yenile
 
     const features = [
         {
@@ -139,22 +134,24 @@ export default function HomeView({ dict, locale }: { dict: any, locale: string }
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30 relative">
 
-            {/* 🔥 WHATSAPP DESTEK BUTONU */}
-            <a
-                href={`https://wa.me/${contactInfo.whatsapp}?text=Merhaba, Servis360...`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="fixed bottom-6 right-6 z-50 group flex items-center justify-center p-4 bg-green-600 hover:bg-green-500 text-white rounded-full shadow-lg shadow-green-600/30 transition-all hover:scale-110 hover:-translate-y-1 animate-in fade-in zoom-in duration-500"
-            >
-                <MessageCircle className="w-8 h-8 fill-current" />
-                <span className="absolute right-full mr-4 bg-white text-slate-900 px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-xl hidden md:block">
-                    {dict.landing.footer.support_btn}
-                </span>
-                <span className="absolute top-0 right-0 -mt-1 -mr-1 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500 border-2 border-slate-950"></span>
-                </span>
-            </a>
+            {/* 🔥 WHATSAPP DESTEK BUTONU (Sadece numara gelince görünür) */}
+            {contactInfo.whatsapp && (
+                <a
+                    href={`https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(dict.landing.hero.whatsapp_msg)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="fixed bottom-6 right-6 z-50 group flex items-center justify-center p-4 bg-green-600 hover:bg-green-500 text-white rounded-full shadow-lg shadow-green-600/30 transition-all hover:scale-110 hover:-translate-y-1 animate-in fade-in zoom-in duration-500"
+                >
+                    <MessageCircle className="w-8 h-8 fill-current" />
+                    <span className="absolute right-full mr-4 bg-white text-slate-900 px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-xl hidden md:block">
+                        {dict.landing.footer.support_btn}
+                    </span>
+                    <span className="absolute top-0 right-0 -mt-1 -mr-1 flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500 border-2 border-slate-950"></span>
+                    </span>
+                </a>
+            )}
 
             {/* --- NAVBAR --- */}
             <nav className="fixed top-0 left-0 w-full z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
@@ -227,23 +224,26 @@ export default function HomeView({ dict, locale }: { dict: any, locale: string }
                         </Link>
                     </div>
 
-                    <div className="mt-6 flex justify-center animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-500">
-                        <a
-                            href={`https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(dict.landing.hero.whatsapp_msg)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group flex items-center gap-3 px-5 py-2 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 hover:text-green-300 transition-all cursor-pointer"
-                        >
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                            </span>
-                            <span className="text-sm font-semibold tracking-wide">
-                                {dict.landing.hero.contact_sales}
-                            </span>
-                            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                        </a>
-                    </div>
+                    {/* 🔥 İLETİŞİM BUTONU (Veri gelince görünür) */}
+                    {contactInfo.whatsapp && (
+                        <div className="mt-6 flex justify-center animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-500">
+                            <a
+                                href={`https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(dict.landing.hero.whatsapp_msg)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group flex items-center gap-3 px-5 py-2 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 hover:text-green-300 transition-all cursor-pointer"
+                            >
+                                <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                </span>
+                                <span className="text-sm font-semibold tracking-wide">
+                                    {dict.landing.hero.contact_sales}
+                                </span>
+                                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                            </a>
+                        </div>
+                    )}
 
                     <div className="mt-12 flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 text-slate-500 text-sm font-medium animate-in fade-in duration-1000 delay-500">
                         <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-green-500" /> {dict.landing.hero.f1}</span>
@@ -312,7 +312,6 @@ export default function HomeView({ dict, locale }: { dict: any, locale: string }
                                             height={400}
                                             className="w-full h-auto object-cover transform hover:scale-105 transition-transform duration-700"
                                         />
-                                        {/* Üzerine hafif bir mavi parlama efekti ekleyelim */}
                                         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent pointer-events-none"></div>
                                     </div>
                                 </div>
@@ -417,6 +416,7 @@ export default function HomeView({ dict, locale }: { dict: any, locale: string }
                             <h4 className="text-white font-bold mb-4">{dict.landing.footer.contact_title}</h4>
                             <div className="space-y-3 text-right">
                                 <div className="flex items-center gap-2 text-slate-400 text-sm justify-end">
+                                    {/* 🔴 ADRES GELENE KADAR BOŞ GÖRÜNSÜN Kİ ESKİSİ YAZMASIN */}
                                     <span>{contactInfo.address}</span>
                                     <MapPin className="w-4 h-4 text-blue-500" />
                                 </div>
