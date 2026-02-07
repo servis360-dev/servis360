@@ -1,21 +1,21 @@
 ﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { formatMoney, getCurrencySettings } from '../../../lib/format';
+import { formatMoney } from '../../../lib/format';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../../../lib/firebase';
 import {
     collection,
     query,
     onSnapshot,
-    orderBy,
     doc,
     getDoc,
     addDoc,
     deleteDoc,
     serverTimestamp,
-    where
+    where,
+    orderBy
 } from 'firebase/firestore';
 import {
     TrendingUp, TrendingDown, Activity, Calendar, ArrowRight,
@@ -63,34 +63,43 @@ export default function DashboardView({ dict }: { dict: any }) {
     const params = useParams();
     const currentLocale = params?.locale as string || 'en';
 
-    // 1. ADIM: SADECE KULLANICIYI DOĞRULA
+    // 1. ADIM: KULLANICI DOĞRULAMA
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
             if (!currentUser) {
                 router.push('/login');
             } else {
                 setUser(currentUser);
-                const docRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
-                const docSnap = await getDoc(docRef);
-
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    setUserData(data);
-                    if (data.accountType !== 'individual') {
-                        configureSector(data.sectorType || 'technical_service');
+                try {
+                    const docRef = doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile');
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        setUserData(data);
+                        if (data.accountType !== 'individual') {
+                            configureSector(data.sectorType || 'technical_service');
+                        }
                     }
+                } catch (e) {
+                    console.error("Profil yükleme hatası", e);
                 }
             }
         });
         return () => unsubscribeAuth();
     }, [router]);
 
-    // 2. ADIM: VERİLERİ DİNLE (Şube veya Filtre değişince burası çalışır)
+    // 2. ADIM: VERİLERİ GÜVENLİ DİNLEME
     useEffect(() => {
         if (!user || !userData) return;
 
-        console.log("Veriler yenileniyor... Şube:", selectedBranch || "TÜMÜ");
         setLoading(true);
+        console.log("Veriler yenileniyor... Şube:", selectedBranch || "TÜMÜ");
+
+        // 🛡️ EMNİYET SÜBABI: Eğer veritabanı 3 saniye içinde cevap vermezse yüklemeyi zorla kapat.
+        const safetyTimer = setTimeout(() => {
+            console.warn("⚠️ Veritabanı gecikti, yükleme zorla kapatılıyor.");
+            setLoading(false);
+        }, 3000);
 
         const targetUid = (userData.role === 'staff' || userData.role === 'technician' || userData.role === 'sales' || userData.role === 'accounting') && userData.ownerId
             ? userData.ownerId
@@ -102,7 +111,7 @@ export default function DashboardView({ dict }: { dict: any }) {
         let qTrans;
         const financeRef = collection(db, userPath, 'finance');
 
-        // 🔥 DÜZELTME YAPILDI: 'orderBy' kaldırıldı. İndeks hatası artık oluşmaz.
+        // Sadece 'where' kullanıyoruz, 'orderBy' YOK. İndeks hatasını önler.
         if (selectedBranch) {
             qTrans = query(financeRef, where('branchId', '==', selectedBranch));
         } else {
@@ -110,16 +119,19 @@ export default function DashboardView({ dict }: { dict: any }) {
         }
 
         const unsubTrans = onSnapshot(qTrans, (snapshot) => {
-            // ⚡ 1. Veriyi Ham Olarak Al
+            clearTimeout(safetyTimer); // Veri geldiyse zamanlayıcıyı iptal et
+
+            // 1. Veriyi Al
             const rawData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            // ⚡ 2. Cihazda Sırala (Eskiden Yeniye) - Grafik için
+            // 2. İstemci Tarafında Sırala (Tarihe göre - Eskiden Yeniye)
             rawData.sort((a: any, b: any) => {
-                const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date);
-                const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date);
+                const dateA = a.date?.toDate ? a.date.toDate() : new Date(a.date || 0);
+                const dateB = b.date?.toDate ? b.date.toDate() : new Date(b.date || 0);
                 return dateA - dateB;
             });
 
+            // 3. Hesaplamalar
             let periodInc = 0, periodExp = 0;
             let totalInc = 0, totalExp = 0;
             const dailyMap = new Map();
@@ -128,7 +140,7 @@ export default function DashboardView({ dict }: { dict: any }) {
             const daysToLookBack = timeFilter === 'week' ? 7 : 30;
             limitDate.setDate(now.getDate() - daysToLookBack);
 
-            // Boş günleri oluştur
+            // Boş günleri oluştur (Grafik boş kalmasın)
             for (let i = daysToLookBack - 1; i >= 0; i--) {
                 const d = new Date();
                 d.setDate(d.getDate() - i);
@@ -155,7 +167,7 @@ export default function DashboardView({ dict }: { dict: any }) {
             setStats(prev => ({ ...prev, periodIncome: periodInc, periodExpense: periodExp, netBalance: totalInc - totalExp }));
             setChartData(Array.from(dailyMap.values()));
 
-            // ⚡ 3. Son Hareketler için Tersine Çevir (Yeniden Eskiye) ve İlk 5'i Al
+            // 4. Son Hareketler (Tersine çevirip ilk 5'i al)
             const recentTrans = [...rawData].reverse().slice(0, 5).map(d => ({
                 id: d.id,
                 type: d.type === 'income' ? 'plus' : 'minus',
@@ -169,11 +181,12 @@ export default function DashboardView({ dict }: { dict: any }) {
             setLoading(false);
         }, (error) => {
             console.error("FİNANS VERİSİ HATASI:", error);
-            setLoading(false);
+            setLoading(false); // Hata olsa bile yüklemeyi kapat
         });
 
         // --- İŞ TAKİBİ SORGUSU ---
         let qJobs;
+        // Burada da orderBy kullanmıyoruz, gerekirse client-side sayım yapılır.
         if (selectedBranch) {
             qJobs = query(collection(db, userPath, 'jobs'), where('branchId', '==', selectedBranch));
         } else {
@@ -186,7 +199,7 @@ export default function DashboardView({ dict }: { dict: any }) {
             setStats(prev => ({ ...prev, activeWork: pending, completedWork: completed }));
         });
 
-        // --- DUYURULAR ---
+        // --- DUYURULAR (Sadece duyurular orderBy kullanabilir çünkü where yok) ---
         let unsubAnnounce = () => { };
         if (userData.accountType !== 'individual') {
             const qAnnounce = query(collection(db, userPath, 'announcements'), orderBy('createdAt', 'desc'));
@@ -206,6 +219,7 @@ export default function DashboardView({ dict }: { dict: any }) {
         });
 
         return () => {
+            clearTimeout(safetyTimer);
             unsubTrans();
             unsubJobs();
             unsubAnnounce();
