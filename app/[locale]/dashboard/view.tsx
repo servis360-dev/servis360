@@ -121,8 +121,8 @@ export default function DashboardView({ dict }: { dict: any }) {
         const unsubTrans = onSnapshot(qTrans, (snapshot) => {
             clearTimeout(safetyTimer); // Veri geldiyse zamanlayıcıyı iptal et
 
-            // 1. Veriyi Al
-            const rawData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // 🔥 DÜZELTME: "as any" ekleyerek TypeScript'e "Bana güven" diyoruz.
+            const rawData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
 
             // 2. İstemci Tarafında Sırala (Tarihe göre - Eskiden Yeniye)
             rawData.sort((a: any, b: any) => {
