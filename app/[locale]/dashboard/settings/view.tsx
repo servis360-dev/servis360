@@ -45,9 +45,9 @@ export default function SettingsView({ dict }: { dict: any }) {
     const [userData, setUserData] = useState<any>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Dil Ayarı (Tarih formatı için)
+    // Dil Ayarı
     const params = useParams();
-    const currentLocale = params?.locale as string || 'en';
+    const currentLocale = (params?.locale as string) || 'en';
 
     // Yetki Durumu
     const [isStaff, setIsStaff] = useState(false);
@@ -70,12 +70,32 @@ export default function SettingsView({ dict }: { dict: any }) {
         appointmentDuration: '60',
     });
 
-    // WhatsApp Şablonları
-    const [whatsappTemplates, setWhatsappTemplates] = useState({
-        deviceReceived: 'Sayın müşterimiz, cihazınız servis kaydı oluşturulmuştur.',
-        deviceCompleted: 'Sayın müşterimiz, cihazınızın işlemleri tamamlanmıştır. Ödenecek Tutar: {tutar}',
-        appointmentReminder: 'Sayın müşterimiz, yarın saat {saat} için randevunuz bulunmaktadır.',
-    });
+    // 🔥 DİNAMİK ŞABLON GETİRİCİ
+    const getDefaultTemplates = (locale: string) => {
+        if (locale === 'de') {
+            return {
+                deviceReceived: 'Sehr geehrter Kunde, Ihr Serviceauftrag für Ihr Gerät wurde erstellt.',
+                deviceCompleted: 'Sehr geehrter Kunde, die Reparatur Ihres Geräts ist abgeschlossen. Zu zahlender Betrag: {tutar}',
+                appointmentReminder: 'Sehr geehrter Kunde, Sie haben morgen um {saat} einen Termin.',
+            };
+        } else if (locale === 'en') {
+            return {
+                deviceReceived: 'Dear customer, a service record has been created for your device.',
+                deviceCompleted: 'Dear customer, your device repair is complete. Total Amount: {tutar}',
+                appointmentReminder: 'Dear customer, you have an appointment tomorrow at {saat}.',
+            };
+        } else {
+            // Varsayılan Türkçe
+            return {
+                deviceReceived: 'Sayın müşterimiz, cihazınız servis kaydı oluşturulmuştur.',
+                deviceCompleted: 'Sayın müşterimiz, cihazınızın işlemleri tamamlanmıştır. Ödenecek Tutar: {tutar}',
+                appointmentReminder: 'Sayın müşterimiz, yarın saat {saat} için randevunuz bulunmaktadır.',
+            };
+        }
+    };
+
+    // Başlangıçta o dile uygun şablonu yükle
+    const [whatsappTemplates, setWhatsappTemplates] = useState(getDefaultTemplates(currentLocale));
 
     useEffect(() => {
         const unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
@@ -101,7 +121,8 @@ export default function SettingsView({ dict }: { dict: any }) {
                         appointmentDuration: data.appointmentDuration || '60',
                     });
 
-                    if (data.whatsappTemplates) {
+                    // Eğer veritabanında kayıtlı şablon varsa onu kullan, yoksa dilin varsayılanını koru
+                    if (data.whatsappTemplates && data.whatsappTemplates.deviceReceived) {
                         setWhatsappTemplates(data.whatsappTemplates);
                     }
                 }
@@ -120,7 +141,7 @@ export default function SettingsView({ dict }: { dict: any }) {
         });
 
         return () => unsubscribeAuth();
-    }, []);
+    }, [currentLocale]); // Dil değişirse etkisi olabilir
 
     // --- ŞUBE YÖNETİMİ ---
     const getBranchLimit = () => {
@@ -291,12 +312,11 @@ export default function SettingsView({ dict }: { dict: any }) {
 
     const getLicenseDate = () => {
         if (!userData?.licenseEndsAt) return '-';
-        // 🔥 Tarih formatını kullanıcı diline göre yapıyoruz
         return new Date(userData.licenseEndsAt.seconds * 1000).toLocaleDateString(currentLocale, { day: 'numeric', month: 'long', year: 'numeric' });
     };
 
     return (
-        <div className="max-w-5xl mx-auto space-y-8 pb-10">
+        <div className="max-w-5xl mx-auto space-y-8 pb-10 animate-in fade-in duration-500">
             <div>
                 <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{dict.settings.title}</h1>
                 <p className="text-slate-500 dark:text-slate-400">{isStaff ? dict.settings.subtitle_staff : dict.settings.subtitle_admin}</p>
@@ -354,7 +374,7 @@ export default function SettingsView({ dict }: { dict: any }) {
                         </div>
                     )}
 
-                    {/* 3. WhatsApp */}
+                    {/* 3. WhatsApp (DİNAMİK DİL DESTEKLİ) */}
                     <div className={`bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm ${isStaff ? 'opacity-70 pointer-events-none' : ''}`}>
                         <div className="flex justify-between items-start mb-6"><h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2"><MessageCircle className="w-5 h-5 text-green-600" /> {dict.settings.section_whatsapp}</h3>{isStaff && <Lock className="w-4 h-4 text-slate-400" />}</div>
                         <div className="space-y-6">

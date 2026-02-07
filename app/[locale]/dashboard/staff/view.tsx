@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useBranch } from '../../../../components/providers/branch-context'; // 🔥 Context Bağlantısı
+import { useBranch } from '../../../../components/providers/branch-context';
 import {
     Users,
     UserPlus,
@@ -17,12 +17,11 @@ import {
     Crown,
     Store,
     Phone,
-    Info
+    Info,
+    MoreVertical
 } from 'lucide-react';
 
-// 🔥 dict (sözlük) prop olarak geliyor
 export default function StaffView({ dict }: { dict: any }) {
-    // 🔥 Şubeleri veritabanından değil, global hafızadan (Context) çekiyoruz. Hız kazandırır.
     const { branches } = useBranch();
 
     const [staff, setStaff] = useState<any[]>([]);
@@ -51,7 +50,6 @@ export default function StaffView({ dict }: { dict: any }) {
                     setUserData(profileSnap.data());
                 }
 
-                // Sadece Personel Listesini Dinle (Şubeler Context'ten geliyor)
                 const q = query(collection(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'staff'));
                 unsubSnap = onSnapshot(q, (snapshot) => {
                     setStaff(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -93,26 +91,23 @@ export default function StaffView({ dict }: { dict: any }) {
         }
 
         try {
-            // Şube ismini bul (Görsel amaçlı kaydet, ama asıl olay ID'de)
             const selectedBranchName = branches.find(b => b.id === formData.branchId)?.name || 'Merkez';
 
-            // 1. Kendi listene ekle (Görüntülemek için)
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'users', user.uid, 'staff', formData.email), {
                 ...formData,
-                branchName: selectedBranchName, // Yedek bilgi
-                branchId: formData.branchId,    // 🔥 ASIL BAĞLANTI BU
+                branchName: selectedBranchName,
+                branchId: formData.branchId,
                 status: 'invited',
                 invitedAt: serverTimestamp()
             });
 
-            // 2. Global Davetiye Oluştur (Giriş yapabilmesi için)
             await setDoc(doc(db, 'artifacts', 'servis-360-live', 'public', 'data', 'invitations', formData.email), {
                 email: formData.email,
                 targetCompanyId: user.uid,
                 targetCompanyName: userData.companyName || 'Şirket',
                 targetSector: userData.sectorType || 'technical_service',
                 assignedRole: formData.role,
-                assignedBranchId: formData.branchId, // Personel bu şubeye kilitlenir
+                assignedBranchId: formData.branchId,
                 invitedBy: userData.fullName,
                 createdAt: serverTimestamp()
             });
@@ -139,7 +134,6 @@ export default function StaffView({ dict }: { dict: any }) {
         return roles[role] || role;
     };
 
-    // Dinamik Şube İsmi Bulucu (ID'den bulur)
     const getBranchName = (branchId: string) => {
         if (!branchId) return '-';
         const branch = branches.find(b => b.id === branchId);
@@ -180,7 +174,72 @@ export default function StaffView({ dict }: { dict: any }) {
                 </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+            {/* MOBİL GÖRÜNÜM (KARTLAR) - Sadece mobilde görünür (md:hidden) */}
+            <div className="grid grid-cols-1 gap-4 md:hidden">
+                {loading ? (
+                    <div className="text-center py-10 text-slate-500"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />{dict.common.loading}</div>
+                ) : staff.length === 0 ? (
+                    <div className="bg-white dark:bg-slate-800 p-8 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-slate-500">
+                        <Briefcase className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                        <p>{dict.staff.no_staff}</p>
+                    </div>
+                ) : (
+                    staff.map((p) => (
+                        <div key={p.id} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-bold text-lg shadow-md shadow-blue-500/20">
+                                        {p.fullName.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 dark:text-white text-lg">{p.fullName}</h3>
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${p.role === 'sales' ? 'bg-green-50 text-green-700 border-green-200' :
+                                                p.role === 'accountant' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                                    'bg-blue-50 text-blue-700 border-blue-200'
+                                            }`}>
+                                            {getRoleName(p.role)}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button onClick={() => handleDelete(p.id)} className="text-slate-400 hover:text-red-500 p-2 bg-slate-50 dark:bg-slate-900 rounded-lg">
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-3 mb-4">
+                                <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl">
+                                    <Mail className="w-4 h-4 text-slate-400" />
+                                    <span className="truncate">{p.email}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl">
+                                    <Phone className="w-4 h-4 text-slate-400" />
+                                    <span>{p.phone || '-'}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl">
+                                    <Store className="w-4 h-4 text-purple-500" />
+                                    <span>{getBranchName(p.branchId)}</span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+                                <span className="text-xs text-slate-400 font-medium">Durum</span>
+                                {p.status === 'active' ? (
+                                    <span className="text-green-600 font-bold text-xs flex items-center gap-1 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded-full">
+                                        <CheckCircle2 className="w-3 h-3" /> {dict.common.active}
+                                    </span>
+                                ) : (
+                                    <span className="text-amber-600 font-bold text-xs flex items-center gap-1 bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded-full animate-pulse">
+                                        <Loader2 className="w-3 h-3" /> Davet Edildi
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {/* MASAÜSTÜ GÖRÜNÜM (TABLO) - Sadece masaüstünde görünür (hidden md:block) */}
+            <div className="hidden md:block bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300">
                         <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
@@ -243,7 +302,6 @@ export default function StaffView({ dict }: { dict: any }) {
                                     <td className="p-4">
                                         <div className="flex items-center gap-1.5">
                                             <Store className="w-4 h-4 text-purple-500" />
-                                            {/* 🔥 DİNAMİK ŞUBE İSMİ */}
                                             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
                                                 {getBranchName(p.branchId)}
                                             </span>
