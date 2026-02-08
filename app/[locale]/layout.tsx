@@ -1,5 +1,6 @@
 ﻿import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script"; // 🔥 YENİ EKLENDİ
 import "../globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -31,7 +32,7 @@ export async function generateMetadata({ params }: { params: { locale: string } 
             template: '%s | Servis360',
         },
         description: description,
-        metadataBase: new URL('https://www.servis-360.com'), // 🔥 Senin domain adresin
+        metadataBase: new URL('https://www.servis-360.com'),
         icons: {
             icon: '/icon.png',
             shortcut: '/icon.png',
@@ -46,7 +47,7 @@ export async function generateMetadata({ params }: { params: { locale: string } 
             type: 'website',
             images: [
                 {
-                    url: ogImage, // 🔥 Dile özel görsel burada devreye giriyor
+                    url: ogImage,
                     width: 1200,
                     height: 630,
                     alt: 'Servis360 Dashboard',
@@ -58,15 +59,42 @@ export async function generateMetadata({ params }: { params: { locale: string } 
 
 export default function RootLayout({
     children,
-    params: { locale } // Locale bilgisini buradan yakalıyoruz
+    params: { locale }
 }: Readonly<{
     children: React.ReactNode;
     params: { locale: string };
 }>) {
+    // 🔥 GOOGLE İÇİN YAPISAL VERİ (SCHEMA MARKUP)
+    // Bu kod, Google'ın siteni "Uygulama" ve "Şirket" olarak tanımasını sağlar.
+    const jsonLd = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Servis360",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web, Cloud",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "TRY"
+        },
+        "description": "Teknik servis, stok takip ve cari yönetim paneli.",
+        "url": "https://www.servis-360.com",
+        "publisher": {
+            "@type": "Organization",
+            "name": "Servis360",
+            "logo": "https://www.servis-360.com/icon.png"
+        }
+    };
+
     return (
-        // 🔥 HTML dilini dinamik yapıyoruz (Örn: lang="de")
         <html lang={locale}>
             <body className={`${inter.className} bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white`}>
+                {/* 🔥 Google'a fısıldayan gizli kimlik kartı */}
+                <Script
+                    id="json-ld"
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+                />
                 {children}
             </body>
         </html>
