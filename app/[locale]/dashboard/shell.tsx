@@ -10,10 +10,9 @@ import { Sidebar } from '../../../components/layout/sidebar';
 import { Header } from '../../../components/layout/header';
 import { Loader2, LockKeyhole, CreditCard, AlertTriangle } from 'lucide-react';
 
-// 🔥 YENİ: Şube Yönetim Sistemi (Context) Eklendi
+// 🔥 Şube Yönetim Sistemi (Context)
 import { BranchProvider } from '../../../components/providers/branch-context';
 
-// 👇 Props olarak dict ve locale alıyoruz
 export default function DashboardShell({ children, dict, locale }: { children: React.ReactNode, dict: any, locale: string }) {
     const [user, setUser] = useState<any>(null);
     const [profile, setProfile] = useState<any>(null);
@@ -26,16 +25,14 @@ export default function DashboardShell({ children, dict, locale }: { children: R
     useEffect(() => {
         const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
             if (!currentUser) {
-                router.push(`/${locale}/login`); // 🌍 Dil desteği
+                router.push(`/${locale}/login`);
             } else {
                 setUser(currentUser);
-                // Kullanıcı profilini dinle
                 const unsubProfile = onSnapshot(doc(db, 'artifacts', 'servis-360-live', 'users', currentUser.uid, 'users', 'profile'), (docSnap) => {
                     if (docSnap.exists()) {
                         setProfile(docSnap.data());
                     } else {
-                        // Profil hiç yoksa aboneliğe/kuruluma yönlendir
-                        router.push(`/${locale}/dashboard/subscription`); // 🌍 Dil desteği
+                        router.push(`/${locale}/dashboard/subscription`);
                     }
                     setLoading(false);
                 });
@@ -55,33 +52,28 @@ export default function DashboardShell({ children, dict, locale }: { children: R
             const now = new Date();
             const licenseDate = profile.licenseEndsAt ? profile.licenseEndsAt.toDate() : null;
 
-            // 🔥 GÜNCEL PERSONEL LİSTESİ (Tüm olası rolleri ekledik)
             const staffRoles = [
-                'staff', 'personnel', 'employee', // Genel
-                'technical', 'technician', 'teknik', // Teknik Servis
-                'sales', 'satis', // Satış
-                'accountant', 'accounting', 'muhasebe' // Muhasebe
+                'staff', 'personnel', 'employee',
+                'technical', 'technician', 'teknik',
+                'sales', 'satis',
+                'accountant', 'accounting', 'muhasebe'
             ];
             const isStaff = staffRoles.includes(profile.role);
 
-            // İşletme Sahibi mi?
             const isBusinessOwner = ['admin', 'corporate', 'esnaf', 'business'].includes(profile.role) ||
                 ['esnaf', 'corporate', 'business'].includes(profile.accountType);
 
-            // 1. ZORUNLU BİLGİ KONTROLÜ (TELEFON & FİRMA ADI)
             const isPhoneMissing = !profile.phone || profile.phone.trim() === '';
             const isCompanyMissing = isBusinessOwner && !isStaff && (!profile.companyName || profile.companyName.trim() === '');
             const isProfileIncomplete = isPhoneMissing || isCompanyMissing;
 
-            // EĞER BİLGİ EKSİKSE -> AYARLAR SAYFASINA KİLİTLE
             if (isProfileIncomplete) {
-                if (pathname !== `/${locale}/dashboard/settings`) { // 🌍 Dil desteği
-                    router.push(`/${locale}/dashboard/settings`); // 🌍 Dil desteği
+                if (pathname !== `/${locale}/dashboard/settings`) {
+                    router.push(`/${locale}/dashboard/settings`);
                 }
                 return;
             }
 
-            // 2. LİSANS KONTROLÜ
             if (!isStaff && profile.role !== 'admin' && profile.role !== 'super_admin') {
                 const isLicenseExpired = !licenseDate || licenseDate < now;
                 if (isLicenseExpired && pathname !== `/${locale}/dashboard/subscription` && pathname !== `/${locale}/dashboard/settings`) {
@@ -95,7 +87,6 @@ export default function DashboardShell({ children, dict, locale }: { children: R
         return <div className="min-h-screen flex items-center justify-center bg-slate-950"><Loader2 className="w-10 h-10 text-blue-500 animate-spin" /></div>;
     }
 
-    // --- RENDER MANTIĞI İÇİN DEĞİŞKENLER ---
     const staffRoles = [
         'staff', 'personnel', 'employee',
         'technical', 'technician', 'teknik',
@@ -117,27 +108,27 @@ export default function DashboardShell({ children, dict, locale }: { children: R
     const isIncomplete = isPhoneMissing || isCompanyMissing;
 
     return (
-        // 🔥 BURASI KRİTİK: TÜM UYGULAMAYI ŞUBE CONTEXT'İ İLE SARMALIYORUZ
         <BranchProvider>
             <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-                {/* Sidebar her zaman gösterilir */}
                 <Sidebar
                     userRole={profile?.role}
                     userProfile={profile}
                     isOpen={isMobileMenuOpen}
                     onClose={() => setIsMobileMenuOpen(false)}
-                    dict={dict} // 🌍 Sidebar'a sözlüğü geçiriyoruz (Bir sonraki adımda lazım olacak)
+                    dict={dict}
                     locale={locale}
                 />
 
                 <div className={`flex-1 flex flex-col transition-all duration-300 ml-0 md:ml-64`}>
+                    {/* 🔥 GÜNCELLEME BURADA: dict ve locale Header'a iletildi */}
                     <Header
                         user={profile}
                         onMenuClick={() => setIsMobileMenuOpen(true)}
+                        dict={dict}
+                        locale={locale}
                     />
 
                     <main className="flex-1 p-4 md:p-6 overflow-y-auto">
-                        {/* ZORUNLU PROFİL UYARISI */}
                         {isIncomplete && pathname === `/${locale}/dashboard/settings` && (
                             <div className="bg-red-900/10 border border-red-600/50 p-4 rounded-xl mb-6 flex items-start gap-3 animate-pulse">
                                 <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-500 flex-shrink-0 mt-1" />
@@ -145,16 +136,11 @@ export default function DashboardShell({ children, dict, locale }: { children: R
                                     <h3 className="font-bold text-red-600 dark:text-red-500">{dict.dashboard.layout.profile_error_title}</h3>
                                     <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
                                         {dict.dashboard.layout.profile_error_desc}
-                                        <ul className="list-disc list-inside mt-2 font-bold text-slate-800 dark:text-white">
-                                            {isPhoneMissing && <li>{dict.dashboard.layout.missing_phone}</li>}
-                                            {isCompanyMissing && <li>{dict.dashboard.layout.missing_company}</li>}
-                                        </ul>
                                     </p>
                                 </div>
                             </div>
                         )}
 
-                        {/* EKRAN KİLİDİ (LİSANS) */}
                         {!isLicenseValid && !isIncomplete && pathname !== `/${locale}/dashboard/subscription` ? (
                             <div className="flex flex-col items-center justify-center h-full text-center space-y-4 animate-in fade-in zoom-in duration-500 min-h-[70vh]">
                                 <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center border-4 border-red-50 dark:border-red-900/50 mb-4">
@@ -172,7 +158,6 @@ export default function DashboardShell({ children, dict, locale }: { children: R
                                 </div>
                             </div>
                         ) : (
-                            // Eğer profil eksikse ve settings sayfasında DEĞİLSE içeriği gizle
                             (isIncomplete && pathname !== `/${locale}/dashboard/settings`)
                                 ? <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>
                                 : children

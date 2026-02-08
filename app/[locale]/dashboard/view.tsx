@@ -50,18 +50,20 @@ export default function DashboardView({ dict }: { dict: any }) {
         completedWork: 0,
     });
 
+    const router = useRouter();
+    const params = useParams();
+    const currentLocale = params?.locale as string || 'en';
+
+    // 🔥 BAŞLANGIÇ AYARI: Birim (Unit) dil dosyasına göre belirleniyor
     const [sectorConfig, setSectorConfig] = useState({
         title: dict.dashboard.active_jobs,
-        unit: 'adet',
+        unit: currentLocale === 'de' ? 'Stück' : (currentLocale === 'en' ? 'units' : 'adet'),
         icon: Briefcase,
         path: '/dashboard/jobs'
     });
 
     const [chartData, setChartData] = useState<any[]>([]);
     const [activities, setActivities] = useState<any[]>([]);
-    const router = useRouter();
-    const params = useParams();
-    const currentLocale = params?.locale as string || 'en';
 
     // 1. ADIM: KULLANICI DOĞRULAMA
     useEffect(() => {
@@ -228,11 +230,20 @@ export default function DashboardView({ dict }: { dict: any }) {
 
     }, [user, userData, selectedBranch, timeFilter, currentLocale]);
 
+    // 🔥 DİNAMİK BİRİM AYARLARI
     const configureSector = (sector: string) => {
-        let config = { title: dict.dashboard.active_jobs, unit: 'adet', icon: Briefcase, path: '/dashboard/jobs' };
-        if (sector === 'retail_wholesale') config = { title: dict.dashboard.pending_orders, unit: 'sipariş', icon: ShoppingBag, path: '/dashboard/jobs' };
-        else if (sector === 'beauty_health') config = { title: dict.dashboard.appointments, unit: 'randevu', icon: Scissors, path: '/dashboard/appointments' };
-        else if (sector === 'auto_rental') config = { title: dict.dashboard.rented_cars, unit: 'araç', icon: Car, path: '/dashboard/jobs' };
+        // Dile göre birim etiketleri
+        const unitLabel = currentLocale === 'de' ? 'Stück' : (currentLocale === 'en' ? 'units' : 'adet');
+        const unitOrder = currentLocale === 'de' ? 'Bestellung' : (currentLocale === 'en' ? 'orders' : 'sipariş');
+        const unitAppt = currentLocale === 'de' ? 'Termine' : (currentLocale === 'en' ? 'appts' : 'randevu');
+        const unitCar = currentLocale === 'de' ? 'Fahrzeug' : (currentLocale === 'en' ? 'cars' : 'araç');
+
+        let config = { title: dict.dashboard.active_jobs, unit: unitLabel, icon: Briefcase, path: '/dashboard/jobs' };
+
+        if (sector === 'retail_wholesale') config = { title: dict.dashboard.pending_orders, unit: unitOrder, icon: ShoppingBag, path: '/dashboard/jobs' };
+        else if (sector === 'beauty_health') config = { title: dict.dashboard.appointments, unit: unitAppt, icon: Scissors, path: '/dashboard/appointments' };
+        else if (sector === 'auto_rental') config = { title: dict.dashboard.rented_cars, unit: unitCar, icon: Car, path: '/dashboard/jobs' };
+
         setSectorConfig(config);
     };
 
@@ -390,6 +401,7 @@ export default function DashboardView({ dict }: { dict: any }) {
                             <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">{sectorConfig.title}</p>
                             <div className="flex items-baseline gap-2 mt-1">
                                 <h3 className="text-2xl font-black text-slate-900 dark:text-white">{stats.activeWork}</h3>
+                                {/* 🔥 DİNAMİK BİRİM */}
                                 <span className="text-xs text-slate-500">{sectorConfig.unit}</span>
                             </div>
                         </div>
