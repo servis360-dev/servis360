@@ -1,0 +1,22 @@
+{
+    "mueller-elektro": {
+        "firmaAdi": "Müller Elektro GmbH",
+        "telefon": "0151 123 456 78",
+        "email": "info@mueller-elektro.de",
+        "adres": "Hauptstraße 1, 10115 Berlin",
+        "renk": "bg-blue-600"
+    },
+    "schmidt-notdienst": {
+        "firmaAdi": "Schmidt 24/7 Notdienst",
+        "telefon": "0172 987 654 32",
+        "email": "kontakt@schmidt-elektro.de",
+        "adres": "Münchener Str. 45, Frankfurt",
+        "renk": "bg-red-600"
+    },
+    "stelzl-elektro": {
+        "firmaAdi": "Elektrotechnik Maximilian Stelzl",
+        "telefon": "089 66665504",
+        "email": "anfrage@max-stelzl.de",
+        "adres": "Plassenburgstraße 17, 81549 München"
+    }
+}
