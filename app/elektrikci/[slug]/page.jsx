@@ -119,16 +119,18 @@ export default function ElektrikciPage({ params }) {
             {/* HEADER */}
             <header className={`fixed top-0 w-full z-50 transition-all duration-300 ${isScrolled ? 'bg-white shadow-md py-3' : 'bg-slate-900/95 backdrop-blur-sm py-5 text-white'}`}>
                 <div className="container mx-auto px-4 md:px-6 flex justify-between items-center">
+
                     {/* Logo - Dinamik Firma Adı */}
-                    <div className="flex items-center gap-2 max-w-[60%] md:max-w-md">
+                    {/* BURASI GÜNCELLENDİ: max-w-[60%] kaldırılarak flex-1 yapıldı ve truncate (kesme) sınıfı iptal edildi. Yazının uzunluğuna göre 2. satıra kaymasına izin verildi. */}
+                    <div className="flex items-center gap-3 flex-1 pr-4">
                         <div className={`p-2 rounded-lg flex-shrink-0 ${isScrolled ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'}`}>
                             <Zap size={24} fill="currentColor" />
                         </div>
-                        <div className="truncate">
-                            <h1 className={`font-bold text-xl md:text-2xl tracking-tight truncate ${isScrolled ? 'text-slate-900' : 'text-white'}`}>
+                        <div className="flex flex-col justify-center">
+                            <h1 className={`font-bold text-base sm:text-lg md:text-2xl tracking-tight leading-tight ${isScrolled ? 'text-slate-900' : 'text-white'}`}>
                                 {firmaIlkKelime} <span className="text-blue-500">{firmaKalanKelimeler}</span>
                             </h1>
-                            <p className={`text-[10px] md:text-xs font-medium tracking-widest uppercase ${isScrolled ? 'text-slate-500' : 'text-slate-400'}`}>
+                            <p className={`text-[10px] md:text-xs font-medium tracking-widest uppercase mt-0.5 ${isScrolled ? 'text-slate-500' : 'text-slate-400'}`}>
                                 Profesyonel Elektrik • {sehir}
                             </p>
                         </div>
@@ -164,7 +166,7 @@ export default function ElektrikciPage({ params }) {
 
                     {/* Mobile Menu Toggle */}
                     <button
-                        className="md:hidden p-2"
+                        className="md:hidden p-2 -mr-2"
                         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                     >
                         {mobileMenuOpen ?
@@ -194,9 +196,7 @@ export default function ElektrikciPage({ params }) {
 
             {/* HERO SECTION */}
             <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden bg-slate-900">
-                {/* BURASI GÜNCELLENDİ: Arka plan resmi daha şeffaf ve görünür yapıldı */}
                 <div className="absolute inset-0 z-0 opacity-50 bg-[url('/images/hero-bg.jpg')] bg-cover bg-center"></div>
-                {/* BURASI GÜNCELLENDİ: Siyah gradyan katmanı hafifletildi (yazıların okunduğu sol taraf koyu, sağa doğru açılıyor) */}
                 <div className="absolute inset-0 bg-gradient-to-r from-slate-900/95 via-slate-900/60 to-transparent z-0"></div>
 
                 <div className="container mx-auto px-4 md:px-6 relative z-10">
@@ -486,7 +486,6 @@ export default function ElektrikciPage({ params }) {
             </a>
 
             {/* GİZLİ MÜZİK OYNATICI */}
-            {/* Kendi müziğinizi eklemek için src kısmını "/images/benim-muzigim.mp3" yapabilirsiniz */}
             <audio ref={audioRef} src="/images/Resonance_Cascade.mp3" loop preload="auto" />
 
             {/* MÜZİK KONTROL BUTONU */}
