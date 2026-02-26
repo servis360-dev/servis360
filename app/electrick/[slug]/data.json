@@ -1,29 +1,9 @@
 {
-    "mueller-elektro": {
-        "firmaAdi": "Müller Elektro GmbH",
-        "telefon": "0151 123 456 78",
-        "email": "info@mueller-elektro.de",
-        "adres": "Hauptstraße 1, 10115 Berlin",
-        "renk": "bg-blue-600"
-    },
-    "schmidt-notdienst": {
-        "firmaAdi": "Schmidt 24/7 Notdienst",
-        "telefon": "0172 987 654 32",
-        "email": "kontakt@schmidt-elektro.de",
-        "adres": "Münchener Str. 45, Frankfurt",
-        "renk": "bg-red-600"
-    },
     "stelzl-elektro": {
         "firmaAdi": "Elektrotechnik Maximilian Stelzl",
-        "telefon": "+49 89 66665503",
+        "telefon": "0171 3850334",
         "email": "anfrage@max-stelzl.de",
         "adres": "Plassenburgstraße 17, 81549 München"
-    },
-    "elbonico": {
-        "firmaAdi": "ELBONICO Reparatur",
-        "telefon": "0151 14329640",
-        "email": "info@elbonico.de",
-        "adres": "Seeriederstr. 7, 81675 München"
     },
     "yigit-elektro": {
         "firmaAdi": "Yigit Elektrotechnik",
@@ -35,6 +15,36 @@
         "firmaAdi": "Elektro Schink",
         "telefon": "0171 5455909",
         "email": "kontakt@elektro-schink.de",
+        "adres": "München, Deutschland"
+    },
+    "werner-elektro": {
+        "firmaAdi": "Elektro Werner Wurdack",
+        "telefon": "0172 82 25 896",
+        "email": "werner.wurdack@arcor.de",
+        "adres": "Sailerstraße 7, 80809 München"
+    },
+    "mah-elektro": {
+        "firmaAdi": "MAH Elektro",
+        "telefon": "0178 5188 929",
+        "email": "mirnes.mahmutovic@gmail.com",
+        "adres": "München, Deutschland"
+    },
+    "ab-elektro": {
+        "firmaAdi": "AB Elektrotechnik",
+        "telefon": "0160 1571751",
+        "email": "info@ab-elektrotechnik.de",
+        "adres": "München, Deutschland"
+    },
+    "katsoulas-elektro": {
+        "firmaAdi": "Vasileios Katsoulas Elektrotechnik",
+        "telefon": "015566 444904",
+        "email": "info@katsoulas-elektro.de",
+        "adres": "Dachau, Deutschland"
+    },
+    "lahner-elektro": {
+        "firmaAdi": "Elektro Lahner",
+        "telefon": "0162 5831179",
+        "email": "info@elektro-lahner.de",
         "adres": "München, Deutschland"
     }
 }
