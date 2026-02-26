@@ -1,0 +1,26 @@
+{
+    "volt-usta": {
+        "firmaAdi": "Volt Usta Elektrik",
+        "telefon": "0532 111 22 33",
+        "email": "bilgi@voltusta.com",
+        "adres": "Merkez Mahallesi, Elektrik Sk. No:1, Şişli / İstanbul"
+    },
+    "guven-elektrik": {
+        "firmaAdi": "Güven Elektrik Tesisat",
+        "telefon": "0555 444 55 66",
+        "email": "iletisim@guvenelektrik.com.tr",
+        "adres": "Kızılay Mah. Gazi Bulvarı No:45, Çankaya / Ankara"
+    },
+    "izmir-enerji": {
+        "firmaAdi": "İzmir Enerji & Arıza",
+        "telefon": "0505 999 88 77",
+        "email": "destek@izmirenerji.com",
+        "adres": "Alsancak Mah. Kıbrıs Şehitleri Cad. No:10, Konak / İzmir"
+    },
+    "elif-elektrik": {
+        "firmaAdi": "Elif Elektrik & Mekatronik",
+        "telefon": "+90 530 788 13 37",
+        "email": "eakpulat12@gmail.com",
+        "adres": "Kızılpınar Atatürk Mah. 71. Sok. Elif Mekatronik, Çerkezköy / Tekirdağ"
+    }
+}
