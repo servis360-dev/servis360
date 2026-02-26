@@ -6,9 +6,12 @@ export const metadata = {
     description: 'Moderne Webseite für Elektriker',
 };
 
-export default function ElectrickLayout({ children }) {
+export default function ElectrickLayout({
+    children,
+}: {
+    children: React.ReactNode; // TypeScript'in istediği o sihirli satır burası
+}) {
     return (
-        // Alman pazarına hitap edeceğimiz için dili de 'de' (Almanca) yapıyoruz
         <html lang="de">
             <body>
                 {children}
