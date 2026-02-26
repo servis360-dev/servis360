@@ -18,5 +18,23 @@
         "telefon": "+49 89 66665503",
         "email": "anfrage@max-stelzl.de",
         "adres": "Plassenburgstraße 17, 81549 München"
+    },
+    "elbonico": {
+        "firmaAdi": "ELBONICO Reparatur",
+        "telefon": "0151 14329640",
+        "email": "info@elbonico.de",
+        "adres": "Seeriederstr. 7, 81675 München"
+    },
+    "yigit-elektro": {
+        "firmaAdi": "Yigit Elektrotechnik",
+        "telefon": "0176 76106647",
+        "email": "info@yigit-elektro.de",
+        "adres": "München, Deutschland"
+    },
+    "schink-elektro": {
+        "firmaAdi": "Elektro Schink",
+        "telefon": "0171 5455909",
+        "email": "kontakt@elektro-schink.de",
+        "adres": "München, Deutschland"
     }
 }
