@@ -45,36 +45,42 @@
         "firmaAdi": "Elektromeisterbetrieb Neo Elektro und Bau Elektriker Solar",
         "telefon": "+49 176 20216676",
         "email": "info@elektromeisterbetrieb-neo-elektro-und-bau-elektriker-solar.de",
-        "adres": "Berg-am-Laim-Straße 53, 81673 München, Germany"
+        "adres": "Berg-am-Laim-Straße 53, 81673 München, Germany",
+        "mesajHazir": true
     },
     "mah-elektrobetrieb-münchen": {
         "firmaAdi": "MAH Elektrobetrieb München",
         "telefon": "+49 178 5188929",
         "email": "info@mah-elektrobetrieb-münchen.de",
-        "adres": "Washingtonstraße 1A, 80639 München, Germany"
+        "adres": "Washingtonstraße 1A, 80639 München, Germany",
+        "mesajHazir": true
     },
     "elektrotechnik-jafari": {
         "firmaAdi": "Elektrotechnik Jafari",
         "telefon": "+49 176 40555669",
         "email": "info@elektrotechnik-jafari.de",
-        "adres": "Züricher Str. 158, 81476 München, Germany"
+        "adres": "Züricher Str. 158, 81476 München, Germany",
+        "mesajHazir": true
     },
     "elektrotechnik-thomas-schwiebert": {
         "firmaAdi": "Elektrotechnik Thomas Schwiebert",
         "telefon": "+49 178 5826339",
         "email": "info@elektrotechnik-thomas-schwiebert.de",
-        "adres": "Kießlingerstraße 44, 81829 München, Germany"
+        "adres": "Kießlingerstraße 44, 81829 München, Germany",
+        "mesajHazir": true
     },
     "elektro-bartel--smart-home": {
         "firmaAdi": "Elektro Bartel | Smart Home",
         "telefon": "+49 176 35397918",
         "email": "info@elektro-bartel--smart-home.de",
-        "adres": "Nietzschestraße 8, 80807 München, Germany"
+        "adres": "Nietzschestraße 8, 80807 München, Germany",
+        "mesajHazir": true
     },
     "hauner-elektrotechnik-gmbh": {
         "firmaAdi": "Hauner Elektrotechnik GmbH",
         "telefon": "+49 176 70644254",
         "email": "info@hauner-elektrotechnik-gmbh.de",
-        "adres": "Lindenschmitstraße 52, 81373 München, Germany"
+        "adres": "Lindenschmitstraße 52, 81373 München, Germany",
+        "mesajHazir": true
     }
 }
