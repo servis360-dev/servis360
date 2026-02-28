@@ -3,37 +3,43 @@
         "firmaAdi": "Luce Elektro",
         "telefon": "+49 176 31671635",
         "email": "info@luce-elektro.de",
-        "adres": "Pronnerpl. 6, 80687 München, Germany"
+        "adres": "Pronnerpl. 6, 80687 München, Germany",
+        "mesajHazir": true
     },
     "yigit-elektrotechnik-elektriker-elektroinstallation-meisterbetrieb-elektro": {
         "firmaAdi": "Yigit Elektrotechnik Elektriker Elektroinstallation Meisterbetrieb Elektro",
         "telefon": "+49 176 76106647",
         "email": "info@yigit-elektrotechnik-elektriker-elektroinstallation-meisterbetrieb-elektro.de",
-        "adres": "Gollierpl. 8, 80339 München, Germany"
+        "adres": "Gollierpl. 8, 80339 München, Germany",
+        "mesajHazir": true
     },
     "stanmontage-elektrotechnik": {
         "firmaAdi": "Stanmontage Elektrotechnik",
         "telefon": "+49 1512 5098423",
         "email": "info@stanmontage-elektrotechnik.de",
-        "adres": "Radlkoferstraße 2, 81373 München, Germany"
+        "adres": "Radlkoferstraße 2, 81373 München, Germany",
+        "mesajHazir": true
     },
     "ig-elektrik": {
         "firmaAdi": "IG Elektrik",
         "telefon": "+49 179 1195087",
         "email": "info@ig-elektrik.de",
-        "adres": "Trauchbergstraße 3A, 81539 München, Germany"
+        "adres": "Trauchbergstraße 3A, 81539 München, Germany",
+        "mesajHazir": true
     },
     "kg-elektrotechnik-gmbh": {
         "firmaAdi": "KG-Elektrotechnik GmbH",
         "telefon": "+49 163 3091550",
         "email": "info@kg-elektrotechnik-gmbh.de",
-        "adres": "Akeleistraße 4, 81547 München, Germany"
+        "adres": "Akeleistraße 4, 81547 München, Germany",
+        "mesajHazir": true
     },
     "elektro-guz": {
         "firmaAdi": "Elektro-Guz",
         "telefon": "+49 1573 9383389",
         "email": "info@elektro-guz.de",
-        "adres": "Landaubogen 7, 81373 München, Germany"
+        "adres": "Landaubogen 7, 81373 München, Germany",
+        "mesajHazir": true
     },
     "elektromeisterbetrieb-neo-elektro-und-bau-elektriker-solar": {
         "firmaAdi": "Elektromeisterbetrieb Neo Elektro und Bau Elektriker Solar",
